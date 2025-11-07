@@ -1,11 +1,11 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
-const fs = require('fs');
 const bcrypt = require('bcryptjs');
 const session = require('express-session');
 const cookieParser = require('cookie-parser');
 const claudeService = require('./claude-service');
+const dataService = require('./data-service');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -51,66 +51,13 @@ app.use(session({
 }));
 app.use(express.static('public'));
 
-// Data storage files
-const DATA_DIR = path.join(__dirname, 'data');
-const USERS_FILE = path.join(DATA_DIR, 'users.json');
-const PROJECTS_FILE = path.join(DATA_DIR, 'projects.json');
-const TASKS_FILE = path.join(DATA_DIR, 'tasks.json');
-const ACTIVITY_FILE = path.join(DATA_DIR, 'activity.json');
-
-// Initialize data directory and files
-if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR);
-}
-
-if (!fs.existsSync(USERS_FILE)) {
-    // Create default admin user (password: admin123)
-    const adminPassword = bcrypt.hashSync('admin123', 10);
-    const defaultUsers = [{
-        id: 'user-admin',
-        username: 'admin',
-        password_hash: adminPassword,
-        name: 'Admin User',
-        email: 'admin@example.com',
-        is_admin: true,
-        created_at: new Date().toISOString()
-    }];
-    fs.writeFileSync(USERS_FILE, JSON.stringify(defaultUsers, null, 2));
-}
-
-if (!fs.existsSync(PROJECTS_FILE)) {
-    fs.writeFileSync(PROJECTS_FILE, JSON.stringify([], null, 2));
-}
-
-if (!fs.existsSync(TASKS_FILE)) {
-    fs.writeFileSync(TASKS_FILE, JSON.stringify([], null, 2));
-}
-
-if (!fs.existsSync(ACTIVITY_FILE)) {
-    fs.writeFileSync(ACTIVITY_FILE, JSON.stringify([], null, 2));
-}
-
 // Helper functions
-const readJSON = (filePath) => {
-    try {
-        const data = fs.readFileSync(filePath, 'utf8');
-        return JSON.parse(data);
-    } catch (error) {
-        return [];
-    }
-};
-
-const writeJSON = (filePath, data) => {
-    fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
-};
-
 const generateId = (prefix = 'id') => {
     return `${prefix}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 };
 
-const logActivity = (userId, action, details, taskId = null, projectId = null) => {
-    const activities = readJSON(ACTIVITY_FILE);
-    activities.push({
+const logActivity = async (userId, action, details, taskId = null, projectId = null) => {
+    await dataService.logActivity({
         id: generateId('activity'),
         user_id: userId,
         task_id: taskId,
@@ -119,11 +66,6 @@ const logActivity = (userId, action, details, taskId = null, projectId = null) =
         details,
         timestamp: new Date().toISOString()
     });
-    // Keep only last 500 activities
-    if (activities.length > 500) {
-        activities.splice(0, activities.length - 500);
-    }
-    writeJSON(ACTIVITY_FILE, activities);
 };
 
 // Validation helpers
