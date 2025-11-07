@@ -1,352 +1,414 @@
 # Team Task Manager
 
-A full-stack task management application similar to Asana, with celebration animations, AI-powered insights, and team collaboration features.
+A full-stack task management application with two versions: a simple single-user version and a complete multi-user version with authentication and project management.
 
-## Features
+## 🎯 Features
 
-- ✅ **Task Management**: Create, edit, delete, and complete tasks
-- 🎉 **Celebrations**: Confetti animations when tasks are completed (Asana-style)
-- 👥 **Team Collaboration**: Assign tasks to team members and organize by projects
-- 🔍 **Smart Filtering**: Filter by team member, project, and status
-- 🤖 **AI Integration**: Claude API for task summaries and natural language queries
-- 📊 **Real-time Stats**: Track total, completed, and pending tasks
-- 🎨 **Beautiful UI**: Clean, modern interface with smooth animations
-- ☁️ **Cloud-Ready**: Deployable to Cloudflare Workers with D1 database
+### Simple Version (index.html + app.js)
+- ✅ Task CRUD operations
+- 🎉 Celebration animations on task completion
+- 🔍 Filtering and search
+- 📊 Real-time statistics
+- 🎨 Beautiful Asana-inspired UI
 
-## Quick Start (Local Development)
+### **NEW** Multi-User Version (app-auth.html + app-auth.js)
+- 🔐 **User Authentication** - Secure login/registration system
+- 👥 **Multi-user Support** - Multiple team members
+- 📁 **Project Management** - Create and manage projects
+- 🔒 **Access Control** - Project owners and members
+- 👤 **User Assignment** - Assign tasks to team members
+- ⚙️ **Project Settings** - Manage team members, project details
+- 🎯 **View Filtering** - See all tasks, your tasks, or by project
+- 📈 **Activity Tracking** - Log of all actions
+
+## 🚀 Quick Start
 
 ### Prerequisites
-
-- Node.js (v16 or higher)
-- npm or yarn
-
-### 1. Install Dependencies
-
 ```bash
 npm install
 ```
 
-### 2. Start the Local Server
-
+### Running Simple Version
 ```bash
 npm start
+# Visit: http://localhost:3000
+# Uses: index.html + app.js + server.js
 ```
 
-The app will be available at `http://localhost:3000`
+### Running Multi-User Version
+```bash
+# Use the authentication-enabled server
+node server-auth.js
+# Visit: http://localhost:3000/app-auth.html
+# or login at: http://localhost:3000/login.html
 
-### 3. Test the Application
+# Default credentials:
+# Username: admin
+# Password: admin123
+```
 
-Open your browser and navigate to `http://localhost:3000`. You can:
-
-- Click "New Task" to create a task
-- Click the checkbox on a task card to mark it complete (watch the confetti! 🎉)
-- Click the edit button (✏️) to modify a task
-- Click the delete button (🗑️) to remove a task
-- Use the filters in the sidebar to organize your view
-- Search tasks using the search bar
-
-## Project Structure
+## 📂 Project Structure
 
 ```
 test-web/
-├── public/                 # Frontend files
-│   ├── index.html         # Main HTML structure
-│   ├── styles.css         # Styling and animations
-│   └── app.js             # Frontend JavaScript
-├── server.js              # Express backend (local development)
-├── worker.js              # Cloudflare Worker (production)
-├── schema.sql             # D1 Database schema
-├── wrangler.toml          # Cloudflare configuration
-├── mcp-server.js          # MCP server for Claude integration
-├── package.json           # Dependencies
-└── tasks.json             # Local data storage
+├── public/
+│   ├── index.html           # Simple version HTML
+│   ├── app.js              # Simple version JS
+│   ├── app-auth.html       # Multi-user version HTML
+│   ├── app-auth.js         # Multi-user version JS
+│   ├── login.html          # Login page
+│   ├── styles.css          # Main styles
+│   └── styles-auth.css     # Additional auth styles
+├── server.js               # Simple Express server
+├── server-auth.js          # Authentication-enabled server
+├── worker.js               # Cloudflare Worker (production)
+├── schema.sql              # D1 Database schema
+├── mcp-server.js           # MCP server for Claude
+├── package.json
+└── README.md
 ```
 
-## Deployment to Cloudflare (Production)
+## 🔐 Authentication System
 
-### Prerequisites
+### User Management
+- **Registration**: Create new user accounts
+- **Login/Logout**: Secure session management
+- **Admin Users**: Special privileges for user management
 
-- Cloudflare account
-- Wrangler CLI installed (`npm install -g wrangler`)
-- Anthropic API key (for Claude integration)
-
-### 1. Login to Cloudflare
-
-```bash
-wrangler login
+### Default Users
+```
+Username: admin
+Password: admin123
+Role: Admin
 ```
 
-### 2. Create D1 Database
+## 📁 Project Management
 
+### Creating Projects
+1. Click "Projects" in sidebar
+2. Click "+ New Project"
+3. Enter name and description
+4. You become the project owner
+
+### Managing Projects
+**As Project Owner:**
+- Add/remove team members
+- Edit project details
+- Delete project (and all tasks)
+- View project settings (⚙️ icon)
+
+**As Project Member:**
+- View project tasks
+- Create tasks
+- Complete tasks
+
+### Project Features
+- **Owner Control**: Only owners can modify project membership
+- **Task Organization**: All tasks belong to a project
+- **Team Collaboration**: Multiple members per project
+- **Access Control**: Members only see their projects
+
+## 📝 Task Management
+
+### Creating Tasks
+1. Select a project from dropdown
+2. Assign to a team member (must be project member)
+3. Set due date and description
+4. Choose status
+
+### Task Properties
+- **Name**: Task title
+- **Description**: Detailed information
+- **Project**: Which project it belongs to
+- **Assigned To**: Team member responsible
+- **Due Date**: Deadline
+- **Status**: Pending, In Progress, or Completed
+- **Created By**: Automatically tracked
+
+### Task Actions
+- ✅ Quick complete with checkbox
+- ✏️ Edit task details
+- 🗑️ Delete task
+- 🎉 Celebration on completion!
+
+## 🎨 UI/UX Features
+
+### Views
+- **All Tasks**: See all tasks in your projects
+- **My Tasks**: Only tasks assigned to you
+- **Projects**: Grid view of all projects
+- **Project View**: Tasks filtered by specific project
+
+### Filters
+- Status filter (Pending/In Progress/Completed)
+- Search across task names and descriptions
+- Project-specific views
+
+### Visual Indicators
+- Color-coded task borders by status
+- Overdue task highlighting
+- Project ownership badges
+- Member count and task statistics
+- Completion progress per project
+
+### Animations
+- Confetti celebration on task completion
+- Smooth transitions and hover effects
+- Slide-in notifications
+- Modal animations
+
+## 🗄️ Data Storage
+
+### Local Development (server-auth.js)
+- Stores data in `/data` directory as JSON files:
+  - `users.json` - User accounts
+  - `projects.json` - Projects and members
+  - `tasks.json` - All tasks
+  - `activity.json` - Activity log
+
+### Production (Cloudflare Workers + D1)
+- User authentication with bcrypt
+- Relational database with proper foreign keys
+- Session management
+- Scalable cloud storage
+
+## 🌐 API Endpoints
+
+### Authentication
+```
+POST   /api/auth/register    - Create new user
+POST   /api/auth/login       - Login
+POST   /api/auth/logout      - Logout
+GET    /api/auth/me          - Get current user
+```
+
+### Users
+```
+GET    /api/users            - List all users
+GET    /api/users/:id        - Get user by ID
+DELETE /api/users/:id        - Delete user (admin only)
+```
+
+### Projects
+```
+GET    /api/projects         - List user's projects
+GET    /api/projects/:id     - Get project details
+POST   /api/projects         - Create project
+PUT    /api/projects/:id     - Update project
+DELETE /api/projects/:id     - Delete project
+POST   /api/projects/:id/members        - Add member
+DELETE /api/projects/:id/members/:userId - Remove member
+```
+
+### Tasks
+```
+GET    /api/tasks            - List tasks (filtered by user's projects)
+GET    /api/tasks/:id        - Get task details
+POST   /api/tasks            - Create task
+PUT    /api/tasks/:id        - Update task
+DELETE /api/tasks/:id        - Delete task
+```
+
+### Activity
+```
+GET    /api/activity         - Get activity log
+```
+
+## 🔒 Security Features
+
+- **Password Hashing**: bcrypt with salt rounds
+- **Session Management**: Secure HTTP-only cookies
+- **Access Control**: Project-based permissions
+- **Input Validation**: Server-side validation
+- **XSS Protection**: HTML escaping
+- **CSRF Protection**: Session-based authentication
+
+## 📊 Database Schema
+
+### Users Table
+- id, username, password_hash, name, email, is_admin
+- Unique username constraint
+
+### Projects Table
+- id, name, description, owner_id
+- Foreign key to users
+
+### Project Members Table
+- project_id, user_id, role
+- Many-to-many relationship
+
+### Tasks Table
+- id, name, description, date, status
+- project_id, assigned_to_id, created_by_id
+- Foreign keys to projects and users
+
+### Activity Log
+- Tracks all actions (create, update, delete)
+- Links to users, projects, and tasks
+
+## 🚀 Deployment
+
+### Cloudflare Workers (Production)
+
+1. **Create D1 Database**
 ```bash
 wrangler d1 create task-manager-db
 ```
 
-Copy the database ID and update `wrangler.toml`:
+2. **Update wrangler.toml** with database ID
 
-```toml
-[[d1_databases]]
-binding = "DB"
-database_name = "task-manager-db"
-database_id = "YOUR_DATABASE_ID_HERE"
-```
-
-### 3. Initialize Database Schema
-
+3. **Initialize Database**
 ```bash
 wrangler d1 execute task-manager-db --file=schema.sql
 ```
 
-### 4. Set Environment Variables
-
-Add your Anthropic API key:
-
+4. **Set Secrets**
 ```bash
 wrangler secret put CLAUDE_API_KEY
-# Enter your API key when prompted
 ```
 
-### 5. Deploy to Cloudflare
-
+5. **Deploy**
 ```bash
 wrangler deploy
 ```
 
-Your app will be live at `https://team-task-manager.YOUR_SUBDOMAIN.workers.dev`
+## 🤖 MCP Server Integration
 
-## MCP Server Setup (Claude Integration)
-
-The MCP server allows Claude to interact with your task database directly.
-
-### 1. Set Environment Variable
+Connect Claude directly to your task database:
 
 ```bash
+# Set environment variable
 export WORKER_URL=http://localhost:3000
-# or your Cloudflare Workers URL for production
-```
 
-### 2. Run MCP Server
-
-```bash
+# Run MCP server
 node mcp-server.js
 ```
 
-### 3. Configure in Claude Desktop
+### MCP Tools Available
+- `get_tasks` - Retrieve tasks
+- `create_task` - Create new task
+- `update_task` - Update task
+- `delete_task` - Delete task
+- `get_projects` - List projects
+- `get_summary` - AI-powered task summary
+- `ask_about_tasks` - Natural language queries
 
-Add to your Claude Desktop configuration:
+## 📱 Responsive Design
 
-```json
-{
-  "mcpServers": {
-    "task-manager": {
-      "command": "node",
-      "args": ["/path/to/test-web/mcp-server.js"],
-      "env": {
-        "WORKER_URL": "http://localhost:3000"
-      }
-    }
-  }
-}
-```
+- Mobile-friendly sidebar
+- Adaptive grid layouts
+- Touch-optimized controls
+- Collapsible sections on small screens
 
-### Available MCP Tools
+## 🎯 Use Cases
 
-- `get_tasks`: Get all tasks
-- `get_task`: Get specific task by ID
-- `create_task`: Create new task
-- `update_task`: Update existing task
-- `delete_task`: Delete a task
-- `get_summary`: Get AI-powered summary of all tasks
-- `ask_about_tasks`: Ask natural language questions about tasks
-- `get_activity`: Get recent activity log
+### For Teams
+- Project-based task organization
+- Assign work to team members
+- Track progress across projects
+- Collaborate on shared goals
 
-## API Endpoints
+### For Individuals
+- Personal task management
+- Project organization
+- Goal tracking with celebrations
 
-### Tasks
+### For Organizations
+- Department-level task management
+- Cross-functional project coordination
+- Activity tracking and accountability
 
-- `GET /api/tasks` - Get all tasks
-- `GET /api/tasks/:id` - Get single task
-- `POST /api/tasks` - Create new task
-- `PUT /api/tasks/:id` - Update task
-- `DELETE /api/tasks/:id` - Delete task
+## 🔧 Development
 
-### Claude AI
+### Adding New Features
+1. Update schema.sql if database changes needed
+2. Add API endpoints to server-auth.js
+3. Update frontend in app-auth.js
+4. Add styling to styles-auth.css
+5. Test locally before deploying
 
-- `POST /api/claude/ask` - Ask questions about tasks
-  ```json
-  {
-    "question": "What tasks are due this week?"
-  }
-  ```
+### Code Organization
+- **Backend**: Express.js with middleware
+- **Frontend**: Vanilla JavaScript (no framework)
+- **Styling**: CSS with custom properties
+- **Data**: JSON files (local) or D1 (production)
 
-- `GET /api/claude/summary` - Get AI summary of all tasks
+## 📈 Performance
 
-### Activity Log
-
-- `GET /api/activity` - Get recent activity
-
-## Task Schema
-
-```json
-{
-  "id": "unique-id",
-  "name": "Task name",
-  "description": "Task description",
-  "date": "2024-01-15",
-  "project": "Project name",
-  "poc": "Person name",
-  "status": "pending|in-progress|completed",
-  "created_at": "2024-01-01T00:00:00Z",
-  "updated_at": "2024-01-01T00:00:00Z"
-}
-```
-
-## Development Tips
-
-### Local Testing
-
-1. The local server uses `tasks.json` for data storage
-2. Data persists between restarts
-3. No database setup required for local development
-
-### Adding Sample Data
-
-You can manually add tasks through the UI or directly edit `tasks.json`:
-
-```json
-[
-  {
-    "id": "abc123",
-    "name": "Design homepage",
-    "description": "Create mockups for the new homepage design",
-    "date": "2024-01-20",
-    "project": "Website Redesign",
-    "poc": "Jane Smith",
-    "status": "in-progress",
-    "created_at": "2024-01-10T10:00:00Z",
-    "updated_at": "2024-01-10T10:00:00Z"
-  }
-]
-```
-
-### Debugging
-
-- Check browser console for frontend errors
-- Check terminal for backend errors
-- Use browser DevTools Network tab to inspect API calls
-
-## Key Features Explained
-
-### Celebration Animations
-
-When you mark a task as complete, the app triggers a confetti animation:
-- 3-second duration
-- Colorful particles falling
-- Positive feedback message
-- Inspired by Asana's celebrations
-
-### Smart Filtering
-
-- Filter by team member (POC)
-- Filter by project
-- Filter by status (pending/in-progress/completed)
-- Search across all fields
-- Filters combine for precise results
-
-### Task Completion
-
-Two ways to complete tasks:
-1. **Quick Complete**: Click the checkbox on the task card
-2. **Edit Modal**: Change status to "completed" in the edit form
-
-Both trigger the celebration animation!
-
-### Visual Indicators
-
-- **Color-coded borders**: Tasks have different colored left borders based on status
-- **Overdue highlighting**: Overdue tasks show in red
-- **Completed styling**: Completed tasks have strikethrough text
-- **Hover effects**: Smooth transitions on all interactive elements
-
-## Browser Support
-
-- Chrome/Edge (latest)
-- Firefox (latest)
-- Safari (latest)
-- Mobile browsers supported
-
-## Performance
-
-- Optimized for large task lists
-- Efficient rendering with minimal reflows
-- Smooth animations (60fps)
-- Fast API responses
+- Efficient rendering with minimal DOM updates
 - Indexed database queries
+- Client-side filtering and search
+- Lazy loading of project members
+- Optimized animations (60fps)
 
-## Security
+## 🐛 Troubleshooting
 
-- Input sanitization to prevent XSS
-- CORS enabled for API access
-- No authentication (add auth for production use)
-- Environment variables for secrets
+### "Authentication required" error
+- Clear browser cookies
+- Login again at /login.html
 
-## Future Enhancements
+### Tasks not showing
+- Check if you're a member of any projects
+- Create a new project
+- Verify server is running
 
-- [ ] User authentication
-- [ ] Advanced project management with owners and members
-- [ ] File attachments
-- [ ] Task comments and activity feed
-- [ ] Email notifications
-- [ ] Calendar view
-- [ ] Kanban board view
-- [ ] Recurring tasks
-- [ ] Task dependencies
-- [ ] Mobile app
+### Cannot add members
+- Ensure you're the project owner
+- Check user exists in system
+- Verify user not already a member
 
-## Troubleshooting
-
-### Port 3000 already in use
-
+### Port 3000 in use
 ```bash
-# Change port in server.js or kill the process
+# Kill existing process
 lsof -ti:3000 | xargs kill
+
+# Or use different port
+PORT=3001 node server-auth.js
 ```
 
-### Tasks not loading
+## 🎓 Learning Resources
 
-1. Check if server is running
-2. Check browser console for errors
-3. Verify `tasks.json` exists and has valid JSON
-4. Check network requests in DevTools
+This project demonstrates:
+- Authentication & Authorization
+- Session Management
+- RESTful API Design
+- Project-based Access Control
+- Multi-user Collaboration
+- Responsive UI/UX
+- Database Schema Design
 
-### Confetti not showing
+## 📝 Future Enhancements
 
-1. Ensure you're marking a task as "completed"
-2. Check browser console for JavaScript errors
-3. Try refreshing the page
+- [ ] Email notifications
+- [ ] Task comments and attachments
+- [ ] Calendar view
+- [ ] Kanban board
+- [ ] Task dependencies
+- [ ] Recurring tasks
+- [ ] Time tracking
+- [ ] Reports and analytics
+- [ ] Mobile app
+- [ ] Real-time collaboration (WebSockets)
 
-### Cloudflare deployment issues
+## 🤝 Contributing
 
-1. Verify database ID in `wrangler.toml`
-2. Check that schema was applied: `wrangler d1 execute task-manager-db --command "SELECT * FROM tasks"`
-3. Ensure API key is set: `wrangler secret list`
+This is a demonstration project. Feel free to fork and adapt for your needs!
 
-## Contributing
+## 📄 License
 
-Feel free to submit issues and enhancement requests!
+MIT License - Use however you like!
 
-## License
+## 🙏 Acknowledgments
 
-MIT License - feel free to use this project however you like.
-
-## Support
-
-For issues or questions:
-1. Check the troubleshooting section
-2. Review browser console logs
-3. Check network requests
-4. Create an issue with details
+- Inspired by Asana's clean UI and positive UX
+- Built with modern web standards
+- Designed for team collaboration
 
 ---
 
-Built with ❤️ using vanilla JavaScript, Express, and Cloudflare Workers
+**Version 2.0** - Now with multi-user support and project management!
+
+**Quick Links:**
+- Simple Version: http://localhost:3000
+- Multi-User Version: http://localhost:3000/app-auth.html
+- Login: http://localhost:3000/login.html

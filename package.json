@@ -1,17 +1,20 @@
 {
   "name": "team-task-manager",
-  "version": "1.0.0",
-  "description": "A full-stack task manager application similar to Asana",
+  "version": "2.0.0",
+  "description": "A full-stack task manager application with authentication and project management",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js"
   },
-  "keywords": ["task-manager", "asana", "project-management"],
+  "keywords": ["task-manager", "asana", "project-management", "collaboration"],
   "author": "",
   "license": "MIT",
   "dependencies": {
     "express": "^4.18.2",
-    "cors": "^2.8.5"
+    "cors": "^2.8.5",
+    "bcryptjs": "^2.4.3",
+    "express-session": "^1.17.3",
+    "cookie-parser": "^1.4.6"
   }
 }

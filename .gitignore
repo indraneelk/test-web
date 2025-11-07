@@ -10,6 +10,7 @@ yarn.lock
 
 # Local data storage
 tasks.json
+data/
 
 # Logs
 logs

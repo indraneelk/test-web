@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - Team Task Manager</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 2rem;
+        }
+
+        .login-container {
+            background: white;
+            border-radius: 1rem;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            width: 100%;
+            max-width: 420px;
+            padding: 3rem 2.5rem;
+        }
+
+        .logo {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+
+        .logo-icon {
+            font-size: 3rem;
+            margin-bottom: 0.5rem;
+        }
+
+        h1 {
+            font-size: 1.75rem;
+            font-weight: 700;
+            color: #1e293b;
+            text-align: center;
+            margin-bottom: 0.5rem;
+        }
+
+        .subtitle {
+            text-align: center;
+            color: #64748b;
+            font-size: 0.9375rem;
+            margin-bottom: 2rem;
+        }
+
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+            color: #1e293b;
+            font-size: 0.875rem;
+        }
+
+        input {
+            width: 100%;
+            padding: 0.875rem 1rem;
+            border: 2px solid #e2e8f0;
+            border-radius: 0.5rem;
+            font-size: 1rem;
+            transition: all 0.2s;
+            font-family: inherit;
+        }
+
+        input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .btn {
+            width: 100%;
+            padding: 0.875rem;
+            border: none;
+            border-radius: 0.5rem;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-family: inherit;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            margin-bottom: 1rem;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+
+        .btn-primary:active {
+            transform: translateY(0);
+        }
+
+        .btn-secondary {
+            background: #f1f5f9;
+            color: #64748b;
+        }
+
+        .btn-secondary:hover {
+            background: #e2e8f0;
+        }
+
+        .divider {
+            text-align: center;
+            margin: 1.5rem 0;
+            color: #94a3b8;
+            font-size: 0.875rem;
+            position: relative;
+        }
+
+        .divider::before,
+        .divider::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            width: 40%;
+            height: 1px;
+            background: #e2e8f0;
+        }
+
+        .divider::before {
+            left: 0;
+        }
+
+        .divider::after {
+            right: 0;
+        }
+
+        .error-message {
+            background: #fee2e2;
+            color: #991b1b;
+            padding: 0.875rem;
+            border-radius: 0.5rem;
+            margin-bottom: 1.5rem;
+            font-size: 0.875rem;
+            display: none;
+        }
+
+        .error-message.show {
+            display: block;
+        }
+
+        .success-message {
+            background: #dcfce7;
+            color: #166534;
+            padding: 0.875rem;
+            border-radius: 0.5rem;
+            margin-bottom: 1.5rem;
+            font-size: 0.875rem;
+            display: none;
+        }
+
+        .success-message.show {
+            display: block;
+        }
+
+        .toggle-form {
+            text-align: center;
+            margin-top: 1.5rem;
+            color: #64748b;
+            font-size: 0.9375rem;
+        }
+
+        .toggle-form a {
+            color: #667eea;
+            text-decoration: none;
+            font-weight: 600;
+        }
+
+        .toggle-form a:hover {
+            text-decoration: underline;
+        }
+
+        .loading {
+            opacity: 0.6;
+            pointer-events: none;
+        }
+
+        @media (max-width: 480px) {
+            .login-container {
+                padding: 2rem 1.5rem;
+            }
+
+            h1 {
+                font-size: 1.5rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <div class="logo">
+            <div class="logo-icon">📋</div>
+            <h1>Team Task Manager</h1>
+            <p class="subtitle">Sign in to manage your tasks</p>
+        </div>
+
+        <div id="errorMessage" class="error-message"></div>
+        <div id="successMessage" class="success-message"></div>
+
+        <!-- Login Form -->
+        <form id="loginForm">
+            <div class="form-group">
+                <label for="loginUsername">Username</label>
+                <input type="text" id="loginUsername" required autocomplete="username">
+            </div>
+
+            <div class="form-group">
+                <label for="loginPassword">Password</label>
+                <input type="password" id="loginPassword" required autocomplete="current-password">
+            </div>
+
+            <button type="submit" class="btn btn-primary">Sign In</button>
+        </form>
+
+        <div class="divider">or</div>
+
+        <button class="btn btn-secondary" onclick="showRegisterForm()">Create New Account</button>
+
+        <!-- Register Form (hidden by default) -->
+        <form id="registerForm" style="display: none;">
+            <div class="form-group">
+                <label for="registerName">Full Name</label>
+                <input type="text" id="registerName" required>
+            </div>
+
+            <div class="form-group">
+                <label for="registerUsername">Username</label>
+                <input type="text" id="registerUsername" required autocomplete="username">
+            </div>
+
+            <div class="form-group">
+                <label for="registerEmail">Email (optional)</label>
+                <input type="email" id="registerEmail">
+            </div>
+
+            <div class="form-group">
+                <label for="registerPassword">Password</label>
+                <input type="password" id="registerPassword" required autocomplete="new-password">
+            </div>
+
+            <button type="submit" class="btn btn-primary">Create Account</button>
+            <button type="button" class="btn btn-secondary" onclick="showLoginForm()">Back to Sign In</button>
+        </form>
+
+        <div class="toggle-form" id="toggleText">
+            <p>Default credentials: <strong>admin</strong> / <strong>admin123</strong></p>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = '/api/auth';
+        let isRegistering = false;
+
+        // Show error message
+        function showError(message) {
+            const errorDiv = document.getElementById('errorMessage');
+            errorDiv.textContent = message;
+            errorDiv.classList.add('show');
+            setTimeout(() => errorDiv.classList.remove('show'), 5000);
+        }
+
+        // Show success message
+        function showSuccess(message) {
+            const successDiv = document.getElementById('successMessage');
+            successDiv.textContent = message;
+            successDiv.classList.add('show');
+            setTimeout(() => successDiv.classList.remove('show'), 5000);
+        }
+
+        // Show register form
+        function showRegisterForm() {
+            document.getElementById('loginForm').style.display = 'none';
+            document.getElementById('registerForm').style.display = 'block';
+            document.querySelector('.subtitle').textContent = 'Create your account';
+            document.getElementById('errorMessage').classList.remove('show');
+            isRegistering = true;
+        }
+
+        // Show login form
+        function showLoginForm() {
+            document.getElementById('loginForm').style.display = 'block';
+            document.getElementById('registerForm').style.display = 'none';
+            document.querySelector('.subtitle').textContent = 'Sign in to manage your tasks';
+            document.getElementById('errorMessage').classList.remove('show');
+            isRegistering = false;
+        }
+
+        // Handle login
+        document.getElementById('loginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const username = document.getElementById('loginUsername').value;
+            const password = document.getElementById('loginPassword').value;
+
+            const container = document.querySelector('.login-container');
+            container.classList.add('loading');
+
+            try {
+                const response = await fetch(`${API_URL}/login`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    credentials: 'include',
+                    body: JSON.stringify({ username, password })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || 'Login failed');
+                }
+
+                // Store user info
+                localStorage.setItem('user', JSON.stringify(data.user));
+
+                // Redirect to main app
+                window.location.href = '/';
+            } catch (error) {
+                showError(error.message);
+                container.classList.remove('loading');
+            }
+        });
+
+        // Handle registration
+        document.getElementById('registerForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const name = document.getElementById('registerName').value;
+            const username = document.getElementById('registerUsername').value;
+            const email = document.getElementById('registerEmail').value;
+            const password = document.getElementById('registerPassword').value;
+
+            const container = document.querySelector('.login-container');
+            container.classList.add('loading');
+
+            try {
+                const response = await fetch(`${API_URL}/register`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ name, username, email, password })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || 'Registration failed');
+                }
+
+                showSuccess('Account created successfully! Please sign in.');
+
+                // Switch to login form after 2 seconds
+                setTimeout(() => {
+                    showLoginForm();
+                    document.getElementById('loginUsername').value = username;
+                    container.classList.remove('loading');
+                }, 2000);
+            } catch (error) {
+                showError(error.message);
+                container.classList.remove('loading');
+            }
+        });
+
+        // Check if already logged in
+        (async () => {
+            try {
+                const response = await fetch(`${API_URL}/me`, {
+                    credentials: 'include'
+                });
+
+                if (response.ok) {
+                    // Already logged in, redirect to main app
+                    window.location.href = '/';
+                }
+            } catch (error) {
+                // Not logged in, stay on login page
+            }
+        })();
+    </script>
+</body>
+</html>
