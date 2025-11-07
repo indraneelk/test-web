@@ -334,8 +334,8 @@
                 // Store user info
                 localStorage.setItem('user', JSON.stringify(data.user));
 
-                // Redirect to main app
-                window.location.href = '/';
+                // Redirect to authenticated app
+                window.location.href = '/app-auth.html';
             } catch (error) {
                 showError(error.message);
                 container.classList.remove('loading');
@@ -391,8 +391,8 @@
                 });
 
                 if (response.ok) {
-                    // Already logged in, redirect to main app
-                    window.location.href = '/';
+                    // Already logged in, redirect to authenticated app
+                    window.location.href = '/app-auth.html';
                 }
             } catch (error) {
                 // Not logged in, stay on login page

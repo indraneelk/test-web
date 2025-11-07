@@ -9,19 +9,41 @@ const cookieParser = require('cookie-parser');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Middleware
+// CORS Configuration
+const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS
+    ? process.env.ALLOWED_ORIGINS.split(',')
+    : ['http://localhost:3000', 'http://127.0.0.1:3000'];
+
 app.use(cors({
-    origin: true,
+    origin: function (origin, callback) {
+        // Allow requests with no origin (mobile apps, curl, etc.)
+        if (!origin) return callback(null, true);
+
+        if (ALLOWED_ORIGINS.includes(origin)) {
+            callback(null, true);
+        } else {
+            console.warn(`⚠️  Blocked CORS request from origin: ${origin}`);
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
     credentials: true
 }));
 app.use(express.json());
 app.use(cookieParser());
+// Validate session secret
+const SESSION_SECRET = process.env.SESSION_SECRET;
+if (!SESSION_SECRET) {
+    console.warn('⚠️  WARNING: SESSION_SECRET environment variable is not set!');
+    console.warn('⚠️  Using a fallback secret for development only.');
+    console.warn('⚠️  Set SESSION_SECRET in production for security!');
+}
+
 app.use(session({
-    secret: 'your-secret-key-change-this-in-production',
+    secret: SESSION_SECRET || 'dev-fallback-secret-change-in-production',
     resave: false,
     saveUninitialized: false,
     cookie: {
-        secure: false, // set to true in production with HTTPS
+        secure: process.env.NODE_ENV === 'production', // HTTPS only in production
         httpOnly: true,
         maxAge: 24 * 60 * 60 * 1000 // 24 hours
     }
@@ -103,6 +125,37 @@ const logActivity = (userId, action, details, taskId = null, projectId = null) =
     writeJSON(ACTIVITY_FILE, activities);
 };
 
+// Validation helpers
+const validateString = (str, minLength = 1, maxLength = 500) => {
+    if (typeof str !== 'string') return false;
+    const trimmed = str.trim();
+    return trimmed.length >= minLength && trimmed.length <= maxLength;
+};
+
+const validateEmail = (email) => {
+    if (!email) return true; // Email is optional
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+};
+
+const validateUsername = (username) => {
+    if (typeof username !== 'string') return false;
+    const trimmed = username.trim();
+    // Username: 3-30 chars, alphanumeric and underscores only
+    return /^[a-zA-Z0-9_]{3,30}$/.test(trimmed);
+};
+
+const validatePassword = (password) => {
+    if (typeof password !== 'string') return false;
+    // Password: at least 6 characters
+    return password.length >= 6;
+};
+
+const sanitizeString = (str) => {
+    if (typeof str !== 'string') return '';
+    return str.trim().slice(0, 1000); // Limit length and trim
+};
+
 // Authentication Middleware
 const requireAuth = (req, res, next) => {
     if (!req.session || !req.session.userId) {
@@ -146,14 +199,35 @@ app.post('/api/auth/register', (req, res) => {
     try {
         const { username, password, name, email } = req.body;
 
+        // Validate required fields
         if (!username || !password || !name) {
             return res.status(400).json({ error: 'Username, password, and name are required' });
+        }
+
+        // Validate username format
+        if (!validateUsername(username)) {
+            return res.status(400).json({ error: 'Username must be 3-30 characters, alphanumeric and underscores only' });
+        }
+
+        // Validate password strength
+        if (!validatePassword(password)) {
+            return res.status(400).json({ error: 'Password must be at least 6 characters' });
+        }
+
+        // Validate name
+        if (!validateString(name, 1, 100)) {
+            return res.status(400).json({ error: 'Name must be 1-100 characters' });
+        }
+
+        // Validate email if provided
+        if (email && !validateEmail(email)) {
+            return res.status(400).json({ error: 'Invalid email format' });
         }
 
         const users = readJSON(USERS_FILE);
 
         // Check if username exists
-        if (users.find(u => u.username === username)) {
+        if (users.find(u => u.username === username.trim())) {
             return res.status(400).json({ error: 'Username already exists' });
         }
 
@@ -162,10 +236,10 @@ app.post('/api/auth/register', (req, res) => {
 
         const newUser = {
             id: generateId('user'),
-            username,
+            username: username.trim(),
             password_hash,
-            name,
-            email: email || null,
+            name: sanitizeString(name),
+            email: email ? sanitizeString(email) : null,
             is_admin: false,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString()
@@ -174,7 +248,7 @@ app.post('/api/auth/register', (req, res) => {
         users.push(newUser);
         writeJSON(USERS_FILE, users);
 
-        logActivity(newUser.id, 'user_registered', `User ${name} registered`);
+        logActivity(newUser.id, 'user_registered', `User ${newUser.name} registered`);
 
         // Return user without password
         const { password_hash: _, ...userWithoutPassword } = newUser;
@@ -190,12 +264,22 @@ app.post('/api/auth/login', (req, res) => {
     try {
         const { username, password } = req.body;
 
+        // Validate required fields
         if (!username || !password) {
             return res.status(400).json({ error: 'Username and password are required' });
         }
 
+        // Validate input types and lengths
+        if (typeof username !== 'string' || typeof password !== 'string') {
+            return res.status(400).json({ error: 'Invalid input format' });
+        }
+
+        if (username.length > 100 || password.length > 100) {
+            return res.status(400).json({ error: 'Input too long' });
+        }
+
         const users = readJSON(USERS_FILE);
-        const user = users.find(u => u.username === username);
+        const user = users.find(u => u.username === username.trim());
 
         if (!user || !bcrypt.compareSync(password, user.password_hash)) {
             return res.status(401).json({ error: 'Invalid credentials' });
@@ -341,21 +425,32 @@ app.post('/api/projects', requireAuth, (req, res) => {
     try {
         const { name, description } = req.body;
 
+        // Validate required fields
         if (!name) {
             return res.status(400).json({ error: 'Project name is required' });
+        }
+
+        // Validate project name
+        if (!validateString(name, 1, 100)) {
+            return res.status(400).json({ error: 'Project name must be 1-100 characters' });
+        }
+
+        // Validate description if provided
+        if (description && !validateString(description, 0, 1000)) {
+            return res.status(400).json({ error: 'Description must be less than 1000 characters' });
         }
 
         const projects = readJSON(PROJECTS_FILE);
 
         // Check for duplicate name
-        if (projects.find(p => p.name === name)) {
+        if (projects.find(p => p.name.trim().toLowerCase() === name.trim().toLowerCase())) {
             return res.status(400).json({ error: 'Project name already exists' });
         }
 
         const newProject = {
             id: generateId('project'),
-            name,
-            description: description || '',
+            name: sanitizeString(name),
+            description: description ? sanitizeString(description) : '',
             owner_id: req.session.userId,
             members: [],
             created_at: new Date().toISOString(),
@@ -365,7 +460,7 @@ app.post('/api/projects', requireAuth, (req, res) => {
         projects.push(newProject);
         writeJSON(PROJECTS_FILE, projects);
 
-        logActivity(req.session.userId, 'project_created', `Project "${name}" created`, null, newProject.id);
+        logActivity(req.session.userId, 'project_created', `Project "${newProject.name}" created`, null, newProject.id);
 
         res.status(201).json(newProject);
     } catch (error) {
@@ -390,10 +485,20 @@ app.put('/api/projects/:id', requireAuth, (req, res) => {
 
         const { name, description } = req.body;
 
+        // Validate name if provided
+        if (name !== undefined && !validateString(name, 1, 100)) {
+            return res.status(400).json({ error: 'Project name must be 1-100 characters' });
+        }
+
+        // Validate description if provided
+        if (description !== undefined && description !== null && !validateString(description, 0, 1000)) {
+            return res.status(400).json({ error: 'Description must be less than 1000 characters' });
+        }
+
         projects[projectIndex] = {
             ...projects[projectIndex],
-            name: name || projects[projectIndex].name,
-            description: description !== undefined ? description : projects[projectIndex].description,
+            name: name ? sanitizeString(name) : projects[projectIndex].name,
+            description: description !== undefined ? sanitizeString(description || '') : projects[projectIndex].description,
             updated_at: new Date().toISOString()
         };
 
@@ -583,10 +688,33 @@ app.post('/api/tasks', requireAuth, (req, res) => {
     try {
         const { name, description, date, project_id, assigned_to_id, status } = req.body;
 
+        // Validate required fields
         if (!name || !description || !date || !project_id || !assigned_to_id) {
             return res.status(400).json({
                 error: 'Missing required fields: name, description, date, project_id, assigned_to_id'
             });
+        }
+
+        // Validate task name
+        if (!validateString(name, 1, 200)) {
+            return res.status(400).json({ error: 'Task name must be 1-200 characters' });
+        }
+
+        // Validate description
+        if (!validateString(description, 0, 2000)) {
+            return res.status(400).json({ error: 'Description must be less than 2000 characters' });
+        }
+
+        // Validate date format
+        const dateObj = new Date(date);
+        if (isNaN(dateObj.getTime())) {
+            return res.status(400).json({ error: 'Invalid date format' });
+        }
+
+        // Validate status
+        const validStatuses = ['pending', 'in-progress', 'completed'];
+        if (status && !validStatuses.includes(status)) {
+            return res.status(400).json({ error: 'Invalid status. Must be: pending, in-progress, or completed' });
         }
 
         // Check if user is member of the project
@@ -603,11 +731,11 @@ app.post('/api/tasks', requireAuth, (req, res) => {
 
         const newTask = {
             id: generateId('task'),
-            name,
-            description,
-            date,
-            project_id,
-            assigned_to_id,
+            name: sanitizeString(name),
+            description: sanitizeString(description),
+            date: date,
+            project_id: project_id,
+            assigned_to_id: assigned_to_id,
             created_by_id: req.session.userId,
             status: status || 'pending',
             created_at: new Date().toISOString(),
@@ -617,7 +745,7 @@ app.post('/api/tasks', requireAuth, (req, res) => {
         tasks.push(newTask);
         writeJSON(TASKS_FILE, tasks);
 
-        logActivity(req.session.userId, 'task_created', `Task "${name}" created`, newTask.id, project_id);
+        logActivity(req.session.userId, 'task_created', `Task "${newTask.name}" created`, newTask.id, project_id);
 
         res.status(201).json(newTask);
     } catch (error) {
@@ -642,6 +770,30 @@ app.put('/api/tasks/:id', requireAuth, (req, res) => {
 
         const { name, description, date, assigned_to_id, status } = req.body;
 
+        // Validate name if provided
+        if (name !== undefined && !validateString(name, 1, 200)) {
+            return res.status(400).json({ error: 'Task name must be 1-200 characters' });
+        }
+
+        // Validate description if provided
+        if (description !== undefined && !validateString(description, 0, 2000)) {
+            return res.status(400).json({ error: 'Description must be less than 2000 characters' });
+        }
+
+        // Validate date if provided
+        if (date !== undefined) {
+            const dateObj = new Date(date);
+            if (isNaN(dateObj.getTime())) {
+                return res.status(400).json({ error: 'Invalid date format' });
+            }
+        }
+
+        // Validate status if provided
+        const validStatuses = ['pending', 'in-progress', 'completed'];
+        if (status !== undefined && !validStatuses.includes(status)) {
+            return res.status(400).json({ error: 'Invalid status. Must be: pending, in-progress, or completed' });
+        }
+
         // If changing assigned user, verify they're in the project
         if (assigned_to_id && !isProjectMember(assigned_to_id, tasks[taskIndex].project_id)) {
             return res.status(400).json({ error: 'Assigned user is not a member of this project' });
@@ -651,8 +803,8 @@ app.put('/api/tasks/:id', requireAuth, (req, res) => {
 
         tasks[taskIndex] = {
             ...tasks[taskIndex],
-            name: name || tasks[taskIndex].name,
-            description: description || tasks[taskIndex].description,
+            name: name ? sanitizeString(name) : tasks[taskIndex].name,
+            description: description !== undefined ? sanitizeString(description) : tasks[taskIndex].description,
             date: date || tasks[taskIndex].date,
             assigned_to_id: assigned_to_id || tasks[taskIndex].assigned_to_id,
             status: status || tasks[taskIndex].status,
@@ -729,13 +881,17 @@ app.get('/api/activity', requireAuth, (req, res) => {
 
 // Serve frontend
 app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+    // Serve authenticated app (it will redirect to login if not authenticated)
+    res.sendFile(path.join(__dirname, 'public', 'app-auth.html'));
 });
 
 // Start server
 app.listen(PORT, () => {
     console.log(`\n🚀 Task Manager server running on http://localhost:${PORT}`);
-    console.log(`\n📝 Default login credentials:`);
+    console.log(`\n📝 Access the app:`);
+    console.log(`   Main app: http://localhost:${PORT}/`);
+    console.log(`   Login page: http://localhost:${PORT}/login.html`);
+    console.log(`\n🔑 Default credentials:`);
     console.log(`   Username: admin`);
     console.log(`   Password: admin123\n`);
 });

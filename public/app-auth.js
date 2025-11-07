@@ -22,7 +22,10 @@ const API_TASKS = '/api/tasks';
 
 // Initialize app
 document.addEventListener('DOMContentLoaded', async () => {
-    await checkAuth();
+    const isAuthenticated = await checkAuth();
+    if (!isAuthenticated) {
+        return; // Stop execution if not authenticated
+    }
     setupEventListeners();
     await loadData();
 });
@@ -36,14 +39,17 @@ async function checkAuth() {
 
         if (!response.ok) {
             window.location.href = '/login.html';
-            return;
+            return false;
         }
 
         const data = await response.json();
         currentUser = data.user;
         updateUserInfo();
+        return true;
     } catch (error) {
+        console.error('Auth check failed:', error);
         window.location.href = '/login.html';
+        return false;
     }
 }
 
@@ -465,10 +471,9 @@ function editTask(id) {
         projects.map(p => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('');
     projectSelect.value = task.project_id;
 
+    // Load project members and set assignee
     loadProjectMembers(task.project_id);
-    setTimeout(() => {
-        document.getElementById('taskAssignee').value = task.assigned_to_id;
-    }, 100);
+    document.getElementById('taskAssignee').value = task.assigned_to_id;
 
     document.getElementById('taskModalTitle').textContent = 'Edit Task';
     document.getElementById('taskSubmitBtnText').textContent = 'Update Task';
@@ -479,6 +484,14 @@ function editTask(id) {
 // Handle task submit
 async function handleTaskSubmit(e) {
     e.preventDefault();
+
+    const submitBtn = e.target.querySelector('button[type="submit"]');
+    const submitBtnText = document.getElementById('taskSubmitBtnText');
+    const originalText = submitBtnText.textContent;
+
+    // Disable form
+    submitBtn.disabled = true;
+    submitBtnText.textContent = 'Saving...';
 
     const taskId = document.getElementById('taskId').value;
     const previousTask = taskId ? tasks.find(t => t.id === taskId) : null;
@@ -523,6 +536,10 @@ async function handleTaskSubmit(e) {
         }
     } catch (error) {
         showError(error.message);
+    } finally {
+        // Re-enable form
+        submitBtn.disabled = false;
+        submitBtnText.textContent = originalText;
     }
 }
 
@@ -530,6 +547,11 @@ async function handleTaskSubmit(e) {
 async function quickCompleteTask(id, checked) {
     const task = tasks.find(t => t.id === id);
     if (!task) return;
+
+    // Prevent multiple clicks
+    const checkbox = event.target.closest('.task-checkbox');
+    if (checkbox.dataset.loading === 'true') return;
+    checkbox.dataset.loading = 'true';
 
     const newStatus = checked ? 'completed' : 'pending';
 
@@ -552,6 +574,8 @@ async function quickCompleteTask(id, checked) {
         }
     } catch (error) {
         showError('Failed to update task');
+    } finally {
+        checkbox.dataset.loading = 'false';
     }
 }
 
@@ -569,6 +593,14 @@ function closeDeleteModal() {
 async function confirmDelete() {
     if (!taskToDelete) return;
 
+    const deleteBtn = document.querySelector('#deleteModal button.danger');
+    const cancelBtn = document.querySelector('#deleteModal button:not(.danger)');
+
+    // Disable buttons
+    deleteBtn.disabled = true;
+    cancelBtn.disabled = true;
+    deleteBtn.textContent = 'Deleting...';
+
     try {
         const response = await fetch(`${API_TASKS}/${taskToDelete}`, {
             method: 'DELETE',
@@ -583,6 +615,11 @@ async function confirmDelete() {
         showSuccess('Task deleted successfully');
     } catch (error) {
         showError('Failed to delete task');
+    } finally {
+        // Re-enable buttons
+        deleteBtn.disabled = false;
+        cancelBtn.disabled = false;
+        deleteBtn.textContent = 'Delete';
     }
 }
 
@@ -605,6 +642,14 @@ function closeProjectModal() {
 // Handle project submit
 async function handleProjectSubmit(e) {
     e.preventDefault();
+
+    const submitBtn = e.target.querySelector('button[type="submit"]');
+    const submitBtnText = document.getElementById('projectSubmitBtnText');
+    const originalText = submitBtnText.textContent;
+
+    // Disable form
+    submitBtn.disabled = true;
+    submitBtnText.textContent = 'Saving...';
 
     const projectId = document.getElementById('projectId').value;
     const projectData = {
@@ -634,6 +679,10 @@ async function handleProjectSubmit(e) {
         showSuccess(projectId ? 'Project updated successfully!' : 'Project created successfully!');
     } catch (error) {
         showError(error.message);
+    } finally {
+        // Re-enable form
+        submitBtn.disabled = false;
+        submitBtnText.textContent = originalText;
     }
 }
 
@@ -694,6 +743,14 @@ async function addMember() {
     const userId = document.getElementById('newMemberSelect').value;
     if (!userId || !currentProjectForSettings) return;
 
+    const select = document.getElementById('newMemberSelect');
+    const addBtn = event.target;
+
+    // Disable controls
+    select.disabled = true;
+    addBtn.disabled = true;
+    addBtn.textContent = 'Adding...';
+
     try {
         const response = await fetch(`${API_PROJECTS}/${currentProjectForSettings}/members`, {
             method: 'POST',
@@ -714,19 +771,30 @@ async function addMember() {
         // Update dropdown
         const memberIds = [project.owner_id, ...(project.members || [])];
         const availableUsers = users.filter(u => !memberIds.includes(u.id));
-        const select = document.getElementById('newMemberSelect');
         select.innerHTML = '<option value="">Add team member...</option>' +
             availableUsers.map(u => `<option value="${u.id}">${escapeHtml(u.name)}</option>`).join('');
 
         showSuccess('Member added successfully');
     } catch (error) {
         showError(error.message);
+    } finally {
+        // Re-enable controls
+        select.disabled = false;
+        addBtn.disabled = false;
+        addBtn.textContent = 'Add';
     }
 }
 
 // Remove member
 async function removeMember(userId) {
     if (!currentProjectForSettings) return;
+
+    const removeBtn = event.target;
+    const originalText = removeBtn.textContent;
+
+    // Disable button
+    removeBtn.disabled = true;
+    removeBtn.textContent = 'Removing...';
 
     try {
         const response = await fetch(`${API_PROJECTS}/${currentProjectForSettings}/members/${userId}`, {
@@ -750,6 +818,9 @@ async function removeMember(userId) {
         showSuccess('Member removed successfully');
     } catch (error) {
         showError('Failed to remove member');
+        // Re-enable button on error
+        removeBtn.disabled = false;
+        removeBtn.textContent = originalText;
     }
 }
 
@@ -766,6 +837,13 @@ async function deleteCurrentProject() {
     if (!confirm('Are you sure you want to delete this project? All tasks will be deleted. This cannot be undone.')) {
         return;
     }
+
+    const deleteBtn = event.target;
+    const originalText = deleteBtn.textContent;
+
+    // Disable button
+    deleteBtn.disabled = true;
+    deleteBtn.textContent = 'Deleting...';
 
     try {
         const response = await fetch(`${API_PROJECTS}/${currentProjectForSettings}`, {
@@ -788,6 +866,9 @@ async function deleteCurrentProject() {
         showSuccess('Project deleted successfully');
     } catch (error) {
         showError('Failed to delete project');
+        // Re-enable button on error
+        deleteBtn.disabled = false;
+        deleteBtn.textContent = originalText;
     }
 }
 
