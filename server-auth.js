@@ -1,3 +1,5 @@
+require('dotenv').config();
+
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
@@ -107,38 +109,57 @@ const requireAuth = (req, res, next) => {
     next();
 };
 
-const requireAdmin = (req, res, next) => {
+const requireAdmin = async (req, res, next) => {
     if (!req.session || !req.session.userId) {
         return res.status(401).json({ error: 'Authentication required' });
     }
-    const users = readJSON(USERS_FILE);
-    const user = users.find(u => u.id === req.session.userId);
-    if (!user || !user.is_admin) {
-        return res.status(403).json({ error: 'Admin access required' });
+    try {
+        const user = await dataService.getUserById(req.session.userId);
+        if (!user || !user.is_admin) {
+            return res.status(403).json({ error: 'Admin access required' });
+        }
+        next();
+    } catch (error) {
+        return res.status(500).json({ error: 'Authentication check failed' });
     }
-    next();
 };
 
 // Check if user is project member or owner
-const isProjectMember = (userId, projectId) => {
-    const projects = readJSON(PROJECTS_FILE);
-    const project = projects.find(p => p.id === projectId);
-    if (!project) return false;
-    if (project.owner_id === userId) return true;
-    return project.members && project.members.includes(userId);
+const isProjectMember = async (userId, projectId) => {
+    try {
+        const project = await dataService.getProjectById(projectId);
+        if (!project) return false;
+        if (project.owner_id === userId) return true;
+
+        // In D1, members are in project_members table
+        // In JSON, members are in project.members array
+        if (Array.isArray(project.members)) {
+            return project.members.includes(userId);
+        } else {
+            const members = await dataService.getProjectMembers(projectId);
+            return members.some(m => m.id === userId || m.user_id === userId);
+        }
+    } catch (error) {
+        console.error('isProjectMember error:', error);
+        return false;
+    }
 };
 
 // Check if user is project owner
-const isProjectOwner = (userId, projectId) => {
-    const projects = readJSON(PROJECTS_FILE);
-    const project = projects.find(p => p.id === projectId);
-    return project && project.owner_id === userId;
+const isProjectOwner = async (userId, projectId) => {
+    try {
+        const project = await dataService.getProjectById(projectId);
+        return project && project.owner_id === userId;
+    } catch (error) {
+        console.error('isProjectOwner error:', error);
+        return false;
+    }
 };
 
 // ==================== AUTH ROUTES ====================
 
 // Register new user
-app.post('/api/auth/register', (req, res) => {
+app.post('/api/auth/register', async (req, res) => {
     try {
         const { username, password, name, email } = req.body;
 
@@ -167,10 +188,9 @@ app.post('/api/auth/register', (req, res) => {
             return res.status(400).json({ error: 'Invalid email format' });
         }
 
-        const users = readJSON(USERS_FILE);
-
         // Check if username exists
-        if (users.find(u => u.username === username.trim())) {
+        const existingUser = await dataService.getUserByUsername(username.trim());
+        if (existingUser) {
             return res.status(400).json({ error: 'Username already exists' });
         }
 
@@ -188,10 +208,8 @@ app.post('/api/auth/register', (req, res) => {
             updated_at: new Date().toISOString()
         };
 
-        users.push(newUser);
-        writeJSON(USERS_FILE, users);
-
-        logActivity(newUser.id, 'user_registered', `User ${newUser.name} registered`);
+        await dataService.createUser(newUser);
+        await logActivity(newUser.id, 'user_registered', `User ${newUser.name} registered`);
 
         // Return user without password
         const { password_hash: _, ...userWithoutPassword } = newUser;
@@ -203,7 +221,7 @@ app.post('/api/auth/register', (req, res) => {
 });
 
 // Login
-app.post('/api/auth/login', (req, res) => {
+app.post('/api/auth/login', async (req, res) => {
     try {
         const { username, password } = req.body;
 
@@ -221,8 +239,7 @@ app.post('/api/auth/login', (req, res) => {
             return res.status(400).json({ error: 'Input too long' });
         }
 
-        const users = readJSON(USERS_FILE);
-        const user = users.find(u => u.username === username.trim());
+        const user = await dataService.getUserByUsername(username.trim());
 
         if (!user || !bcrypt.compareSync(password, user.password_hash)) {
             return res.status(401).json({ error: 'Invalid credentials' });
@@ -256,10 +273,9 @@ app.post('/api/auth/logout', requireAuth, (req, res) => {
 });
 
 // Check session
-app.get('/api/auth/me', requireAuth, (req, res) => {
+app.get('/api/auth/me', requireAuth, async (req, res) => {
     try {
-        const users = readJSON(USERS_FILE);
-        const user = users.find(u => u.id === req.session.userId);
+        const user = await dataService.getUserById(req.session.userId);
 
         if (!user) {
             return res.status(404).json({ error: 'User not found' });
@@ -275,9 +291,9 @@ app.get('/api/auth/me', requireAuth, (req, res) => {
 // ==================== USER MANAGEMENT ROUTES ====================
 
 // Get all users (for admin and project member selection)
-app.get('/api/users', requireAuth, (req, res) => {
+app.get('/api/users', requireAuth, async (req, res) => {
     try {
-        const users = readJSON(USERS_FILE);
+        const users = await dataService.getUsers();
         const usersWithoutPasswords = users.map(({ password_hash, ...user }) => user);
         res.json(usersWithoutPasswords);
     } catch (error) {
@@ -286,10 +302,9 @@ app.get('/api/users', requireAuth, (req, res) => {
 });
 
 // Get user by ID
-app.get('/api/users/:id', requireAuth, (req, res) => {
+app.get('/api/users/:id', requireAuth, async (req, res) => {
     try {
-        const users = readJSON(USERS_FILE);
-        const user = users.find(u => u.id === req.params.id);
+        const user = await dataService.getUserById(req.params.id);
 
         if (!user) {
             return res.status(404).json({ error: 'User not found' });
@@ -303,21 +318,22 @@ app.get('/api/users/:id', requireAuth, (req, res) => {
 });
 
 // Delete user (admin only)
-app.delete('/api/users/:id', requireAdmin, (req, res) => {
+app.delete('/api/users/:id', requireAdmin, async (req, res) => {
     try {
-        const users = readJSON(USERS_FILE);
-        const userIndex = users.findIndex(u => u.id === req.params.id);
+        const user = await dataService.getUserById(req.params.id);
 
-        if (userIndex === -1) {
+        if (!user) {
             return res.status(404).json({ error: 'User not found' });
         }
 
-        const deletedUser = users.splice(userIndex, 1)[0];
-        writeJSON(USERS_FILE, users);
+        // Note: Delete user functionality needs to be added to dataService
+        // For now, just return an error
+        res.status(501).json({ error: 'User deletion not yet implemented for data service' });
 
-        logActivity(req.session.userId, 'user_deleted', `User ${deletedUser.name} deleted`);
-
-        res.json({ message: 'User deleted successfully' });
+        // TODO: Implement deleteUser in dataService
+        // await dataService.deleteUser(req.params.id);
+        // await logActivity(req.session.userId, 'user_deleted', `User ${user.name} deleted`);
+        // res.json({ message: 'User deleted successfully' });
     } catch (error) {
         res.status(500).json({ error: 'Failed to delete user' });
     }
@@ -326,15 +342,18 @@ app.delete('/api/users/:id', requireAdmin, (req, res) => {
 // ==================== PROJECT ROUTES ====================
 
 // Get all projects for current user
-app.get('/api/projects', requireAuth, (req, res) => {
+app.get('/api/projects', requireAuth, async (req, res) => {
     try {
-        const projects = readJSON(PROJECTS_FILE);
+        const projects = await dataService.getProjects();
         const userId = req.session.userId;
 
         // Return projects where user is owner or member
-        const userProjects = projects.filter(p =>
-            p.owner_id === userId || (p.members && p.members.includes(userId))
-        );
+        const userProjects = [];
+        for (const p of projects) {
+            if (p.owner_id === userId || await isProjectMember(userId, p.id)) {
+                userProjects.push(p);
+            }
+        }
 
         res.json(userProjects);
     } catch (error) {
@@ -343,17 +362,16 @@ app.get('/api/projects', requireAuth, (req, res) => {
 });
 
 // Get single project
-app.get('/api/projects/:id', requireAuth, (req, res) => {
+app.get('/api/projects/:id', requireAuth, async (req, res) => {
     try {
-        const projects = readJSON(PROJECTS_FILE);
-        const project = projects.find(p => p.id === req.params.id);
+        const project = await dataService.getProjectById(req.params.id);
 
         if (!project) {
             return res.status(404).json({ error: 'Project not found' });
         }
 
         // Check if user has access
-        if (!isProjectMember(req.session.userId, project.id)) {
+        if (!(await isProjectMember(req.session.userId, project.id))) {
             return res.status(403).json({ error: 'Access denied' });
         }
 
@@ -364,7 +382,7 @@ app.get('/api/projects/:id', requireAuth, (req, res) => {
 });
 
 // Create new project
-app.post('/api/projects', requireAuth, (req, res) => {
+app.post('/api/projects', requireAuth, async (req, res) => {
     try {
         const { name, description } = req.body;
 
@@ -383,7 +401,7 @@ app.post('/api/projects', requireAuth, (req, res) => {
             return res.status(400).json({ error: 'Description must be less than 1000 characters' });
         }
 
-        const projects = readJSON(PROJECTS_FILE);
+        const projects = await dataService.getProjects();
 
         // Check for duplicate name
         if (projects.find(p => p.name.trim().toLowerCase() === name.trim().toLowerCase())) {
@@ -400,10 +418,9 @@ app.post('/api/projects', requireAuth, (req, res) => {
             updated_at: new Date().toISOString()
         };
 
-        projects.push(newProject);
-        writeJSON(PROJECTS_FILE, projects);
+        await dataService.createProject(newProject);
 
-        logActivity(req.session.userId, 'project_created', `Project "${newProject.name}" created`, null, newProject.id);
+        await logActivity(req.session.userId, 'project_created', `Project "${newProject.name}" created`, null, newProject.id);
 
         res.status(201).json(newProject);
     } catch (error) {
@@ -412,17 +429,16 @@ app.post('/api/projects', requireAuth, (req, res) => {
 });
 
 // Update project
-app.put('/api/projects/:id', requireAuth, (req, res) => {
+app.put('/api/projects/:id', requireAuth, async (req, res) => {
     try {
-        const projects = readJSON(PROJECTS_FILE);
-        const projectIndex = projects.findIndex(p => p.id === req.params.id);
+        const project = await dataService.getProjectById(req.params.id);
 
-        if (projectIndex === -1) {
+        if (!project) {
             return res.status(404).json({ error: 'Project not found' });
         }
 
         // Check if user is owner
-        if (!isProjectOwner(req.session.userId, req.params.id)) {
+        if (!(await isProjectOwner(req.session.userId, req.params.id))) {
             return res.status(403).json({ error: 'Only project owner can update project' });
         }
 
@@ -438,56 +454,47 @@ app.put('/api/projects/:id', requireAuth, (req, res) => {
             return res.status(400).json({ error: 'Description must be less than 1000 characters' });
         }
 
-        projects[projectIndex] = {
-            ...projects[projectIndex],
-            name: name ? sanitizeString(name) : projects[projectIndex].name,
-            description: description !== undefined ? sanitizeString(description || '') : projects[projectIndex].description,
-            updated_at: new Date().toISOString()
+        const updates = {
+            name: name ? sanitizeString(name) : project.name,
+            description: description !== undefined ? sanitizeString(description || '') : project.description
         };
 
-        writeJSON(PROJECTS_FILE, projects);
+        const updatedProject = await dataService.updateProject(req.params.id, updates);
 
-        logActivity(req.session.userId, 'project_updated', `Project "${projects[projectIndex].name}" updated`, null, req.params.id);
+        await logActivity(req.session.userId, 'project_updated', `Project "${updatedProject.name}" updated`, null, req.params.id);
 
-        res.json(projects[projectIndex]);
+        res.json(updatedProject);
     } catch (error) {
         res.status(500).json({ error: 'Failed to update project' });
     }
 });
 
 // Delete project
-app.delete('/api/projects/:id', requireAuth, (req, res) => {
+app.delete('/api/projects/:id', requireAuth, async (req, res) => {
     try {
-        const projects = readJSON(PROJECTS_FILE);
-        const projectIndex = projects.findIndex(p => p.id === req.params.id);
+        const project = await dataService.getProjectById(req.params.id);
 
-        if (projectIndex === -1) {
+        if (!project) {
             return res.status(404).json({ error: 'Project not found' });
         }
 
         // Check if user is owner
-        if (!isProjectOwner(req.session.userId, req.params.id)) {
+        if (!(await isProjectOwner(req.session.userId, req.params.id))) {
             return res.status(403).json({ error: 'Only project owner can delete project' });
         }
 
-        const deletedProject = projects.splice(projectIndex, 1)[0];
-        writeJSON(PROJECTS_FILE, projects);
+        await dataService.deleteProject(req.params.id);
 
-        // Delete all tasks in this project
-        const tasks = readJSON(TASKS_FILE);
-        const updatedTasks = tasks.filter(t => t.project_id !== req.params.id);
-        writeJSON(TASKS_FILE, updatedTasks);
+        await logActivity(req.session.userId, 'project_deleted', `Project "${project.name}" deleted`, null, req.params.id);
 
-        logActivity(req.session.userId, 'project_deleted', `Project "${deletedProject.name}" deleted`, null, req.params.id);
-
-        res.json({ message: 'Project deleted successfully', project: deletedProject });
+        res.json({ message: 'Project deleted successfully', project: project });
     } catch (error) {
         res.status(500).json({ error: 'Failed to delete project' });
     }
 });
 
 // Add member to project
-app.post('/api/projects/:id/members', requireAuth, (req, res) => {
+app.post('/api/projects/:id/members', requireAuth, async (req, res) => {
     try {
         const { user_id } = req.body;
 
@@ -495,88 +502,71 @@ app.post('/api/projects/:id/members', requireAuth, (req, res) => {
             return res.status(400).json({ error: 'User ID is required' });
         }
 
-        const projects = readJSON(PROJECTS_FILE);
-        const projectIndex = projects.findIndex(p => p.id === req.params.id);
+        const project = await dataService.getProjectById(req.params.id);
 
-        if (projectIndex === -1) {
+        if (!project) {
             return res.status(404).json({ error: 'Project not found' });
         }
 
         // Check if current user is owner
-        if (!isProjectOwner(req.session.userId, req.params.id)) {
+        if (!(await isProjectOwner(req.session.userId, req.params.id))) {
             return res.status(403).json({ error: 'Only project owner can add members' });
         }
 
         // Check if user exists
-        const users = readJSON(USERS_FILE);
-        const userToAdd = users.find(u => u.id === user_id);
+        const userToAdd = await dataService.getUserById(user_id);
         if (!userToAdd) {
             return res.status(404).json({ error: 'User not found' });
         }
 
         // Check if already owner
-        if (projects[projectIndex].owner_id === user_id) {
+        if (project.owner_id === user_id) {
             return res.status(400).json({ error: 'User is already the project owner' });
         }
 
-        // Initialize members array if it doesn't exist
-        if (!projects[projectIndex].members) {
-            projects[projectIndex].members = [];
-        }
-
         // Check if already member
-        if (projects[projectIndex].members.includes(user_id)) {
+        if (await isProjectMember(user_id, req.params.id)) {
             return res.status(400).json({ error: 'User is already a member' });
         }
 
-        projects[projectIndex].members.push(user_id);
-        projects[projectIndex].updated_at = new Date().toISOString();
+        await dataService.addProjectMember(req.params.id, user_id);
 
-        writeJSON(PROJECTS_FILE, projects);
+        await logActivity(req.session.userId, 'member_added', `${userToAdd.name} added to project "${project.name}"`, null, req.params.id);
 
-        logActivity(req.session.userId, 'member_added', `${userToAdd.name} added to project "${projects[projectIndex].name}"`, null, req.params.id);
-
-        res.json(projects[projectIndex]);
+        const updatedProject = await dataService.getProjectById(req.params.id);
+        res.json(updatedProject);
     } catch (error) {
         res.status(500).json({ error: 'Failed to add member' });
     }
 });
 
 // Remove member from project
-app.delete('/api/projects/:id/members/:userId', requireAuth, (req, res) => {
+app.delete('/api/projects/:id/members/:userId', requireAuth, async (req, res) => {
     try {
-        const projects = readJSON(PROJECTS_FILE);
-        const projectIndex = projects.findIndex(p => p.id === req.params.id);
+        const project = await dataService.getProjectById(req.params.id);
 
-        if (projectIndex === -1) {
+        if (!project) {
             return res.status(404).json({ error: 'Project not found' });
         }
 
         // Check if current user is owner
-        if (!isProjectOwner(req.session.userId, req.params.id)) {
+        if (!(await isProjectOwner(req.session.userId, req.params.id))) {
             return res.status(403).json({ error: 'Only project owner can remove members' });
         }
 
-        if (!projects[projectIndex].members) {
+        // Check if user is actually a member
+        if (!(await isProjectMember(req.params.userId, req.params.id))) {
             return res.status(404).json({ error: 'Member not found' });
         }
 
-        const memberIndex = projects[projectIndex].members.indexOf(req.params.userId);
-        if (memberIndex === -1) {
-            return res.status(404).json({ error: 'Member not found' });
-        }
+        await dataService.removeProjectMember(req.params.id, req.params.userId);
 
-        projects[projectIndex].members.splice(memberIndex, 1);
-        projects[projectIndex].updated_at = new Date().toISOString();
+        const removedUser = await dataService.getUserById(req.params.userId);
 
-        writeJSON(PROJECTS_FILE, projects);
+        await logActivity(req.session.userId, 'member_removed', `${removedUser?.name || 'User'} removed from project "${project.name}"`, null, req.params.id);
 
-        const users = readJSON(USERS_FILE);
-        const removedUser = users.find(u => u.id === req.params.userId);
-
-        logActivity(req.session.userId, 'member_removed', `${removedUser?.name || 'User'} removed from project "${projects[projectIndex].name}"`, null, req.params.id);
-
-        res.json(projects[projectIndex]);
+        const updatedProject = await dataService.getProjectById(req.params.id);
+        res.json(updatedProject);
     } catch (error) {
         res.status(500).json({ error: 'Failed to remove member' });
     }
@@ -585,16 +575,19 @@ app.delete('/api/projects/:id/members/:userId', requireAuth, (req, res) => {
 // ==================== TASK ROUTES ====================
 
 // Get all tasks (filtered by user's projects)
-app.get('/api/tasks', requireAuth, (req, res) => {
+app.get('/api/tasks', requireAuth, async (req, res) => {
     try {
-        const tasks = readJSON(TASKS_FILE);
-        const projects = readJSON(PROJECTS_FILE);
+        const tasks = await dataService.getTasks();
+        const projects = await dataService.getProjects();
         const userId = req.session.userId;
 
         // Get user's project IDs
-        const userProjectIds = projects
-            .filter(p => p.owner_id === userId || (p.members && p.members.includes(userId)))
-            .map(p => p.id);
+        const userProjectIds = [];
+        for (const p of projects) {
+            if (p.owner_id === userId || await isProjectMember(userId, p.id)) {
+                userProjectIds.push(p.id);
+            }
+        }
 
         // Filter tasks by user's projects
         const userTasks = tasks.filter(t => userProjectIds.includes(t.project_id));
@@ -606,17 +599,16 @@ app.get('/api/tasks', requireAuth, (req, res) => {
 });
 
 // Get single task
-app.get('/api/tasks/:id', requireAuth, (req, res) => {
+app.get('/api/tasks/:id', requireAuth, async (req, res) => {
     try {
-        const tasks = readJSON(TASKS_FILE);
-        const task = tasks.find(t => t.id === req.params.id);
+        const task = await dataService.getTaskById(req.params.id);
 
         if (!task) {
             return res.status(404).json({ error: 'Task not found' });
         }
 
         // Check if user has access to the project
-        if (!isProjectMember(req.session.userId, task.project_id)) {
+        if (!(await isProjectMember(req.session.userId, task.project_id))) {
             return res.status(403).json({ error: 'Access denied' });
         }
 
@@ -627,7 +619,7 @@ app.get('/api/tasks/:id', requireAuth, (req, res) => {
 });
 
 // Create new task
-app.post('/api/tasks', requireAuth, (req, res) => {
+app.post('/api/tasks', requireAuth, async (req, res) => {
     try {
         const { name, description, date, project_id, assigned_to_id, status } = req.body;
 
@@ -661,16 +653,14 @@ app.post('/api/tasks', requireAuth, (req, res) => {
         }
 
         // Check if user is member of the project
-        if (!isProjectMember(req.session.userId, project_id)) {
+        if (!(await isProjectMember(req.session.userId, project_id))) {
             return res.status(403).json({ error: 'You are not a member of this project' });
         }
 
         // Check if assigned user is member of the project
-        if (!isProjectMember(assigned_to_id, project_id)) {
+        if (!(await isProjectMember(assigned_to_id, project_id))) {
             return res.status(400).json({ error: 'Assigned user is not a member of this project' });
         }
-
-        const tasks = readJSON(TASKS_FILE);
 
         const newTask = {
             id: generateId('task'),
@@ -685,10 +675,9 @@ app.post('/api/tasks', requireAuth, (req, res) => {
             updated_at: new Date().toISOString()
         };
 
-        tasks.push(newTask);
-        writeJSON(TASKS_FILE, tasks);
+        await dataService.createTask(newTask);
 
-        logActivity(req.session.userId, 'task_created', `Task "${newTask.name}" created`, newTask.id, project_id);
+        await logActivity(req.session.userId, 'task_created', `Task "${newTask.name}" created`, newTask.id, project_id);
 
         res.status(201).json(newTask);
     } catch (error) {
@@ -697,17 +686,16 @@ app.post('/api/tasks', requireAuth, (req, res) => {
 });
 
 // Update task
-app.put('/api/tasks/:id', requireAuth, (req, res) => {
+app.put('/api/tasks/:id', requireAuth, async (req, res) => {
     try {
-        const tasks = readJSON(TASKS_FILE);
-        const taskIndex = tasks.findIndex(t => t.id === req.params.id);
+        const task = await dataService.getTaskById(req.params.id);
 
-        if (taskIndex === -1) {
+        if (!task) {
             return res.status(404).json({ error: 'Task not found' });
         }
 
         // Check if user is member of the project
-        if (!isProjectMember(req.session.userId, tasks[taskIndex].project_id)) {
+        if (!(await isProjectMember(req.session.userId, task.project_id))) {
             return res.status(403).json({ error: 'Access denied' });
         }
 
@@ -738,31 +726,29 @@ app.put('/api/tasks/:id', requireAuth, (req, res) => {
         }
 
         // If changing assigned user, verify they're in the project
-        if (assigned_to_id && !isProjectMember(assigned_to_id, tasks[taskIndex].project_id)) {
+        if (assigned_to_id && !(await isProjectMember(assigned_to_id, task.project_id))) {
             return res.status(400).json({ error: 'Assigned user is not a member of this project' });
         }
 
-        const oldStatus = tasks[taskIndex].status;
+        const oldStatus = task.status;
 
-        tasks[taskIndex] = {
-            ...tasks[taskIndex],
-            name: name ? sanitizeString(name) : tasks[taskIndex].name,
-            description: description !== undefined ? sanitizeString(description) : tasks[taskIndex].description,
-            date: date || tasks[taskIndex].date,
-            assigned_to_id: assigned_to_id || tasks[taskIndex].assigned_to_id,
-            status: status || tasks[taskIndex].status,
-            updated_at: new Date().toISOString()
+        const updates = {
+            name: name ? sanitizeString(name) : task.name,
+            description: description !== undefined ? sanitizeString(description) : task.description,
+            date: date || task.date,
+            assigned_to_id: assigned_to_id || task.assigned_to_id,
+            status: status || task.status
         };
 
-        writeJSON(TASKS_FILE, tasks);
+        const updatedTask = await dataService.updateTask(req.params.id, updates);
 
-        logActivity(req.session.userId, 'task_updated', `Task "${tasks[taskIndex].name}" updated`, req.params.id, tasks[taskIndex].project_id);
+        await logActivity(req.session.userId, 'task_updated', `Task "${updatedTask.name}" updated`, req.params.id, updatedTask.project_id);
 
         // Return status change info for celebration
         res.json({
-            ...tasks[taskIndex],
-            _statusChanged: oldStatus !== tasks[taskIndex].status,
-            _wasCompleted: oldStatus !== 'completed' && tasks[taskIndex].status === 'completed'
+            ...updatedTask,
+            _statusChanged: oldStatus !== updatedTask.status,
+            _wasCompleted: oldStatus !== 'completed' && updatedTask.status === 'completed'
         });
     } catch (error) {
         res.status(500).json({ error: 'Failed to update task' });
@@ -770,26 +756,24 @@ app.put('/api/tasks/:id', requireAuth, (req, res) => {
 });
 
 // Delete task
-app.delete('/api/tasks/:id', requireAuth, (req, res) => {
+app.delete('/api/tasks/:id', requireAuth, async (req, res) => {
     try {
-        const tasks = readJSON(TASKS_FILE);
-        const taskIndex = tasks.findIndex(t => t.id === req.params.id);
+        const task = await dataService.getTaskById(req.params.id);
 
-        if (taskIndex === -1) {
+        if (!task) {
             return res.status(404).json({ error: 'Task not found' });
         }
 
         // Check if user is member of the project
-        if (!isProjectMember(req.session.userId, tasks[taskIndex].project_id)) {
+        if (!(await isProjectMember(req.session.userId, task.project_id))) {
             return res.status(403).json({ error: 'Access denied' });
         }
 
-        const deletedTask = tasks.splice(taskIndex, 1)[0];
-        writeJSON(TASKS_FILE, tasks);
+        await dataService.deleteTask(req.params.id);
 
-        logActivity(req.session.userId, 'task_deleted', `Task "${deletedTask.name}" deleted`, req.params.id, deletedTask.project_id);
+        await logActivity(req.session.userId, 'task_deleted', `Task "${task.name}" deleted`, req.params.id, task.project_id);
 
-        res.json({ message: 'Task deleted successfully', task: deletedTask });
+        res.json({ message: 'Task deleted successfully', task: task });
     } catch (error) {
         res.status(500).json({ error: 'Failed to delete task' });
     }
@@ -798,16 +782,19 @@ app.delete('/api/tasks/:id', requireAuth, (req, res) => {
 // ==================== ACTIVITY LOG ROUTES ====================
 
 // Get activity log
-app.get('/api/activity', requireAuth, (req, res) => {
+app.get('/api/activity', requireAuth, async (req, res) => {
     try {
-        const activities = readJSON(ACTIVITY_FILE);
-        const projects = readJSON(PROJECTS_FILE);
+        const activities = await dataService.getActivityLog();
+        const projects = await dataService.getProjects();
         const userId = req.session.userId;
 
         // Get user's project IDs
-        const userProjectIds = projects
-            .filter(p => p.owner_id === userId || (p.members && p.members.includes(userId)))
-            .map(p => p.id);
+        const userProjectIds = [];
+        for (const p of projects) {
+            if (p.owner_id === userId || await isProjectMember(userId, p.id)) {
+                userProjectIds.push(p.id);
+            }
+        }
 
         // Filter activities by user's projects or own activities
         const userActivities = activities.filter(a =>
@@ -815,8 +802,7 @@ app.get('/api/activity', requireAuth, (req, res) => {
             (a.project_id && userProjectIds.includes(a.project_id))
         );
 
-        // Return last 50 activities
-        res.json(userActivities.slice(-50).reverse());
+        res.json(userActivities);
     } catch (error) {
         res.status(500).json({ error: 'Failed to fetch activity' });
     }
@@ -841,14 +827,17 @@ app.post('/api/claude/ask', requireAuth, async (req, res) => {
         const userId = req.session.userId;
 
         // Get user's data
-        const tasks = readJSON(TASKS_FILE);
-        const projects = readJSON(PROJECTS_FILE);
-        const users = readJSON(USERS_FILE);
+        const tasks = await dataService.getTasks();
+        const projects = await dataService.getProjects();
+        const users = await dataService.getUsers();
 
         // Filter to user's accessible data
-        const userProjectIds = projects
-            .filter(p => p.owner_id === userId || (p.members && p.members.includes(userId)))
-            .map(p => p.id);
+        const userProjectIds = [];
+        for (const p of projects) {
+            if (p.owner_id === userId || await isProjectMember(userId, p.id)) {
+                userProjectIds.push(p.id);
+            }
+        }
 
         const userTasks = tasks.filter(t => userProjectIds.includes(t.project_id));
         const userProjects = projects.filter(p => userProjectIds.includes(p.id));
@@ -875,13 +864,16 @@ app.get('/api/claude/summary', requireAuth, async (req, res) => {
     try {
         const userId = req.session.userId;
 
-        const tasks = readJSON(TASKS_FILE);
-        const projects = readJSON(PROJECTS_FILE);
-        const users = readJSON(USERS_FILE);
+        const tasks = await dataService.getTasks();
+        const projects = await dataService.getProjects();
+        const users = await dataService.getUsers();
 
-        const userProjectIds = projects
-            .filter(p => p.owner_id === userId || (p.members && p.members.includes(userId)))
-            .map(p => p.id);
+        const userProjectIds = [];
+        for (const p of projects) {
+            if (p.owner_id === userId || await isProjectMember(userId, p.id)) {
+                userProjectIds.push(p.id);
+            }
+        }
 
         const userTasks = tasks.filter(t => userProjectIds.includes(t.project_id));
         const userProjects = projects.filter(p => userProjectIds.includes(p.id));
@@ -907,13 +899,16 @@ app.get('/api/claude/priorities', requireAuth, async (req, res) => {
     try {
         const userId = req.session.userId;
 
-        const tasks = readJSON(TASKS_FILE);
-        const projects = readJSON(PROJECTS_FILE);
-        const users = readJSON(USERS_FILE);
+        const tasks = await dataService.getTasks();
+        const projects = await dataService.getProjects();
+        const users = await dataService.getUsers();
 
-        const userProjectIds = projects
-            .filter(p => p.owner_id === userId || (p.members && p.members.includes(userId)))
-            .map(p => p.id);
+        const userProjectIds = [];
+        for (const p of projects) {
+            if (p.owner_id === userId || await isProjectMember(userId, p.id)) {
+                userProjectIds.push(p.id);
+            }
+        }
 
         const userTasks = tasks.filter(t => userProjectIds.includes(t.project_id));
         const userProjects = projects.filter(p => userProjectIds.includes(p.id));
@@ -945,16 +940,21 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'app-auth.html'));
 });
 
-// Start Claude service
-claudeService.start();
+// Start Claude service (only if API key is configured)
+if (process.env.ANTHROPIC_API_KEY) {
+    claudeService.start();
 
-claudeService.on('ready', () => {
-    console.log('🤖 Claude AI assistant is ready to help with your tasks!\n');
-});
+    claudeService.on('ready', () => {
+        console.log('🤖 Claude AI assistant is ready to help with your tasks!\n');
+    });
 
-claudeService.on('error', (error) => {
-    console.error('❌ Claude service error:', error);
-});
+    claudeService.on('error', (error) => {
+        console.error('❌ Claude service error:', error);
+    });
+} else {
+    console.log('⚠️  Claude AI not configured. Claude features will be disabled.');
+    console.log('   Add ANTHROPIC_API_KEY to .env to enable AI features.\n');
+}
 
 // Start server
 app.listen(PORT, () => {
@@ -974,12 +974,16 @@ app.listen(PORT, () => {
 // Graceful shutdown
 process.on('SIGINT', () => {
     console.log('\n\n👋 Shutting down gracefully...');
-    claudeService.stop();
+    if (process.env.ANTHROPIC_API_KEY) {
+        claudeService.stop();
+    }
     process.exit(0);
 });
 
 process.on('SIGTERM', () => {
     console.log('\n\n👋 Shutting down gracefully...');
-    claudeService.stop();
+    if (process.env.ANTHROPIC_API_KEY) {
+        claudeService.stop();
+    }
     process.exit(0);
 });
