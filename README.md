@@ -1,6 +1,27 @@
 # Team Task Manager
 
-A full-stack task management application with two versions: a simple single-user version and a complete multi-user version with authentication and project management.
+> **🚀 TURNKEY READY**: Clone, run `npm run setup`, answer prompts, done!
+
+A production-ready task management application with Asana-like features, AI-powered insights, and Discord integration.
+
+## ⚡ Quick Start (3 Steps)
+
+```bash
+# 1. Clone and enter directory
+git clone <repo-url> && cd test-web
+
+# 2. Interactive setup (installs deps, configures everything)
+npm run setup
+
+# 3. Start!
+npm start
+```
+
+**That's it!** Open http://localhost:3000 and login with `admin`/`admin123`
+
+📖 **Want details?** See **[QUICKSTART.md](QUICKSTART.md)** for the complete 5-minute guide.
+
+---
 
 ## 🎯 Features
 

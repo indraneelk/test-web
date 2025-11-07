@@ -2,11 +2,14 @@
   "name": "team-task-manager",
   "version": "2.0.0",
   "description": "A full-stack task manager application with authentication and project management",
-  "main": "server.js",
+  "main": "server-auth.js",
   "scripts": {
-    "start": "node server-auth.js",
-    "dev": "node server-auth.js",
-    "discord": "node discord-bot.js"
+    "setup": "node setup.js",
+    "start": "node start.js",
+    "dev": "node start.js",
+    "server": "node server-auth.js",
+    "discord": "node discord-bot.js",
+    "dev-all": "npm run server & npm run discord"
   },
   "keywords": ["task-manager", "asana", "project-management", "collaboration"],
   "author": "",
@@ -19,6 +22,7 @@
     "cookie-parser": "^1.4.6",
     "@anthropic-ai/sdk": "^0.30.0",
     "discord.js": "^14.14.1",
-    "axios": "^1.6.7"
+    "axios": "^1.6.7",
+    "dotenv": "^16.4.1"
   }
 }
