@@ -5,6 +5,7 @@ const fs = require('fs');
 const bcrypt = require('bcryptjs');
 const session = require('express-session');
 const cookieParser = require('cookie-parser');
+const claudeService = require('./claude-service');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -879,10 +880,138 @@ app.get('/api/activity', requireAuth, (req, res) => {
     }
 });
 
+// ==================== CLAUDE AI ROUTES ====================
+
+// Ask Claude a question about tasks
+app.post('/api/claude/ask', requireAuth, async (req, res) => {
+    try {
+        const { question } = req.body;
+
+        if (!question) {
+            return res.status(400).json({ error: 'Question is required' });
+        }
+
+        // Validate question length
+        if (!validateString(question, 1, 500)) {
+            return res.status(400).json({ error: 'Question must be 1-500 characters' });
+        }
+
+        const userId = req.session.userId;
+
+        // Get user's data
+        const tasks = readJSON(TASKS_FILE);
+        const projects = readJSON(PROJECTS_FILE);
+        const users = readJSON(USERS_FILE);
+
+        // Filter to user's accessible data
+        const userProjectIds = projects
+            .filter(p => p.owner_id === userId || (p.members && p.members.includes(userId)))
+            .map(p => p.id);
+
+        const userTasks = tasks.filter(t => userProjectIds.includes(t.project_id));
+        const userProjects = projects.filter(p => userProjectIds.includes(p.id));
+
+        // Query Claude
+        const response = await claudeService.ask(question, userTasks, userProjects, users);
+
+        res.json({
+            question: question,
+            answer: response,
+            timestamp: new Date().toISOString()
+        });
+    } catch (error) {
+        console.error('Claude query error:', error);
+        res.status(500).json({
+            error: 'Failed to get response from Claude',
+            details: error.message
+        });
+    }
+});
+
+// Get task summary from Claude
+app.get('/api/claude/summary', requireAuth, async (req, res) => {
+    try {
+        const userId = req.session.userId;
+
+        const tasks = readJSON(TASKS_FILE);
+        const projects = readJSON(PROJECTS_FILE);
+        const users = readJSON(USERS_FILE);
+
+        const userProjectIds = projects
+            .filter(p => p.owner_id === userId || (p.members && p.members.includes(userId)))
+            .map(p => p.id);
+
+        const userTasks = tasks.filter(t => userProjectIds.includes(t.project_id));
+        const userProjects = projects.filter(p => userProjectIds.includes(p.id));
+
+        const summary = await claudeService.getSummary(userTasks, userProjects, users);
+
+        res.json({
+            summary: summary,
+            taskCount: userTasks.length,
+            timestamp: new Date().toISOString()
+        });
+    } catch (error) {
+        console.error('Claude summary error:', error);
+        res.status(500).json({
+            error: 'Failed to get summary from Claude',
+            details: error.message
+        });
+    }
+});
+
+// Get task priorities from Claude
+app.get('/api/claude/priorities', requireAuth, async (req, res) => {
+    try {
+        const userId = req.session.userId;
+
+        const tasks = readJSON(TASKS_FILE);
+        const projects = readJSON(PROJECTS_FILE);
+        const users = readJSON(USERS_FILE);
+
+        const userProjectIds = projects
+            .filter(p => p.owner_id === userId || (p.members && p.members.includes(userId)))
+            .map(p => p.id);
+
+        const userTasks = tasks.filter(t => userProjectIds.includes(t.project_id));
+        const userProjects = projects.filter(p => userProjectIds.includes(p.id));
+
+        const priorities = await claudeService.getPriorities(userTasks, userProjects, users);
+
+        res.json({
+            priorities: priorities,
+            timestamp: new Date().toISOString()
+        });
+    } catch (error) {
+        console.error('Claude priorities error:', error);
+        res.status(500).json({
+            error: 'Failed to get priorities from Claude',
+            details: error.message
+        });
+    }
+});
+
+// Check Claude service status
+app.get('/api/claude/status', requireAuth, (req, res) => {
+    const stats = claudeService.getStats();
+    res.json(stats);
+});
+
 // Serve frontend
 app.get('/', (req, res) => {
     // Serve authenticated app (it will redirect to login if not authenticated)
     res.sendFile(path.join(__dirname, 'public', 'app-auth.html'));
+});
+
+// Start Claude service
+claudeService.start();
+
+claudeService.on('ready', () => {
+    console.log('🤖 Claude AI assistant is ready to help with your tasks!\n');
+});
+
+claudeService.on('error', (error) => {
+    console.error('❌ Claude service error:', error);
 });
 
 // Start server
@@ -893,5 +1022,22 @@ app.listen(PORT, () => {
     console.log(`   Login page: http://localhost:${PORT}/login.html`);
     console.log(`\n🔑 Default credentials:`);
     console.log(`   Username: admin`);
-    console.log(`   Password: admin123\n`);
+    console.log(`   Password: admin123`);
+    console.log(`\n🤖 Claude AI endpoints:`);
+    console.log(`   POST /api/claude/ask - Ask Claude anything`);
+    console.log(`   GET  /api/claude/summary - Get task summary`);
+    console.log(`   GET  /api/claude/priorities - Get priority suggestions\n`);
+});
+
+// Graceful shutdown
+process.on('SIGINT', () => {
+    console.log('\n\n👋 Shutting down gracefully...');
+    claudeService.stop();
+    process.exit(0);
+});
+
+process.on('SIGTERM', () => {
+    console.log('\n\n👋 Shutting down gracefully...');
+    claudeService.stop();
+    process.exit(0);
 });
