@@ -395,7 +395,7 @@ function createTaskCard(task) {
     }
 
     return `
-        <div class="task-card-compact ${task.status}" onclick="viewTaskDetails('${task.id}')">
+        <div class="task-card-compact ${task.status}" onclick="viewTaskDetails('${task.id}')" style="border-left-color: ${projectColor};">
             ${showPriorityTriangle ? `<div class="priority-triangle" style="border-color: transparent ${priorityColor} transparent transparent;" title="Priority: ${priority}"></div>` : ''}
             <div class="task-card-main">
                 <button class="task-checkbox ${isCompleted ? 'checked' : ''}"
