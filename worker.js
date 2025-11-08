@@ -305,7 +305,7 @@ async function handleGetMe(request, env) {
     }
 
     const { password_hash, ...userWithoutPassword } = user;
-    return jsonResponse(userWithoutPassword);
+    return jsonResponse({ user: userWithoutPassword });
 }
 
 async function handleUpdateMe(request, env) {
@@ -316,7 +316,7 @@ async function handleUpdateMe(request, env) {
 
     try {
         const body = await request.json();
-        const { name, initials } = body;
+        const { name, initials, username, color } = body;
 
         const updates = [];
         const values = [];
@@ -328,6 +328,19 @@ async function handleUpdateMe(request, env) {
         if (initials) {
             updates.push('initials = ?');
             values.push(initials.trim().substring(0, 2).toUpperCase());
+        }
+        if (typeof username === 'string' && username.trim().length > 0) {
+            // Ensure username is unique
+            const existing = await env.DB.prepare('SELECT id FROM users WHERE username = ? AND id != ?').bind(username.trim(), user.id).first();
+            if (existing) {
+                return errorResponse('Username is already taken', 400);
+            }
+            updates.push('username = ?');
+            values.push(username.trim());
+        }
+        if (typeof color === 'string' && color.trim().length > 0) {
+            updates.push('color = ?');
+            values.push(color.trim());
         }
 
         if (updates.length === 0) {
@@ -347,7 +360,7 @@ async function handleUpdateMe(request, env) {
         const updatedUser = await getUserById(env.DB, user.id);
         const { password_hash, ...userWithoutPassword } = updatedUser;
 
-        return jsonResponse(userWithoutPassword);
+        return jsonResponse({ user: userWithoutPassword });
     } catch (error) {
         console.error('Update user error:', error);
         return errorResponse('Failed to update user', 500);

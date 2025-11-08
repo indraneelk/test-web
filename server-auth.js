@@ -619,7 +619,7 @@ app.get('/api/users/:id', requireAuth, async (req, res) => {
 // Note: Password changes must be done through Supabase, not this endpoint
 app.put('/api/auth/me', requireAuth, async (req, res) => {
     try {
-        const { name, email, initials, username, password } = req.body || {};
+        const { name, email, initials, username, color } = req.body || {};
 
         // Validate fields if provided
         if (name !== undefined && !validateString(name, 1, 100)) {
@@ -644,26 +644,18 @@ app.put('/api/auth/me', requireAuth, async (req, res) => {
                 return res.status(400).json({ error: 'Username already taken' });
             }
         }
-        if (password !== undefined && password.trim() !== '') {
-            if (!validateString(password, 6, 100)) {
-                return res.status(400).json({ error: 'Password must be at least 6 characters' });
-            }
-        }
 
         const user = await dataService.getUserById(req.session.userId);
         if (!user) return res.status(404).json({ error: 'User not found' });
 
+        // Update local user profile (password is handled client-side via Supabase)
         const updates = {
             name: name !== undefined ? sanitizeString(name) : user.name,
             email: email !== undefined ? sanitizeString(email) : user.email,
             initials: initials !== undefined ? sanitizeString(initials || '') : (user.initials || null),
-            username: username !== undefined ? sanitizeString(username) : user.username
+            username: username !== undefined ? sanitizeString(username) : user.username,
+            color: color !== undefined ? sanitizeString(color) : user.color
         };
-
-        // Hash password if provided
-        if (password && password.trim() !== '') {
-            updates.password_hash = await bcrypt.hash(password, 10);
-        }
 
         const updated = await dataService.updateUser(req.session.userId, updates);
         const { password_hash: _, ...withoutPass } = updated || {};

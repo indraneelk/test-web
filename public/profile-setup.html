@@ -333,22 +333,112 @@
         const submitBtn = document.getElementById('submitBtn');
         const errorMessage = document.getElementById('errorMessage');
 
-        // Load user data from session storage
-        const tempToken = sessionStorage.getItem('supabase_temp_token');
-        const userData = JSON.parse(sessionStorage.getItem('supabase_user_data') || '{}');
+        // Check if this is update mode (user already logged in) or creation mode
+        let isUpdateMode = false;
+        let currentUser = null;
+        let supabaseClient = null;
 
-        if (!tempToken || !userData.email) {
-            window.location.href = '/magic-link.html';
+        // --- Auth helpers: Supabase + Bearer attachment ---
+        async function ensureSupabase() {
+            if (supabaseClient) return supabaseClient;
+            try {
+                const resp = await fetch('/api/config/public');
+                if (!resp.ok) return null;
+                const cfg = await resp.json();
+                if (window.supabase) {
+                    supabaseClient = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey);
+                    return supabaseClient;
+                }
+                // Fallback to ESM import if no UMD present (subject to CSP)
+                const mod = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm');
+                supabaseClient = mod.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey);
+                return supabaseClient;
+            } catch (_) {
+                return null;
+            }
         }
 
-        // Display email
-        emailBadge.textContent = userData.email;
-
-        // Pre-fill name if available
-        if (userData.name) {
-            nameInput.value = userData.name;
-            updateInitialsFromName();
+        async function getAccessToken() {
+            try {
+                const client = await ensureSupabase();
+                if (client) {
+                    const { data } = await client.auth.getSession();
+                    if (data?.session?.access_token) return data.session.access_token;
+                }
+            } catch (_) {}
+            return sessionStorage.getItem('sb_at') || null;
         }
+
+        async function authFetch(url, options = {}) {
+            const token = await getAccessToken();
+            const headers = new Headers(options.headers || {});
+            if (token) headers.set('Authorization', `Bearer ${token}`);
+            return fetch(url, { ...options, headers, credentials: token ? undefined : 'include' });
+        }
+
+        // Determine mode: use Bearer if available, else magic-link handoff
+        (async () => {
+            try {
+                const resp = await authFetch('/api/auth/me');
+                if (resp.ok) {
+                    const data = await resp.json();
+                    isUpdateMode = true;
+                    currentUser = data.user;
+                    emailBadge.textContent = currentUser.email || '';
+                    loadUserDataForUpdate();
+                    return;
+                }
+            } catch (_) {}
+            // Not authenticated → check magic-link artifacts
+            const tempToken = sessionStorage.getItem('supabase_temp_token');
+            const userData = JSON.parse(sessionStorage.getItem('supabase_user_data') || '{}');
+            if (!tempToken || !userData.email) {
+                window.location.href = '/magic-link.html';
+                return;
+            }
+            emailBadge.textContent = userData.email;
+        })();
+
+        function loadUserDataForUpdate() {
+            document.querySelector('h1').textContent = '⚙️ Edit Profile';
+            document.querySelector('.profile-header p').textContent = 'Update your profile information';
+            document.getElementById('submitBtn').textContent = 'Update Profile';
+
+            // Pre-fill with current user data
+            if (currentUser) {
+                nameInput.value = currentUser.name || '';
+                initialsInput.value = currentUser.initials || '';
+                emailBadge.textContent = currentUser.email || '';
+
+                // Select current color if available
+                if (currentUser.color) {
+                    const colorIndex = predefinedColors.indexOf(currentUser.color);
+                    if (colorIndex >= 0) {
+                        selectedColor = currentUser.color;
+                        const colorOption = colorOptions.children[colorIndex];
+                        document.querySelectorAll('.color-option').forEach(opt => opt.classList.remove('selected'));
+                        colorOption.classList.add('selected');
+                    }
+                }
+
+                updatePreview();
+            }
+
+            // Make password fields optional for update
+            document.getElementById('password').removeAttribute('required');
+            document.getElementById('confirmPassword').removeAttribute('required');
+            document.querySelector('label[for="password"]').innerHTML = 'New Password (optional)';
+            document.querySelector('label[for="confirmPassword"]').innerHTML = 'Confirm New Password';
+        }
+
+        // Pre-fill name if available (magic-link flow)
+        try {
+            const preUser = JSON.parse(sessionStorage.getItem('supabase_user_data') || '{}');
+            if (preUser.name) {
+                nameInput.value = preUser.name;
+                updateInitialsFromName();
+            }
+        } catch (_) {}
 
         // Render color options
         predefinedColors.forEach((color, index) => {
@@ -410,8 +500,13 @@
             const password = document.getElementById('password').value;
             const confirmPassword = document.getElementById('confirmPassword').value;
 
-            if (!name || !initials || !password || !confirmPassword) {
+            if (!name || !initials) {
                 showError('Please fill in all required fields');
+                return;
+            }
+
+            if (!isUpdateMode && (!password || !confirmPassword)) {
+                showError('Password is required for new profiles');
                 return;
             }
 
@@ -420,57 +515,78 @@
                 return;
             }
 
-            if (password.length < 8) {
+            if (password && password.length > 0 && password.length < 8) {
                 showError('Password must be at least 8 characters');
                 return;
             }
 
-            if (password !== confirmPassword) {
+            if (password && password !== confirmPassword) {
                 showError('Passwords do not match');
                 return;
             }
 
             submitBtn.disabled = true;
-            submitBtn.innerHTML = '<span class="loading-spinner"></span> Setting up...';
+            submitBtn.innerHTML = isUpdateMode
+                ? '<span class="loading-spinner"></span> Updating...'
+                : '<span class="loading-spinner"></span> Setting up...';
 
             try {
-                const response = await fetch('/api/auth/profile-setup', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        access_token: tempToken,
-                        name,
-                        initials,
-                        color: selectedColor,
-                        password
-                    })
-                });
+                // Update password in Supabase if provided
+                if (password && password.trim() !== '') {
+                    const client = await ensureSupabase();
+                    if (!client) {
+                        showError('Supabase client not available to update password.');
+                        submitBtn.disabled = false;
+                        submitBtn.innerHTML = isUpdateMode ? 'Update Profile' : 'Complete Setup';
+                        return;
+                    }
+                    const { error: pwdError } = await client.auth.updateUser({
+                        password: password
+                    });
+
+                    if (pwdError) {
+                        showError('Failed to update password: ' + pwdError.message);
+                        submitBtn.disabled = false;
+                        submitBtn.innerHTML = isUpdateMode ? 'Update Profile' : 'Complete Setup';
+                        return;
+                    }
+                }
+
+                // Update or create profile
+                const endpoint = isUpdateMode ? '/api/auth/me' : '/api/auth/profile-setup';
+                const method = isUpdateMode ? 'PUT' : 'POST';
+                const payload = isUpdateMode
+                    ? { name, initials, color: selectedColor }
+                    : { access_token: tempToken, name, initials, color: selectedColor, password };
+
+                const response = await (isUpdateMode
+                    ? authFetch(endpoint, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+                    : fetch(endpoint, { method, headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify(payload) })
+                );
 
                 const data = await response.json();
 
                 if (response.ok) {
-                    // Clear session storage
-                    sessionStorage.removeItem('supabase_temp_token');
-                    sessionStorage.removeItem('supabase_user_data');
+                    if (!isUpdateMode) {
+                        sessionStorage.removeItem('supabase_temp_token');
+                        sessionStorage.removeItem('supabase_user_data');
+                    }
 
-                    submitBtn.innerHTML = '✓ Profile Complete!';
+                    submitBtn.innerHTML = isUpdateMode ? '✓ Profile Updated!' : '✓ Profile Complete!';
 
-                    // Redirect to app
                     setTimeout(() => {
                         window.location.href = '/';
                     }, 1000);
                 } else {
-                    showError(data.error || 'Failed to complete profile setup');
+                    showError(data.error || 'Failed to update profile');
                     submitBtn.disabled = false;
-                    submitBtn.innerHTML = 'Complete Setup';
+                    submitBtn.innerHTML = isUpdateMode ? 'Update Profile' : 'Complete Setup';
                 }
             } catch (error) {
-                console.error('Profile setup error:', error);
+                console.error('Profile error:', error);
                 showError('Network error. Please try again.');
                 submitBtn.disabled = false;
-                submitBtn.innerHTML = 'Complete Setup';
+                submitBtn.innerHTML = isUpdateMode ? 'Update Profile' : 'Complete Setup';
             }
         });
 

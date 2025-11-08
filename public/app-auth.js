@@ -609,21 +609,16 @@ function createTaskCard(task) {
     const priorityColor = priorityColors[priority];
     const showPriorityTriangle = priority !== 'none' && priorityColor;
 
-    // Get assignee and generate initials
+    // Get assignee and use their profile initials and color
     const assignee = users.find(u => u.id === task.assigned_to_id);
     let assigneeInitials = '';
     let assigneeColor = '#667eea';
     if (assignee) {
-        // Generate initials from name (first letter of first two words)
-        const nameParts = assignee.name.trim().split(/\s+/);
-        assigneeInitials = nameParts.length >= 2
-            ? nameParts[0][0].toUpperCase() + nameParts[1][0].toUpperCase()
-            : nameParts[0].substring(0, 2).toUpperCase();
+        // Use the initials from the user's profile
+        assigneeInitials = assignee.initials || '';
 
-        // Generate consistent color from user ID
-        const hash = assignee.id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-        const colors = ['#667eea', '#f093fb', '#4facfe', '#43e97b', '#f06a6a', '#ffc82c', '#13ce66', '#764ba2'];
-        assigneeColor = colors[hash % colors.length];
+        // Use the color from the user's profile
+        assigneeColor = assignee.color || '#667eea';
     }
 
     return `
