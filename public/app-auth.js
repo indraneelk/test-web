@@ -511,7 +511,7 @@ function editTask(id) {
         document.getElementById('taskName').value = task.name || '';
         document.getElementById('taskDescription').value = task.description || '';
         document.getElementById('taskDate').value = task.date || '';
-        document.getElementById('taskPriority').value = task.priority || 'medium';
+        document.getElementById('taskPriority').value = task.priority || 'none';
 
         // Populate dropdowns
         const projectSelect = document.getElementById('taskProject');
@@ -561,11 +561,12 @@ function viewTaskDetails(id) {
     });
 
     // Priority display with icon
-    const priority = task.priority || 'medium';
+    const priority = task.priority || 'none';
     const priorityIcons = {
         'high': '🔴',
         'medium': '🟡',
-        'low': '🟢'
+        'low': '🟢',
+        'none': '⚪'
     };
     const priorityDisplay = `${priorityIcons[priority]} ${priority.charAt(0).toUpperCase() + priority.slice(1)}`;
 
@@ -594,6 +595,10 @@ function editTaskFromDetails() {
     if (!currentTaskDetailsId) return;
     const taskId = currentTaskDetailsId; // Store ID before closing modal
     closeTaskDetailsModal();
+
+    // Store the task ID to reopen details after save
+    window.taskToReopenDetails = taskId;
+
     editTask(taskId);
 }
 
@@ -650,6 +655,13 @@ async function handleTaskSubmit(e) {
         closeTaskModal();
         await loadTasks();
         updateUI();
+
+        // Reopen task details if editing from details modal
+        if (taskId && window.taskToReopenDetails === taskId) {
+            window.taskToReopenDetails = null;
+            // Small delay to ensure tasks are loaded
+            setTimeout(() => viewTaskDetails(taskId), 100);
+        }
 
         // Success message (celebration only happens via checkbox)
         showSuccess(taskId ? 'Task updated successfully!' : 'Task created successfully!');
