@@ -64,7 +64,7 @@
                         <option value="high">High</option>
                         <option value="medium">Medium</option>
                         <option value="low">Low</option>
-                        <option value="none">Priority: None</option>
+                        <option value="none">None</option>
                     </select>
                 </div>
             </div>
@@ -256,6 +256,10 @@
             </div>
             <form id="userSettingsForm">
                 <input type="hidden" id="userId">
+                <div class="form-group">
+                    <label for="profileUsername">Username</label>
+                    <input id="profileUsername" class="form-input" type="text" placeholder="username">
+                </div>
                 <div class="form-group">
                     <label for="profileName">Name</label>
                     <input id="profileName" class="form-input" type="text" required>

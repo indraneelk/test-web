@@ -32,7 +32,7 @@ npm start
 - 📊 Real-time statistics
 - 🎨 Beautiful Asana-inspired UI
 
-### **NEW** Multi-User Version (app-auth.html + app-auth.js)
+### Multi-User Version (index.html + app-auth.js)
 - 🔐 **User Authentication** - Secure login/registration system
 - 👥 **Multi-user Support** - Multiple team members
 - 📁 **Project Management** - Create and manage projects
@@ -60,7 +60,7 @@ npm start
 ```bash
 # Use the authentication-enabled server
 node server-auth.js
-# Visit: http://localhost:3000/app-auth.html
+# Visit: http://localhost:3000/
 # or login at: http://localhost:3000/login.html
 
 ## Supabase Auth (optional)
@@ -443,5 +443,5 @@ MIT License - Use however you like!
 
 **Quick Links:**
 - Simple Version: http://localhost:3000
-- Multi-User Version: http://localhost:3000/app-auth.html
+- Multi-User Version: http://localhost:3000/
 - Login: http://localhost:3000/login.html

@@ -228,6 +228,23 @@
         <div class="footer-text">
             Need to set up your account? Contact your admin for an invite link.
         </div>
+
+        <!-- Profile Setup (shown if backend says needsProfileSetup) -->
+        <form id="profileSetupForm" style="display:none; margin-top:1.5rem;">
+            <div class="input-group">
+                <label for="psUsername">Username</label>
+                <input type="text" id="psUsername" placeholder="username" required>
+            </div>
+            <div class="input-group">
+                <label for="psName">Full Name</label>
+                <input type="text" id="psName" placeholder="Full name" required>
+            </div>
+            <div class="input-group">
+                <label for="psInitials">Initials (1–4 letters)</label>
+                <input type="text" id="psInitials" maxlength="4" placeholder="e.g., JD" required>
+            </div>
+            <button type="submit" class="btn-login" id="psSubmitBtn">Create Profile</button>
+        </form>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -284,6 +301,8 @@
             }
         })();
 
+        let lastAccessToken = null;
+
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
             hideMessages();
@@ -330,6 +349,13 @@
                 const result = await response.json();
 
                 if (!response.ok) {
+                    if (response.status === 404 && result.needsProfileSetup) {
+                        lastAccessToken = data.session.access_token;
+                        showSuccess('Finish setting up your profile');
+                        form.style.display = 'none';
+                        document.getElementById('profileSetupForm').style.display = 'block';
+                        return;
+                    }
                     throw new Error(result.error || 'Login failed');
                 }
 
@@ -339,13 +365,45 @@
                 // Redirect to app
                 setTimeout(() => {
                     window.location.href = '/';
-                }, 1000);
+                }, 500);
 
             } catch (error) {
                 console.error('Login error:', error);
                 showError(error.message || 'Failed to sign in. Please check your credentials.');
                 submitBtn.disabled = false;
                 submitBtn.innerHTML = 'Sign In';
+            }
+        });
+
+        // Profile setup submit
+        document.getElementById('profileSetupForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            hideMessages();
+            const psBtn = document.getElementById('psSubmitBtn');
+            psBtn.disabled = true;
+            psBtn.textContent = 'Creating...';
+            try {
+                const payload = {
+                    access_token: lastAccessToken,
+                    username: document.getElementById('psUsername').value.trim(),
+                    name: document.getElementById('psName').value.trim(),
+                    initials: document.getElementById('psInitials').value.trim()
+                };
+                const resp = await fetch('/api/auth/profile-setup', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify(payload)
+                });
+                const data = await resp.json();
+                if (!resp.ok) throw new Error(data.error || 'Failed to create profile');
+                showSuccess('Profile created! Redirecting...');
+                setTimeout(() => window.location.href = '/', 500);
+            } catch (err) {
+                showError(err.message);
+            } finally {
+                psBtn.disabled = false;
+                psBtn.textContent = 'Create Profile';
             }
         });
 

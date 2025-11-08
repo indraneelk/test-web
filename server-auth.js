@@ -352,27 +352,21 @@ app.post('/api/auth/supabase-callback', authLimiter, async (req, res) => {
             return res.status(400).json({ error: 'Access token is required' });
         }
 
-        // Verify token and get Supabase user
-        const supabaseUser = await supabaseService.getUserFromToken(access_token);
+        // Verify token and get claims
+        const claims = await verifySupabaseJWT(access_token);
+        const sub = claims.sub;
+        const email = claims.email || null;
+        const meta = claims.user_metadata || {};
+        const derivedName = meta.full_name || meta.name || (email ? email.split('@')[0] : 'User');
 
-        if (!supabaseUser) {
-            return res.status(401).json({ error: 'Invalid access token' });
-        }
-
-        // Check if user already exists in our system
-        let user = await dataService.getUserBySupabaseId(supabaseUser.id);
+        // Check if user already exists in our system (by id=sub)
+        let user = await dataService.getUserById(sub);
 
         if (!user) {
             // Check if user exists by email (for migration)
-            user = await dataService.getUserByEmail(supabaseUser.email);
+            user = email ? await dataService.getUserByEmail(email) : null;
 
-            if (user && !user.supabase_id) {
-                // Link existing account to Supabase
-                await dataService.updateUser(user.id, {
-                    supabase_id: supabaseUser.id
-                });
-                user = await dataService.getUserById(user.id);
-            }
+            // If found by email, migrate: set id to sub is not trivial. Prefer creating new user ID=sub.
         }
 
         // Return user info and whether profile setup is needed
@@ -399,11 +393,7 @@ app.post('/api/auth/supabase-callback', authLimiter, async (req, res) => {
             res.json({
                 success: true,
                 needsProfileSetup: true,
-                supabaseUser: {
-                    id: supabaseUser.id,
-                    email: supabaseUser.email,
-                    name: supabaseUser.user_metadata?.name || supabaseUser.email?.split('@')[0]
-                },
+                supabaseUser: { id: sub, email: email, name: derivedName },
                 tempToken: access_token
             });
         }
@@ -419,65 +409,47 @@ app.post('/api/auth/supabase-callback', authLimiter, async (req, res) => {
 // Complete profile setup for Supabase user
 app.post('/api/auth/profile-setup', authLimiter, async (req, res) => {
     try {
-        if (!supabaseService.isEnabled()) {
-            return res.status(501).json({ error: 'Supabase authentication is not configured' });
-        }
-
-        const { access_token, name, initials, color, password } = req.body;
+        const { access_token, username, name, initials, color } = req.body;
 
         if (!access_token) {
             return res.status(400).json({ error: 'Access token is required' });
         }
 
-        if (!name || !initials || !password) {
-            return res.status(400).json({ error: 'Name, initials, and password are required' });
+        if (!username || !name || !initials) {
+            return res.status(400).json({ error: 'Username, name, and initials are required' });
+        }
+        if (!validateUsername(username)) {
+            return res.status(400).json({ error: 'Username must be 3-30 chars, letters/numbers/underscore only' });
+        }
+        if (!validateString(name, 1, 100)) {
+            return res.status(400).json({ error: 'Name must be 1-100 characters' });
+        }
+        const initStr = String(initials).trim();
+        if (!/^[A-Za-z]{1,4}$/.test(initStr)) {
+            return res.status(400).json({ error: 'Initials must be 1-4 letters' });
         }
 
-        if (password.length < 8) {
-            return res.status(400).json({ error: 'Password must be at least 8 characters' });
-        }
-
-        // Verify token
-        const supabaseUser = await supabaseService.getUserFromToken(access_token);
-
-        if (!supabaseUser) {
-            return res.status(401).json({ error: 'Invalid access token' });
-        }
-
-        // Check if user already exists
-        let user = await dataService.getUserBySupabaseId(supabaseUser.id);
-
-        if (user) {
+        const claims = await verifySupabaseJWT(access_token);
+        const sub = claims.sub;
+        const email = claims.email || null;
+        const userExists = await dataService.getUserById(sub);
+        if (userExists) {
             return res.status(400).json({ error: 'User already exists' });
         }
-
-        // Set password in Supabase
-        const adminClient = supabaseService.getAdminClient();
-        if (!adminClient) {
-            return res.status(500).json({ error: 'Supabase admin client not available. Please configure SUPABASE_SERVICE_ROLE_KEY.' });
+        // Enforce username uniqueness
+        const allUsers = await dataService.getUsers();
+        const taken = allUsers.find(u => u.username === username);
+        if (taken) {
+            return res.status(400).json({ error: 'Username already taken' });
         }
 
-        const { error: passwordError } = await adminClient.auth.admin.updateUserById(
-            supabaseUser.id,
-            { password: password }
-        );
-
-        if (passwordError) {
-            console.error('Failed to set password in Supabase:', passwordError);
-            return res.status(500).json({ error: 'Failed to set password' });
-        }
-
-        // Create profile data
-        const profileData = await supabaseService.syncUserProfile(supabaseUser, {
-            name: name.trim(),
-            initials: initials.trim().toUpperCase(),
-            color: color || supabaseService.generateUserColor(supabaseUser.email, name)
-        });
-
-        // Create user in our database
         const newUser = {
-            id: generateId('user'),
-            ...profileData,
+            id: sub,
+            username: sanitizeString(username),
+            name: sanitizeString(name),
+            email: email ? sanitizeString(email) : null,
+            initials: initStr.toUpperCase(),
+            is_admin: false,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString()
         };
@@ -489,7 +461,7 @@ app.post('/api/auth/profile-setup', authLimiter, async (req, res) => {
             id: generateId('project'),
             name: `${newUser.name}'s Personal Tasks`,
             description: 'Personal tasks and to-dos',
-            color: newUser.color || '#667eea',
+            color: color || '#667eea',
             owner_id: newUser.id,
             members: [],
             is_personal: true,
@@ -523,51 +495,23 @@ app.post('/api/auth/profile-setup', authLimiter, async (req, res) => {
 // Handle Supabase email/password login
 app.post('/api/auth/supabase-login', authLimiter, async (req, res) => {
     try {
-        if (!supabaseService.isEnabled()) {
-            return res.status(501).json({ error: 'Supabase authentication is not configured' });
-        }
-
         const { access_token } = req.body;
+        if (!access_token) return res.status(400).json({ error: 'Access token is required' });
 
-        if (!access_token) {
-            return res.status(400).json({ error: 'Access token is required' });
-        }
-
-        // Verify token and get Supabase user
-        const supabaseUser = await supabaseService.getUserFromToken(access_token);
-
-        if (!supabaseUser) {
-            return res.status(401).json({ error: 'Invalid access token' });
-        }
-
-        // Get user from our database by Supabase ID
-        const user = await dataService.getUserBySupabaseId(supabaseUser.id);
-
+        const claims = await verifySupabaseJWT(access_token);
+        const sub = claims.sub;
+        let user = await dataService.getUserById(sub);
         if (!user) {
-            return res.status(404).json({
-                error: 'User not found. Please complete profile setup first.',
-                needsProfileSetup: true
-            });
+            return res.status(404).json({ error: 'User not found. Please complete profile setup first.', needsProfileSetup: true });
         }
-
-        // Set session
+        req.session.regenerate(() => {});
         req.session.userId = user.id;
         req.session.supabaseAccessToken = access_token;
-
-        await logActivity(user.id, 'user_login', `User ${user.name} logged in via Supabase`);
-
-        // Return user without sensitive info
         const { password_hash: _, ...userWithoutPassword } = user;
-        res.json({
-            success: true,
-            user: userWithoutPassword
-        });
+        res.json({ success: true, user: userWithoutPassword });
     } catch (error) {
         console.error('Supabase login error:', error);
-        res.status(500).json({
-            error: 'Login failed',
-            details: error.message
-        });
+        res.status(401).json({ error: 'Invalid access token' });
     }
 });
 
@@ -669,7 +613,7 @@ app.get('/api/users/:id', requireAuth, async (req, res) => {
 // Note: Password changes must be done through Supabase, not this endpoint
 app.put('/api/auth/me', requireAuth, async (req, res) => {
     try {
-        const { name, email, initials } = req.body || {};
+        const { name, email, initials, username } = req.body || {};
 
         // Validate fields if provided
         if (name !== undefined && !validateString(name, 1, 100)) {
@@ -684,6 +628,16 @@ app.put('/api/auth/me', requireAuth, async (req, res) => {
                 return res.status(400).json({ error: 'Initials must be 1-4 letters' });
             }
         }
+        if (username !== undefined) {
+            if (!validateUsername(username)) {
+                return res.status(400).json({ error: 'Username must be 3-30 chars, letters/numbers/underscore only' });
+            }
+            const allUsers = await dataService.getUsers();
+            const exists = allUsers.find(u => u.username === username && u.id !== req.session.userId);
+            if (exists) {
+                return res.status(400).json({ error: 'Username already taken' });
+            }
+        }
 
         const user = await dataService.getUserById(req.session.userId);
         if (!user) return res.status(404).json({ error: 'User not found' });
@@ -691,7 +645,8 @@ app.put('/api/auth/me', requireAuth, async (req, res) => {
         const updates = {
             name: name !== undefined ? sanitizeString(name) : user.name,
             email: email !== undefined ? sanitizeString(email) : user.email,
-            initials: initials !== undefined ? sanitizeString(initials || '') : (user.initials || null)
+            initials: initials !== undefined ? sanitizeString(initials || '') : (user.initials || null),
+            username: username !== undefined ? sanitizeString(username) : user.username
         };
 
         const updated = await dataService.updateUser(req.session.userId, updates);
@@ -855,9 +810,11 @@ app.put('/api/projects/:id', requireAuth, async (req, res) => {
             return res.status(404).json({ error: 'Project not found' });
         }
 
-        // Check if user is owner
-        if (!(await isProjectOwner(req.session.userId, req.params.id))) {
-            return res.status(403).json({ error: 'Only project owner can update project' });
+        // Check if user is owner or admin
+        const user = await dataService.getUserById(req.session.userId);
+        const isOwner = await isProjectOwner(req.session.userId, req.params.id);
+        if (!isOwner && !user?.is_admin) {
+            return res.status(403).json({ error: 'Only project owner or admin can update project' });
         }
 
         const { name, description, color } = req.body;
@@ -913,9 +870,11 @@ app.delete('/api/projects/:id', requireAuth, async (req, res) => {
             return res.status(404).json({ error: 'Project not found' });
         }
 
-        // Check if user is owner
-        if (!(await isProjectOwner(req.session.userId, req.params.id))) {
-            return res.status(403).json({ error: 'Only project owner can delete project' });
+        // Check if user is owner or admin
+        const user = await dataService.getUserById(req.session.userId);
+        const isOwner = await isProjectOwner(req.session.userId, req.params.id);
+        if (!isOwner && !user?.is_admin) {
+            return res.status(403).json({ error: 'Only project owner or admin can delete project' });
         }
 
         // Prevent deletion of personal projects
@@ -1011,6 +970,13 @@ app.delete('/api/projects/:id/members/:userId', requireAuth, async (req, res) =>
 
         await dataService.removeProjectMember(req.params.id, req.params.userId);
 
+        // Unassign all tasks in this project that were assigned to the removed user
+        const tasks = await dataService.getTasks();
+        const projectTasks = tasks.filter(t => t.project_id === req.params.id && t.assigned_to_id === req.params.userId);
+        for (const task of projectTasks) {
+            await dataService.updateTask(task.id, { ...task, assigned_to_id: null });
+        }
+
         const removedUser = await dataService.getUserById(req.params.userId);
 
         await logActivity(req.session.userId, 'member_removed', `${removedUser?.name || 'User'} removed from project "${project.name}"`, null, req.params.id);
@@ -1073,10 +1039,10 @@ app.post('/api/tasks', requireAuth, async (req, res) => {
     try {
         const { name, description, date, project_id, assigned_to_id, priority } = req.body;
 
-        // Validate required fields
-        if (!name || !description || !date || !project_id || !assigned_to_id) {
+        // Validate required fields (assigned_to_id is now optional)
+        if (!name || !description || !date || !project_id) {
             return res.status(400).json({
-                error: 'Missing required fields: name, description, date, project_id, assigned_to_id'
+                error: 'Missing required fields: name, description, date, project_id'
             });
         }
 
@@ -1107,8 +1073,8 @@ app.post('/api/tasks', requireAuth, async (req, res) => {
             return res.status(403).json({ error: 'You are not a member of this project' });
         }
 
-        // Check if assigned user is member of the project
-        if (!(await isProjectMember(assigned_to_id, project_id))) {
+        // Check if assigned user is member of the project (only if assignee is provided)
+        if (assigned_to_id && assigned_to_id.trim() !== '' && !(await isProjectMember(assigned_to_id, project_id))) {
             return res.status(400).json({ error: 'Assigned user is not a member of this project' });
         }
 
@@ -1118,10 +1084,12 @@ app.post('/api/tasks', requireAuth, async (req, res) => {
             description: sanitizeString(description),
             date: date,
             project_id: project_id,
-            assigned_to_id: assigned_to_id,
+            assigned_to_id: (assigned_to_id && assigned_to_id.trim() !== '') ? assigned_to_id : null,
             created_by_id: req.session.userId,
             status: 'pending',
             priority: priority || 'none',
+            archived: false,
+            completed_at: null,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString()
         };
@@ -1182,20 +1150,23 @@ app.put('/api/tasks/:id', requireAuth, async (req, res) => {
             return res.status(400).json({ error: 'Invalid priority. Must be: none, low, medium, or high' });
         }
 
-        // If changing assigned user, verify they're in the project
-        if (assigned_to_id && !(await isProjectMember(assigned_to_id, task.project_id))) {
+        // If changing assigned user, verify they're in the project (only if assignee is provided and not empty)
+        if (assigned_to_id && assigned_to_id.trim() !== '' && !(await isProjectMember(assigned_to_id, task.project_id))) {
             return res.status(400).json({ error: 'Assigned user is not a member of this project' });
         }
 
         const oldStatus = task.status;
+        const newStatus = status !== undefined ? status : task.status;
 
         const updates = {
             name: name ? sanitizeString(name) : task.name,
             description: description !== undefined ? sanitizeString(description) : task.description,
             date: date || task.date,
-            assigned_to_id: assigned_to_id || task.assigned_to_id,
-            status: status !== undefined ? status : task.status,
-            priority: priority !== undefined ? priority : (task.priority || 'none')
+            assigned_to_id: assigned_to_id !== undefined ? ((assigned_to_id && assigned_to_id.trim() !== '') ? assigned_to_id : null) : task.assigned_to_id,
+            status: newStatus,
+            priority: priority !== undefined ? priority : (task.priority || 'none'),
+            completed_at: (oldStatus !== 'completed' && newStatus === 'completed') ? new Date().toISOString() : task.completed_at,
+            archived: task.archived !== undefined ? task.archived : false
         };
 
         const updatedTask = await dataService.updateTask(req.params.id, updates);

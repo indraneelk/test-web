@@ -121,18 +121,7 @@ class DataService {
         }
     }
 
-    async getUserBySupabaseId(supabaseId) {
-        if (this.useD1) {
-            const result = await this.d1.query(
-                'SELECT * FROM users WHERE supabase_id = ?',
-                [supabaseId]
-            );
-            return result.results?.[0] || null;
-        } else {
-            const users = this.readJSON(this.USERS_FILE);
-            return users.find(u => u.supabase_id === supabaseId) || null;
-        }
-    }
+    // getUserBySupabaseId removed: standardize on id = sub (Supabase user id)
 
     async getUserByEmail(email) {
         if (this.useD1) {

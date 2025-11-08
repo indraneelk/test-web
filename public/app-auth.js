@@ -58,12 +58,12 @@ async function checkAuth() {
 
 // Update user info display
 function updateUserInfo() {
-    document.getElementById('userName').textContent = currentUser.name;
+    document.getElementById('userName').textContent = currentUser.username || currentUser.name;
     const avatar = document.getElementById('userAvatar');
     if (avatar) {
         const initials = (currentUser.initials && currentUser.initials.trim())
             ? currentUser.initials.trim().toUpperCase()
-            : currentUser.name.split(/\s+/).map(w => w[0]).slice(0,2).join('').toUpperCase();
+            : (currentUser.username || currentUser.name).split(/\s+/).map(w => w[0]).slice(0,2).join('').toUpperCase();
         avatar.textContent = initials;
     }
 }
@@ -163,6 +163,7 @@ function setupEventListeners() {
 function openUserSettings() {
     if (!currentUser) return;
     document.getElementById('userId').value = currentUser.id || '';
+    document.getElementById('profileUsername').value = currentUser.username || '';
     document.getElementById('profileName').value = currentUser.name || '';
     document.getElementById('profileEmail').value = currentUser.email || '';
     document.getElementById('profileInitials').value = currentUser.initials || '';
@@ -182,6 +183,7 @@ async function handleUserSettingsSubmit(e) {
     btn.textContent = 'Saving...';
 
     const payload = {
+        username: document.getElementById('profileUsername').value,
         name: document.getElementById('profileName').value,
         email: document.getElementById('profileEmail').value,
         initials: document.getElementById('profileInitials').value,
@@ -745,7 +747,7 @@ function viewTaskDetails(id) {
     document.getElementById('detailsTaskProject').innerHTML = project
         ? `<span class="project-color-dot" style="background-color: ${projColor}; margin-right: 6px;"></span>${escapeHtml(project.name)}`
         : 'No project';
-    document.getElementById('detailsTaskAssignee').textContent = assignee ? assignee.name : 'Unassigned';
+    document.getElementById('detailsTaskAssignee').textContent = assignee ? (assignee.username || assignee.name) : 'Unassigned';
     document.getElementById('detailsTaskDate').textContent = formattedDate;
     document.getElementById('detailsTaskPriority').innerHTML = priorityDisplay;
 
@@ -1043,7 +1045,7 @@ function openProjectSettings(projectId) {
     const owner = users.find(u => u.id === project.owner_id);
 
     document.getElementById('settingsProjectName').textContent = project.name;
-    document.getElementById('settingsProjectOwner').textContent = owner?.name || 'Unknown';
+    document.getElementById('settingsProjectOwner').textContent = owner ? (owner.username || owner.name) : 'Unknown';
     // Show project color in Project Information
     const colorRowId = 'settingsProjectColor';
     let colorRowEl = document.getElementById(colorRowId);
@@ -1288,7 +1290,7 @@ function viewProjectDetails(projectId) {
 
     document.getElementById('detailsProjectName').textContent = project.name;
     document.getElementById('detailsProjectDescription').textContent = project.description || 'No description';
-    document.getElementById('detailsProjectOwner').textContent = owner ? owner.name : 'Unknown';
+    document.getElementById('detailsProjectOwner').textContent = owner ? (owner.username || owner.name) : 'Unknown';
     document.getElementById('detailsProjectTasks').textContent = `${projectTasks.length} tasks`;
     // Show project color
     const color = project.color || '#f06a6a';
@@ -1379,6 +1381,13 @@ function editProject(projectId) {
         return;
     }
 
+    // Check if current user is the owner
+    if (project.owner_id !== currentUser.id && !currentUser.is_admin) {
+        // Non-owners should see read-only view
+        viewProjectInfo(projectId);
+        return;
+    }
+
     document.getElementById('projectId').value = project.id;
     document.getElementById('projectName').value = project.name || '';
     document.getElementById('projectDescription').value = project.description || '';
@@ -1404,6 +1413,123 @@ function editProject(projectId) {
         availableUsers.map(u => `<option value="${u.id}">${escapeHtml(u.name)}</option>`).join('');
 
     document.getElementById('projectModal').classList.add('active');
+}
+
+// Store current project for details modal
+let currentProjectDetailsId = null;
+
+// View project info (read-only for non-owners)
+function viewProjectInfo(projectId) {
+    const project = projects.find(p => p.id === projectId);
+    if (!project) {
+        showError('Project not found');
+        return;
+    }
+
+    currentProjectDetailsId = projectId;
+
+    const owner = users.find(u => u.id === project.owner_id);
+    const memberIds = project.members || [];
+    const members = users.filter(u => memberIds.includes(u.id));
+    const isOwner = project.owner_id === currentUser.id || currentUser.is_admin;
+
+    // Count tasks in this project
+    const projectTasks = tasks.filter(t => t.project_id === projectId);
+
+    // Populate modal
+    document.getElementById('detailsProjectName').textContent = project.name;
+    document.getElementById('detailsProjectDescription').textContent = project.description || 'No description';
+    document.getElementById('detailsProjectOwner').textContent = owner?.name || 'Unknown';
+    document.getElementById('detailsProjectTasks').textContent = `${projectTasks.length} task${projectTasks.length !== 1 ? 's' : ''}`;
+
+    // Show color dot
+    const colorHtml = `<span style="display: inline-block; width: 20px; height: 20px; background: ${project.color || '#f06a6a'}; border-radius: 4px; vertical-align: middle;"></span>`;
+    document.getElementById('detailsProjectColor').innerHTML = colorHtml;
+
+    // Show members
+    const membersContainer = document.getElementById('detailsProjectMembers');
+    if (members.length === 0) {
+        membersContainer.innerHTML = '<p style="color: var(--text-secondary); margin: 0;">No other members</p>';
+    } else {
+        membersContainer.innerHTML = members.map(m =>
+            `<span style="display: inline-block; padding: 0.25rem 0.75rem; background: var(--bg-secondary); border-radius: 0.25rem; margin: 0.25rem; font-size: 0.875rem;">${escapeHtml(m.name)}</span>`
+        ).join('');
+    }
+
+    // Show/hide buttons based on ownership
+    if (isOwner) {
+        document.getElementById('projectDetailsEditBtn').style.display = 'inline-block';
+        document.getElementById('projectDetailsDeleteBtn').style.display = 'inline-block';
+        document.getElementById('projectDetailsLeaveBtn').style.display = 'none';
+    } else {
+        document.getElementById('projectDetailsEditBtn').style.display = 'none';
+        document.getElementById('projectDetailsDeleteBtn').style.display = 'none';
+        document.getElementById('projectDetailsLeaveBtn').style.display = 'inline-block';
+    }
+
+    // Open the modal
+    document.getElementById('projectDetailsModal').classList.add('active');
+}
+
+// Close project details modal
+function closeProjectDetailsModal() {
+    document.getElementById('projectDetailsModal').classList.remove('active');
+    currentProjectDetailsId = null;
+}
+
+// Edit project from details modal
+function editProjectFromDetails() {
+    if (!currentProjectDetailsId) return;
+    closeProjectDetailsModal();
+    editProject(currentProjectDetailsId);
+}
+
+// Delete project from details modal
+function deleteProjectFromDetails() {
+    if (!currentProjectDetailsId) return;
+    deleteProject(currentProjectDetailsId);
+}
+
+// Leave project from details modal
+function leaveProjectFromDetails() {
+    if (!currentProjectDetailsId) return;
+    leaveProject(currentProjectDetailsId);
+}
+
+// Leave project
+async function leaveProject(projectId) {
+    try {
+        const project = projects.find(p => p.id === projectId);
+        if (!project) {
+            showError('Project not found');
+            return;
+        }
+
+        if (project.owner_id === currentUser.id) {
+            showError('Project owners cannot leave their own projects. Delete the project instead.');
+            return;
+        }
+
+        const response = await fetch(`/api/projects/${projectId}/members/${currentUser.id}`, {
+            method: 'DELETE',
+            credentials: 'include'
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Failed to leave project');
+        }
+
+        // Close modal if open
+        closeProjectDetailsModal();
+
+        showSuccess('Successfully left the project');
+        await loadProjects();
+        await loadTasks();
+        switchView('all');
+    } catch (error) {
+        showError(error.message);
+    }
 }
 
 // Render project members list in edit modal
