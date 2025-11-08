@@ -724,8 +724,8 @@ function closeDeleteModal() {
 async function confirmDelete() {
     if (!taskToDelete) return;
 
-    const deleteBtn = document.querySelector('#deleteModal button.danger');
-    const cancelBtn = document.querySelector('#deleteModal button:not(.danger)');
+    const deleteBtn = document.querySelector('#deleteModal button.btn-danger');
+    const cancelBtn = document.querySelector('#deleteModal button.btn-secondary');
 
     // Disable buttons
     deleteBtn.disabled = true;
