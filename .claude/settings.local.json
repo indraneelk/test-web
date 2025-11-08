@@ -10,7 +10,10 @@
       "Bash(git pull:*)",
       "Bash(npm install:*)",
       "Bash(node server-auth.js:*)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(wrangler d1 execute:*)",
+      "Bash(node migrate-data-to-d1.js:*)",
+      "Bash(node migrate.js:*)"
     ],
     "deny": [],
     "ask": []

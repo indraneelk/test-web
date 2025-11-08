@@ -54,7 +54,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     description TEXT NOT NULL,
     date TEXT NOT NULL,
     project_id TEXT NOT NULL,
-    assigned_to_id TEXT NOT NULL,
+    assigned_to_id TEXT,
     created_by_id TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'pending',
     priority TEXT NOT NULL DEFAULT 'none',
