@@ -333,7 +333,7 @@ class DataService {
                     updates.date,
                     updates.assigned_to_id,
                     updates.status,
-                    updates.priority || 'medium',
+                    updates.priority || 'none',
                     new Date().toISOString(),
                     taskId
                 ]

@@ -367,8 +367,8 @@ function createTaskCard(task) {
         projectColor = project.color || '#f06a6a';
     }
 
-    // Priority indicator colors
-    const priority = task.priority || 'none';
+    // Priority indicator colors (normalize value)
+    const priority = (typeof task.priority === 'string' ? task.priority : 'none').toLowerCase().trim();
     const priorityColors = {
         'high': '#ef4444',      // red
         'medium': '#f59e0b',    // orange/yellow
@@ -458,6 +458,13 @@ function openTaskModal() {
     const today = new Date().toISOString().split('T')[0];
     document.getElementById('taskDate').value = today;
 
+    // Ensure priority default reflects in custom select UI
+    const prioritySelect = document.getElementById('taskPriority');
+    if (prioritySelect) {
+        prioritySelect.value = 'none';
+        prioritySelect.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
     // Populate project dropdown
     const projectSelect = document.getElementById('taskProject');
     projectSelect.innerHTML = '<option value="">Select project...</option>' +
@@ -511,7 +518,11 @@ function editTask(id) {
         document.getElementById('taskName').value = task.name || '';
         document.getElementById('taskDescription').value = task.description || '';
         document.getElementById('taskDate').value = task.date || '';
-        document.getElementById('taskPriority').value = task.priority || 'none';
+        const prioSel = document.getElementById('taskPriority');
+        if (prioSel) {
+            prioSel.value = (typeof task.priority === 'string' ? task.priority : 'none').toLowerCase().trim();
+            prioSel.dispatchEvent(new Event('change', { bubbles: true }));
+        }
 
         // Populate dropdowns
         const projectSelect = document.getElementById('taskProject');
@@ -561,11 +572,11 @@ function viewTaskDetails(id) {
     });
 
     // Priority display with icon
-    const priority = task.priority || 'none';
+    const priority = (typeof task.priority === 'string' ? task.priority : 'none').toLowerCase().trim();
     const priorityIcons = {
         'high': '🔴',
-        'medium': '🟡',
-        'low': '🟢',
+        'medium': '🟠',
+        'low': '🔵',
         'none': '⚪'
     };
     const priorityDisplay = `${priorityIcons[priority]} ${priority.charAt(0).toUpperCase() + priority.slice(1)}`;
@@ -625,13 +636,19 @@ async function handleTaskSubmit(e) {
     const taskId = document.getElementById('taskId').value;
     const previousTask = taskId ? tasks.find(t => t.id === taskId) : null;
 
+    const prioSelect = document.getElementById('taskPriority');
+    const selectedPriority = prioSelect && prioSelect._customSelect
+        ? prioSelect._customSelect.selectedValue
+        : (prioSelect ? prioSelect.value : 'none');
+    const normalizedPriority = (typeof selectedPriority === 'string' ? selectedPriority : 'none').toLowerCase().trim();
+
     const taskData = {
         name: document.getElementById('taskName').value,
         description: document.getElementById('taskDescription').value,
         date: document.getElementById('taskDate').value,
         project_id: document.getElementById('taskProject').value,
         assigned_to_id: document.getElementById('taskAssignee').value,
-        priority: document.getElementById('taskPriority').value
+        priority: normalizedPriority
     };
 
     try {
@@ -1401,6 +1418,12 @@ class CustomSelect {
         this.isOpen = false;
         this.create();
         this.addEventListeners();
+        // mark and expose instance for potential refreshes
+        this.selectElement.dataset.customized = 'true';
+        this.selectElement._customSelect = this;
+        this.scroller = null;
+        this._onResize = null;
+        this._onScroll = null;
     }
 
     create() {
@@ -1413,10 +1436,23 @@ class CustomSelect {
         this.trigger.type = 'button';
         this.trigger.className = 'custom-select-trigger';
 
+        // Create selected content (dot + text for priority select)
+        this.selectedContainer = document.createElement('span');
+        this.selectedContainer.style.display = 'inline-flex';
+        this.selectedContainer.style.alignItems = 'center';
+        this.selectedContainer.style.gap = '0.5rem';
+
+        this.selectedDot = document.createElement('span');
+        this.selectedDot.className = 'priority-dot';
+        this.selectedDot.style.display = 'none';
+
         // Create selected text span
         this.selectedText = document.createElement('span');
         this.updateSelectedText();
-        this.trigger.appendChild(this.selectedText);
+
+        this.selectedContainer.appendChild(this.selectedDot);
+        this.selectedContainer.appendChild(this.selectedText);
+        this.trigger.appendChild(this.selectedContainer);
 
         // Create arrow
         const arrow = document.createElement('span');
@@ -1447,7 +1483,20 @@ class CustomSelect {
             const optionBtn = document.createElement('button');
             optionBtn.type = 'button';
             optionBtn.className = 'custom-select-option';
-            optionBtn.textContent = option.textContent;
+
+            // If this is the priority select, add colored dot
+            if (this.selectElement.id === 'taskPriority') {
+                const dot = document.createElement('span');
+                dot.className = 'priority-dot';
+                const color = this.getPriorityColor(option.value);
+                if (color) dot.style.backgroundColor = color;
+                optionBtn.appendChild(dot);
+                const label = document.createElement('span');
+                label.textContent = option.textContent;
+                optionBtn.appendChild(label);
+            } else {
+                optionBtn.textContent = option.textContent;
+            }
             optionBtn.dataset.value = option.value;
 
             if (option.value === this.selectedValue) {
@@ -1464,9 +1513,23 @@ class CustomSelect {
         if (selectedOption && selectedOption.value) {
             this.selectedText.textContent = selectedOption.textContent;
             this.selectedText.classList.remove('placeholder');
+            // If this is the priority select, show color dot
+            if (this.selectElement.id === 'taskPriority') {
+                const value = selectedOption.value;
+                const color = this.getPriorityColor(value);
+                if (color && value !== 'none') {
+                    this.selectedDot.style.display = 'inline-block';
+                    this.selectedDot.style.backgroundColor = color;
+                } else {
+                    this.selectedDot.style.display = 'none';
+                }
+            } else {
+                this.selectedDot.style.display = 'none';
+            }
         } else {
             this.selectedText.textContent = this.selectElement.options[0]?.textContent || 'Select...';
             this.selectedText.classList.add('placeholder');
+            this.selectedDot.style.display = 'none';
         }
     }
 
@@ -1494,11 +1557,30 @@ class CustomSelect {
     open() {
         this.isOpen = true;
         this.container.classList.add('open');
+        // position dropdown based on available space in nearest scroll container
+        this.scroller = this.getScrollContainer();
+        this.positionDropdown();
+        // Reposition on resize/scroll
+        this._onResize = () => this.positionDropdown();
+        window.addEventListener('resize', this._onResize);
+        if (this.scroller) {
+            this._onScroll = () => this.positionDropdown();
+            this.scroller.addEventListener('scroll', this._onScroll, { passive: true });
+        }
     }
 
     close() {
         this.isOpen = false;
         this.container.classList.remove('open');
+        this.container.classList.remove('open-up');
+        if (this._onResize) {
+            window.removeEventListener('resize', this._onResize);
+            this._onResize = null;
+        }
+        if (this.scroller && this._onScroll) {
+            this.scroller.removeEventListener('scroll', this._onScroll);
+            this._onScroll = null;
+        }
     }
 
     refresh() {
@@ -1520,13 +1602,71 @@ class CustomSelect {
             }
         });
 
-        // Observe changes to the original select
+        // Keep UI in sync when the original select's value changes programmatically
+        this.selectElement.addEventListener('change', () => {
+            this.selectedValue = this.selectElement.value;
+            this.updateSelectedText();
+            // update option highlight state
+            if (this.dropdown) {
+                this.dropdown.querySelectorAll('.custom-select-option').forEach(opt => {
+                    opt.classList.toggle('selected', opt.dataset.value === this.selectedValue);
+                });
+            }
+        });
+
+        // Observe changes to the original select options
         const observer = new MutationObserver(() => {
             this.refresh();
         });
         observer.observe(this.selectElement, { childList: true, subtree: true });
     }
+
+    // Find nearest scrollable ancestor to compute available space
+    getScrollContainer() {
+        let el = this.container.parentElement;
+        while (el && el !== document.body) {
+            const style = window.getComputedStyle(el);
+            const overflowY = style.overflowY;
+            if (overflowY === 'auto' || overflowY === 'scroll') {
+                return el;
+            }
+            el = el.parentElement;
+        }
+        return window; // fallback to viewport
+    }
+
+    // Position dropdown above or below based on available space
+    positionDropdown() {
+        const gap = 8;
+        const desiredMax = 250;
+        const triggerRect = this.trigger.getBoundingClientRect();
+        let spaceAbove, spaceBelow;
+
+        if (this.scroller === window) {
+            const viewportTop = 0;
+            const viewportBottom = window.innerHeight;
+            spaceAbove = triggerRect.top - viewportTop - gap;
+            spaceBelow = viewportBottom - triggerRect.bottom - gap;
+        } else {
+            const scrollRect = this.scroller.getBoundingClientRect();
+            spaceAbove = triggerRect.top - scrollRect.top - gap;
+            spaceBelow = scrollRect.bottom - triggerRect.bottom - gap;
+        }
+
+        const openUp = spaceBelow < Math.min(180, desiredMax) && spaceAbove > spaceBelow;
+        this.container.classList.toggle('open-up', openUp);
+
+        const maxForDirection = Math.max(120, Math.min(desiredMax, openUp ? spaceAbove : spaceBelow));
+        this.dropdown.style.maxHeight = `${maxForDirection}px`;
+    }
 }
+
+// Helper for priority colors used by CustomSelect
+CustomSelect.prototype.getPriorityColor = function(value) {
+    const map = { high: '#ef4444', medium: '#f59e0b', low: '#10b981' };
+    const key = (typeof value === 'string' ? value : '').toLowerCase().trim();
+    return map[key] || '';
+};
 
 // Initialize custom selects
 function initCustomSelects() {
@@ -1534,7 +1674,9 @@ function initCustomSelects() {
     selects.forEach(select => {
         if (!select.dataset.customized) {
             new CustomSelect(select);
-            select.dataset.customized = 'true';
+        } else if (select._customSelect) {
+            // refresh to reflect any programmatic value changes
+            select._customSelect.refresh();
         }
     });
 }
