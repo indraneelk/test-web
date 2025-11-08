@@ -776,7 +776,7 @@ function pickRandomProjectColor() {
 
 app.post('/api/projects', requireAuth, async (req, res) => {
     try {
-        const { name, description, color } = req.body;
+        const { name, description, color, members } = req.body;
 
         // Validate required fields
         if (!name) {
@@ -804,6 +804,19 @@ app.post('/api/projects', requireAuth, async (req, res) => {
             projectColor = hex.toLowerCase();
         }
 
+        // Validate members if provided
+        let projectMembers = [];
+        if (Array.isArray(members)) {
+            // Verify all member IDs exist and are valid users
+            const allUsers = await dataService.getUsers();
+            for (const memberId of members) {
+                if (!allUsers.find(u => u.id === memberId)) {
+                    return res.status(400).json({ error: `Invalid member ID: ${memberId}` });
+                }
+            }
+            projectMembers = members;
+        }
+
         const projects = await dataService.getProjects();
 
         // Check for duplicate name
@@ -818,7 +831,7 @@ app.post('/api/projects', requireAuth, async (req, res) => {
             color: projectColor,
             is_personal: 0,
             owner_id: req.session.userId,
-            members: [],
+            members: projectMembers,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString()
         };

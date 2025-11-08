@@ -93,6 +93,21 @@ function setupEventListeners() {
         userSettingsForm.addEventListener('submit', handleUserSettingsSubmit);
     }
 
+    // Project dropdown change listener for task modal
+    const taskProjectSelect = document.getElementById('taskProject');
+    if (taskProjectSelect) {
+        taskProjectSelect.addEventListener('change', (e) => {
+            const assigneeSelect = document.getElementById('taskAssignee');
+            if (e.target.value) {
+                loadProjectMembers(e.target.value);
+            } else {
+                // Reset assignee if no project selected
+                assigneeSelect.disabled = false;
+                assigneeSelect.innerHTML = '<option value="">Select person...</option>';
+            }
+        });
+    }
+
     const statusEl = document.getElementById('statusFilter');
     if (statusEl) {
         statusEl.addEventListener('change', (e) => {
@@ -606,18 +621,16 @@ function openTaskModal() {
     projectSelect.innerHTML = '<option value="">Select project...</option>' +
         projects.map(p => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('');
 
+    // Reset assignee dropdown to default state
+    const assigneeSelect = document.getElementById('taskAssignee');
+    assigneeSelect.disabled = false;
+    assigneeSelect.innerHTML = '<option value="">Select person...</option>';
+
     // Pre-select current project if in project view
     if (currentProjectId) {
         projectSelect.value = currentProjectId;
         loadProjectMembers(currentProjectId);
     }
-
-    // Listen for project changes
-    projectSelect.addEventListener('change', (e) => {
-        if (e.target.value) {
-            loadProjectMembers(e.target.value);
-        }
-    });
 
     document.getElementById('taskModal').classList.add('active');
 }
@@ -633,11 +646,18 @@ function loadProjectMembers(projectId) {
 
     const assigneeSelect = document.getElementById('taskAssignee');
     const memberIds = [project.owner_id, ...(project.members || [])];
-    // Include admin users for testing purposes (TODO: remove this later)
-    const projectMembers = users.filter(u => memberIds.includes(u.id) || u.is_admin);
+    const projectMembers = users.filter(u => memberIds.includes(u.id));
 
-    assigneeSelect.innerHTML = '<option value="">Select person...</option>' +
-        projectMembers.map(u => `<option value="${u.id}">${escapeHtml(u.name)}</option>`).join('');
+    // For personal projects, disable the dropdown and auto-select the owner
+    if (project.is_personal) {
+        assigneeSelect.disabled = true;
+        assigneeSelect.innerHTML = projectMembers.map(u => `<option value="${u.id}">${escapeHtml(u.name)}</option>`).join('');
+        assigneeSelect.value = project.owner_id;
+    } else {
+        assigneeSelect.disabled = false;
+        assigneeSelect.innerHTML = '<option value="">Select person...</option>' +
+            projectMembers.map(u => `<option value="${u.id}">${escapeHtml(u.name)}</option>`).join('');
+    }
 }
 
 // Close task modal
@@ -923,11 +943,36 @@ function openProjectModal() {
     document.getElementById('projectModalTitle').textContent = 'Create New Project';
     document.getElementById('projectSubmitBtnText').textContent = 'Create Project';
 
-    // Hide delete button and members section when creating new project
+    // Hide delete button when creating new project
     document.getElementById('projectDeleteBtn').style.display = 'none';
-    document.getElementById('projectMembersSection').style.display = 'none';
+
+    // Show create mode for members (checkbox list)
+    document.getElementById('projectMembersCreateMode').style.display = 'block';
+    document.getElementById('projectMembersEditMode').style.display = 'none';
+
+    // Populate member checkboxes with all users except current user
+    renderProjectMembersCheckboxes();
 
     document.getElementById('projectModal').classList.add('active');
+}
+
+// Render member checkboxes for project creation
+function renderProjectMembersCheckboxes() {
+    const container = document.getElementById('projectMembersCheckboxList');
+    // Filter out current user since they'll be the owner
+    const availableUsers = users.filter(u => u.id !== currentUser.id);
+
+    if (availableUsers.length === 0) {
+        container.innerHTML = '<p style="color: var(--text-secondary); font-size: 0.875rem; margin: 0;">No other users available</p>';
+        return;
+    }
+
+    container.innerHTML = availableUsers.map(user => `
+        <label style="display: flex; align-items: center; padding: 0.5rem; cursor: pointer; border-radius: 0.25rem; transition: background 0.15s;">
+            <input type="checkbox" name="projectMember" value="${user.id}" style="margin-right: 0.75rem; cursor: pointer;">
+            <span style="flex: 1;">${escapeHtml(user.name)}</span>
+        </label>
+    `).join('');
 }
 
 // Close project modal
@@ -953,6 +998,12 @@ async function handleProjectSubmit(e) {
         description: document.getElementById('projectDescription').value,
         color: document.getElementById('projectColor').value
     };
+
+    // If creating a new project, collect selected members from checkboxes
+    if (!projectId) {
+        const checkedBoxes = document.querySelectorAll('input[name="projectMember"]:checked');
+        projectData.members = Array.from(checkedBoxes).map(cb => cb.value);
+    }
 
     try {
         const url = projectId ? `${API_PROJECTS}/${projectId}` : API_PROJECTS;
@@ -1340,9 +1391,9 @@ function editProject(projectId) {
     // Show delete button for editing
     document.getElementById('projectDeleteBtn').style.display = 'block';
 
-    // Show and populate members section
-    const membersSection = document.getElementById('projectMembersSection');
-    membersSection.style.display = 'block';
+    // Show edit mode for members (current members + add dropdown)
+    document.getElementById('projectMembersCreateMode').style.display = 'none';
+    document.getElementById('projectMembersEditMode').style.display = 'block';
     renderProjectMembersList(project);
 
     // Populate add member dropdown

@@ -64,7 +64,7 @@
                         <option value="high">High</option>
                         <option value="medium">Medium</option>
                         <option value="low">Low</option>
-                        <option value="none">Priority: None</option>
+                        <option value="none">None</option>
                     </select>
                 </div>
             </div>
@@ -315,14 +315,23 @@
                     </div>
                 </div>
 
-                <div id="projectMembersSection" class="form-group" style="display: none;">
-                    <label>Team Members</label>
-                    <div id="projectMembersList" class="members-list"></div>
-                    <div class="add-member-section">
-                        <select id="projectNewMemberSelect" class="form-select">
-                            <option value="">Add team member...</option>
-                        </select>
-                        <button type="button" class="btn btn-primary" onclick="addProjectMember()">Add</button>
+                <div id="projectMembersSection" class="form-group">
+                    <label>Team Members (optional)</label>
+
+                    <!-- For creating new projects: checkbox list -->
+                    <div id="projectMembersCreateMode" style="display: none;">
+                        <div id="projectMembersCheckboxList" style="max-height: 200px; overflow-y: auto; border: 1px solid var(--border-color); border-radius: 0.5rem; padding: 0.75rem; background: var(--card-bg);"></div>
+                    </div>
+
+                    <!-- For editing existing projects: current members + add dropdown -->
+                    <div id="projectMembersEditMode" style="display: none;">
+                        <div id="projectMembersList" class="members-list"></div>
+                        <div class="add-member-section">
+                            <select id="projectNewMemberSelect" class="form-select">
+                                <option value="">Add team member...</option>
+                            </select>
+                            <button type="button" class="btn btn-primary" onclick="addProjectMember()">Add</button>
+                        </div>
                     </div>
                 </div>
 
