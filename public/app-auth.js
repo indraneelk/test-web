@@ -219,7 +219,13 @@ function switchToProject(projectId) {
     document.getElementById('tasksView').style.display = 'block';
     document.getElementById('projectsView').style.display = 'none';
     document.getElementById('addTaskBtn').style.display = 'flex';
-    document.getElementById('pageTitle').textContent = `📁 ${project.name}`;
+    // Show project color dot in the header title instead of folder emoji
+    const titleEl = document.getElementById('pageTitle');
+    const projectColor = project.color || '#f06a6a';
+    titleEl.innerHTML = `
+        <span class="project-color-dot" style="width:10px;height:10px;background-color:${projectColor};margin-right:8px;display:inline-block;vertical-align:middle;"></span>
+        ${escapeHtml(project.name)}
+    `;
 
     renderTasks(filterTasks());
     updateStats();
