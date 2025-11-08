@@ -3,7 +3,6 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
-const bcrypt = require('bcryptjs');
 const session = require('express-session');
 const cookieParser = require('cookie-parser');
 const crypto = require('crypto');
@@ -27,7 +26,7 @@ app.use(helmet({
         directives: {
             defaultSrc: ["'self'"],
             styleSrc: ["'self'", "'unsafe-inline'"],
-            scriptSrc: ["'self'", "'unsafe-inline'"],  // Allow inline scripts for HTML pages
+            scriptSrc: ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net"],
             imgSrc: ["'self'", "data:", "https:"],
             connectSrc: ["'self'", "https://*.supabase.co"]  // Allow Supabase API calls
         }
@@ -82,6 +81,12 @@ app.use(session({
     }
 }));
 app.use(express.static('public'));
+// Serve local UMD build of supabase-js to satisfy CSP 'self'
+app.use('/vendor', express.static(path.join(__dirname, 'node_modules/@supabase/supabase-js/dist/umd')));
+app.get('/vendor/supabase.js', (req, res) => {
+    res.type('application/javascript');
+    res.sendFile(path.join(__dirname, 'node_modules/@supabase/supabase-js/dist/umd/supabase.js'));
+});
 
 // Helper functions
 const generateId = (prefix = 'id') => {
@@ -165,9 +170,6 @@ const sanitizeString = (str) => {
     return str.trim().slice(0, 1000); // Limit length and trim
 };
 
-// Security Constants
-const BCRYPT_ROUNDS = 12; // Recommended security level (vs old 10)
-
 // Rate Limiting
 const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
@@ -244,123 +246,12 @@ const isProjectOwner = async (userId, projectId) => {
 // ==================== AUTH ROUTES ====================
 
 // Register new user
-app.post('/api/auth/register', authLimiter, async (req, res) => {
-    try {
-        const { username, password, name, email } = req.body;
-
-        // Validate required fields
-        if (!username || !password || !name) {
-            return res.status(400).json({ error: 'Username, password, and name are required' });
-        }
-
-        // Validate username format
-        if (!validateUsername(username)) {
-            return res.status(400).json({ error: 'Username must be 3-30 characters, alphanumeric and underscores only' });
-        }
-
-        // Validate password strength
-        if (!validatePassword(password)) {
-            return res.status(400).json({ error: 'Password must be at least 8 characters with a mix of uppercase, lowercase, numbers, and special characters' });
-        }
-
-        // Validate name
-        if (!validateString(name, 1, 100)) {
-            return res.status(400).json({ error: 'Name must be 1-100 characters' });
-        }
-
-        // Validate email if provided
-        if (email && !validateEmail(email)) {
-            return res.status(400).json({ error: 'Invalid email format' });
-        }
-
-        // Check if username exists - use generic error to prevent user enumeration
-        const existingUser = await dataService.getUserByUsername(username.trim());
-        if (existingUser) {
-            // Add small delay to prevent timing attacks
-            await new Promise(resolve => setTimeout(resolve, 100));
-            return res.status(400).json({ error: 'Registration failed. Please check your credentials' });
-        }
-
-        // Hash password with secure rounds
-        const password_hash = bcrypt.hashSync(password, BCRYPT_ROUNDS);
-
-        const newUser = {
-            id: generateId('user'),
-            username: username.trim(),
-            password_hash,
-            name: sanitizeString(name),
-            email: email ? sanitizeString(email) : null,
-            is_admin: false,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-        };
-
-        await dataService.createUser(newUser);
-        await logActivity(newUser.id, 'user_registered', `User ${newUser.name} registered`);
-
-        // Create personal project for the new user
-        const personalProject = {
-            id: generateId('project'),
-            name: `${newUser.name}'s Personal Tasks`,
-            description: 'Personal tasks and to-dos',
-            color: pickRandomProjectColor(),
-            owner_id: newUser.id,
-            members: [],
-            is_personal: 1,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-        };
-        await dataService.createProject(personalProject);
-        await logActivity(newUser.id, 'project_created', `Personal project created`, null, personalProject.id);
-
-        // Return user without password
-        const { password_hash: _, ...userWithoutPassword } = newUser;
-        res.status(201).json({ user: userWithoutPassword });
-    } catch (error) {
-        console.error('Registration error:', error);
-        res.status(500).json({ error: 'Registration failed' });
-    }
-});
-
-// Login
-app.post('/api/auth/login', authLimiter, async (req, res) => {
-    try {
-        const { username, password } = req.body;
-
-        // Validate required fields
-        if (!username || !password) {
-            return res.status(400).json({ error: 'Username and password are required' });
-        }
-
-        // Validate input types and lengths
-        if (typeof username !== 'string' || typeof password !== 'string') {
-            return res.status(400).json({ error: 'Invalid input format' });
-        }
-
-        if (username.length > 100 || password.length > 100) {
-            return res.status(400).json({ error: 'Input too long' });
-        }
-
-        const user = await dataService.getUserByUsername(username.trim());
-
-        if (!user || !bcrypt.compareSync(password, user.password_hash)) {
-            return res.status(401).json({ error: 'Invalid credentials' });
-        }
-
-        // Set session
-        req.session.userId = user.id;
-        req.session.username = user.username;
-
-        logActivity(user.id, 'user_login', `User ${user.name} logged in`);
-
-        // Return user without password
-        const { password_hash: _, ...userWithoutPassword } = user;
-        res.json({ user: userWithoutPassword });
-    } catch (error) {
-        console.error('Login error:', error);
-        res.status(500).json({ error: 'Login failed' });
-    }
-});
+// ==================== LEGACY AUTH REMOVED ====================
+// Old bcrypt-based registration and login have been removed.
+// System now uses Supabase-only authentication:
+//   - Magic links for first-time user invites
+//   - Email/password login managed by Supabase
+//   - See /api/auth/supabase-login for the current login endpoint
 
 // Logout
 app.post('/api/auth/logout', requireAuth, (req, res) => {
@@ -665,11 +556,11 @@ app.post('/api/auth/supabase', authLimiter, async (req, res) => {
         // Ensure local user
         let user = await dataService.getUserById(supaUserId);
         if (!user) {
-            const password_hash = bcrypt.hashSync('supabase-' + supaUserId, BCRYPT_ROUNDS);
+            // No password_hash needed - all auth is managed by Supabase
             const newUser = {
                 id: supaUserId,
                 username: (email ? email.split('@')[0] : `user_${supaUserId.slice(0,8)}`),
-                password_hash,
+                password_hash: null, // Auth managed by Supabase
                 name: sanitizeString(name),
                 email: email ? sanitizeString(email) : null,
                 is_admin: false,
@@ -744,9 +635,10 @@ app.get('/api/users/:id', requireAuth, async (req, res) => {
 });
 
 // Update current user's profile
+// Note: Password changes must be done through Supabase, not this endpoint
 app.put('/api/auth/me', requireAuth, async (req, res) => {
     try {
-        const { name, email, initials, password } = req.body || {};
+        const { name, email, initials } = req.body || {};
 
         // Validate fields if provided
         if (name !== undefined && !validateString(name, 1, 100)) {
@@ -761,11 +653,6 @@ app.put('/api/auth/me', requireAuth, async (req, res) => {
                 return res.status(400).json({ error: 'Initials must be 1-4 letters' });
             }
         }
-        if (password !== undefined && password !== null && password !== '') {
-            if (!validatePassword(password)) {
-                return res.status(400).json({ error: 'Password must be at least 8 characters with a mix of uppercase, lowercase, numbers, and special characters' });
-            }
-        }
 
         const user = await dataService.getUserById(req.session.userId);
         if (!user) return res.status(404).json({ error: 'User not found' });
@@ -775,9 +662,6 @@ app.put('/api/auth/me', requireAuth, async (req, res) => {
             email: email !== undefined ? sanitizeString(email) : user.email,
             initials: initials !== undefined ? sanitizeString(initials || '') : (user.initials || null)
         };
-        if (password) {
-            updates.password_hash = bcrypt.hashSync(password, BCRYPT_ROUNDS);
-        }
 
         const updated = await dataService.updateUser(req.session.userId, updates);
         const { password_hash: _, ...withoutPass } = updated || {};

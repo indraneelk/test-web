@@ -1,7 +1,5 @@
-const { createClient } = require('@supabase/supabase-js');
-
 /**
- * Supabase Authentication Service
+ * Supabase Authentication Service (ESM-friendly)
  * Handles magic link auth, user profiles, and session management
  */
 class SupabaseService {
@@ -10,36 +8,50 @@ class SupabaseService {
             process.env.SUPABASE_URL &&
             process.env.SUPABASE_ANON_KEY
         );
+        this.supabase = null;
+        this.adminClient = null;
+        this._initPromise = null;
 
         if (this.enabled) {
-            // Client for general operations (uses anon key)
-            this.supabase = createClient(
-                process.env.SUPABASE_URL,
-                process.env.SUPABASE_ANON_KEY
-            );
-
-            // Admin client for server-side operations (uses service role key)
-            if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
-                this.adminClient = createClient(
-                    process.env.SUPABASE_URL,
-                    process.env.SUPABASE_SERVICE_ROLE_KEY
-                );
-            }
-
-            console.log('✅ Supabase authentication enabled');
+            // Lazy-load ESM-only supabase-js
+            this._initPromise = import('@supabase/supabase-js')
+                .then((mod) => {
+                    const createClient = mod?.createClient || mod?.default?.createClient;
+                    if (typeof createClient !== 'function') {
+                        throw new Error('supabase-js createClient not available');
+                    }
+                    this.supabase = createClient(
+                        process.env.SUPABASE_URL,
+                        process.env.SUPABASE_ANON_KEY
+                    );
+                    if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
+                        this.adminClient = createClient(
+                            process.env.SUPABASE_URL,
+                            process.env.SUPABASE_SERVICE_ROLE_KEY
+                        );
+                    }
+                    console.log('✅ Supabase authentication enabled');
+                })
+                .catch((err) => {
+                    console.error('❌ Supabase initialization failed:', err.message || err);
+                    this.enabled = false;
+                });
         } else {
             console.log('⚠️  Supabase not configured. Using bcrypt authentication.');
         }
+    }
+
+    async _ensureInit() {
+        if (!this.enabled) throw new Error('Supabase is not configured');
+        if (this._initPromise) await this._initPromise;
+        if (!this.supabase) throw new Error('Supabase client not initialized');
     }
 
     /**
      * Send magic link to email
      */
     async sendMagicLink(email, redirectTo) {
-        if (!this.enabled) {
-            throw new Error('Supabase is not configured');
-        }
-
+        await this._ensureInit();
         const { data, error } = await this.supabase.auth.signInWithOtp({
             email: email,
             options: {
@@ -58,10 +70,7 @@ class SupabaseService {
      * Sign in with OAuth provider (Google, etc.)
      */
     async signInWithOAuth(provider, redirectTo) {
-        if (!this.enabled) {
-            throw new Error('Supabase is not configured');
-        }
-
+        await this._ensureInit();
         const { data, error } = await this.supabase.auth.signInWithOAuth({
             provider: provider,
             options: {
@@ -80,10 +89,7 @@ class SupabaseService {
      * Verify and get user from access token
      */
     async getUserFromToken(accessToken) {
-        if (!this.enabled) {
-            throw new Error('Supabase is not configured');
-        }
-
+        await this._ensureInit();
         const { data, error } = await this.supabase.auth.getUser(accessToken);
 
         if (error) {
@@ -97,10 +103,7 @@ class SupabaseService {
      * Exchange auth code for session (for OAuth callback)
      */
     async exchangeCodeForSession(code) {
-        if (!this.enabled) {
-            throw new Error('Supabase is not configured');
-        }
-
+        await this._ensureInit();
         const { data, error } = await this.supabase.auth.exchangeCodeForSession(code);
 
         if (error) {
@@ -114,10 +117,7 @@ class SupabaseService {
      * Sign out user
      */
     async signOut(accessToken) {
-        if (!this.enabled) {
-            throw new Error('Supabase is not configured');
-        }
-
+        await this._ensureInit();
         // Set the session first
         await this.supabase.auth.setSession({
             access_token: accessToken,
