@@ -231,7 +231,18 @@ function setupEventListeners() {
 
 // USER SETTINGS
 function openUserSettings() {
-    if (!currentUser) return;
+    if (!currentUser) {
+        console.error('Cannot open user settings: currentUser is null');
+        console.log('Attempting to reload user data...');
+        checkAuth().then(() => {
+            if (currentUser) {
+                openUserSettings(); // Retry after loading
+            } else {
+                alert('Unable to load user data. Please refresh the page.');
+            }
+        });
+        return;
+    }
     document.getElementById('userId').value = currentUser.id || '';
     document.getElementById('profileUsername').value = currentUser.username || '';
     document.getElementById('profileName').value = currentUser.name || '';
