@@ -216,10 +216,10 @@ app.post('/api/auth/register', async (req, res) => {
             id: generateId('project'),
             name: `${newUser.name}'s Personal Tasks`,
             description: 'Personal tasks and to-dos',
-            color: '#f06a6a',
+            color: pickRandomProjectColor(),
             owner_id: newUser.id,
             members: [],
-            is_personal: true,
+            is_personal: 1,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString()
         };
@@ -397,6 +397,12 @@ app.get('/api/projects/:id', requireAuth, async (req, res) => {
 });
 
 // Create new project
+// Helper to pick a stable random color for personal projects
+function pickRandomProjectColor() {
+    const colors = ['#f06a6a', '#ffc82c', '#13ce66', '#667eea', '#764ba2', '#f093fb', '#4facfe', '#43e97b'];
+    return colors[Math.floor(Math.random() * colors.length)];
+}
+
 app.post('/api/projects', requireAuth, async (req, res) => {
     try {
         const { name, description, color } = req.body;
@@ -439,6 +445,7 @@ app.post('/api/projects', requireAuth, async (req, res) => {
             name: sanitizeString(name),
             description: description ? sanitizeString(description) : '',
             color: projectColor,
+            is_personal: 0,
             owner_id: req.session.userId,
             members: [],
             created_at: new Date().toISOString(),
@@ -471,6 +478,11 @@ app.put('/api/projects/:id', requireAuth, async (req, res) => {
 
         const { name, description, color } = req.body;
 
+        // Validate name if provided
+        if (project.is_personal) {
+            return res.status(403).json({ error: 'Personal projects cannot be edited' });
+        }
+        
         // Validate name if provided
         if (name !== undefined && !validateString(name, 1, 100)) {
             return res.status(400).json({ error: 'Project name must be 1-100 characters' });

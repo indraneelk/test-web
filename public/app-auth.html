@@ -46,12 +46,22 @@
 
             <div class="sidebar-footer">
                 <div class="filter-section">
-                    <label>Filter by Status:</label>
-                    <select id="statusFilter" class="filter-select">
-                        <option value="">All Status</option>
-                        <option value="pending">Pending</option>
-                        <option value="in-progress">In Progress</option>
-                        <option value="completed">Completed</option>
+                    <label>Sort by:</label
+                    >
+                    <select id="sortSelect" class="filter-select">
+                        <option value="" selected>None</option>
+                        <option value="due">Due Date</option>
+                        <option value="priority">Priority</option>
+                    </select>
+                </div>
+                <div class="filter-section">
+                    <label>Filter by Priority:</label>
+                    <select id="priorityFilter" class="filter-select">
+                        <option value="">None</option>
+                        <option value="high">High</option>
+                        <option value="medium">Medium</option>
+                        <option value="low">Low</option>
+                        <option value="none">Priority: None</option>
                     </select>
                 </div>
             </div>
@@ -62,26 +72,28 @@
             <header class="main-header">
                 <div class="header-left">
                     <h1 id="pageTitle">All Tasks</h1>
-                    <div class="stats-inline">
-                        <span class="stat-badge">
-                            <span class="stat-label">Total:</span>
-                            <span class="stat-value" id="totalTasks">0</span>
-                        </span>
-                        <span class="stat-badge completed">
-                            <span class="stat-label">Completed:</span>
-                            <span class="stat-value" id="completedTasks">0</span>
-                        </span>
-                        <span class="stat-badge pending">
-                            <span class="stat-label">Pending:</span>
-                            <span class="stat-value" id="pendingTasks">0</span>
-                        </span>
+                    <div class="stats-actions-row">
+                        <div class="stats-inline">
+                            <span class="stat-badge">
+                                <span class="stat-label">Total:</span>
+                                <span class="stat-value" id="totalTasks">0</span>
+                            </span>
+                            <span class="stat-badge completed">
+                                <span class="stat-label">Completed:</span>
+                                <span class="stat-value" id="completedTasks">0</span>
+                            </span>
+                            <span class="stat-badge pending">
+                                <span class="stat-label">Pending:</span>
+                                <span class="stat-value" id="pendingTasks">0</span>
+                            </span>
+                        </div>
+                        <div class="header-actions">
+                            <input type="text" id="searchInput" class="search-input" placeholder="Search tasks...">
+                            <button id="addTaskBtn" class="btn btn-primary">
+                                <span>+</span> New Task
+                            </button>
+                        </div>
                     </div>
-                </div>
-                <div class="header-actions">
-                    <input type="text" id="searchInput" class="search-input" placeholder="Search tasks...">
-                    <button id="addTaskBtn" class="btn btn-primary">
-                        <span>+</span> New Task
-                    </button>
                 </div>
             </header>
 
@@ -253,7 +265,7 @@
                 <div class="form-group">
                     <label for="projectColor">Project Color</label>
                     <div class="color-picker-group">
-                        <input type="color" id="projectColor" class="color-input" value="#f06a6a">
+                        <input type="hidden" id="projectColor" value="#f06a6a">
                         <div class="color-presets">
                             <button type="button" class="color-preset" data-color="#f06a6a" style="background: #f06a6a"></button>
                             <button type="button" class="color-preset" data-color="#ffc82c" style="background: #ffc82c"></button>
@@ -330,8 +342,8 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-primary" onclick="editProjectFromDetails()">Edit Project</button>
-                <button type="button" class="btn btn-secondary" onclick="deleteProjectFromDetails()">Delete Project</button>
+                <button type="button" id="projectDetailsEditBtn" class="btn btn-primary" onclick="editProjectFromDetails()">Edit Project</button>
+                <button type="button" id="projectDetailsDeleteBtn" class="btn btn-secondary" onclick="deleteProjectFromDetails()">Delete Project</button>
             </div>
         </div>
     </div>
@@ -345,10 +357,10 @@
                 <button class="close-btn" onclick="closeProjectSettingsModal()">&times;</button>
             </div>
             <div class="modal-body">
-                <div class="settings-section">
+                    <div class="settings-section">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
                         <h3 style="margin: 0;">Project Information</h3>
-                        <button class="btn btn-primary" onclick="editProjectFromSettings()">Edit Project</button>
+                        <button id="editProjectSettingsBtn" class="btn btn-primary" onclick="editProjectFromSettings()">Edit Project</button>
                     </div>
                     <div class="info-row">
                         <span class="info-label">Name:</span>
@@ -364,7 +376,7 @@
                     </div>
                 </div>
 
-                <div class="settings-section">
+                <div id="settingsTeamMembersSection" class="settings-section">
                     <h3>Team Members</h3>
                     <div id="membersList" class="members-list"></div>
                     <div class="add-member-section">
@@ -375,7 +387,7 @@
                     </div>
                 </div>
 
-                <div class="settings-section danger-zone">
+                <div id="settingsDangerZone" class="settings-section danger-zone">
                     <h3>Danger Zone</h3>
                     <button class="btn btn-danger" onclick="deleteCurrentProject()">Delete Project</button>
                 </div>

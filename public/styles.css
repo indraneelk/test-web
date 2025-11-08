@@ -114,7 +114,7 @@ body {
 .filter-select {
     width: 100%;
     padding: 0.5rem;
-    padding-right: 2rem;
+    padding-right: 2.75rem; /* extra space for arrow */
     border: 1px solid var(--border-color);
     border-radius: 0.375rem;
     background-color: white;
@@ -122,6 +122,14 @@ body {
     font-size: 0.875rem;
     cursor: pointer;
     transition: all 0.2s;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+    background-repeat: no-repeat;
+    background-position: right 0.9rem center; /* move chevron inwards */
+    background-size: 10px 6px;
+    /* subtle down chevron similar to custom select */
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path d='M1 1l4 4 4-4' fill='none' stroke='%23999' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/></svg>");
 }
 
 .filter-select:hover {
@@ -154,6 +162,9 @@ body {
     flex-wrap: wrap;
 }
 
+/* Make header-left take full width so inner row can push actions right */
+.header-left { flex: 1; }
+
 .header-left h1 {
     font-size: 1.75rem;
     font-weight: 600;
@@ -165,6 +176,15 @@ body {
     display: flex;
     gap: 1rem;
     flex-wrap: wrap;
+}
+
+/* Row that contains stats and header actions on the same line */
+.stats-actions-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    width: 100%;
 }
 
 .stat-badge {
@@ -199,6 +219,15 @@ body {
     display: flex;
     gap: 1rem;
     align-items: center;
+    margin-left: auto; /* push actions to the far right */
+}
+
+/* Keep project title and gear on one line */
+#pageTitle {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: nowrap;
 }
 
 .search-input {
@@ -392,6 +421,13 @@ body {
     width: 8px;
     height: 8px;
     border-radius: 50%;
+    display: inline-block;
+}
+
+/* Larger variant for details views */
+.project-color-dot-lg {
+    width: 14px;
+    height: 14px;
 }
 
 .project-abbr {
@@ -787,11 +823,7 @@ label {
 }
 
 .color-input {
-    width: 60px;
-    height: 40px;
-    border: 1px solid var(--border-color);
-    border-radius: 0.5rem;
-    cursor: pointer;
+    display: none; /* replaced by preset radio-style buttons */
 }
 
 .color-presets {
@@ -812,6 +844,11 @@ label {
 .color-preset:hover {
     transform: scale(1.1);
     border-color: var(--text-primary);
+}
+
+.color-preset.selected {
+    border-color: #000; /* permanent black border for selected color */
+    transform: none;
 }
 
 .modal-footer {
@@ -959,6 +996,16 @@ label {
     display: inline-block;
 }
 
+/* Inline priority triangle marker (right-pointing) */
+.priority-triangle-inline {
+    width: 0;
+    height: 0;
+    border-style: solid;
+    border-width: 6px 0 6px 10px; /* top right bottom left */
+    border-color: transparent transparent transparent; /* left border color set inline */
+    display: inline-block;
+}
+
 /* Responsive Design */
 @media (max-width: 1024px) {
     .sidebar {
@@ -983,8 +1030,15 @@ label {
         align-items: stretch;
     }
 
+    .stats-actions-row {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 0.75rem;
+    }
+
     .header-actions {
         flex-direction: column;
+        width: 100%;
     }
 
     .search-input {

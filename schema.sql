@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS projects (
     name TEXT NOT NULL UNIQUE,
     description TEXT,
     color TEXT NOT NULL DEFAULT '#f06a6a',
+    is_personal INTEGER NOT NULL DEFAULT 0,
     owner_id TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),

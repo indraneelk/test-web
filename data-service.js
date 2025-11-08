@@ -172,13 +172,14 @@ class DataService {
     async createProject(projectData) {
         if (this.useD1) {
             await this.d1.query(
-                `INSERT INTO projects (id, name, description, color, owner_id, created_at, updated_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                `INSERT INTO projects (id, name, description, color, is_personal, owner_id, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
                 [
                     projectData.id,
                     projectData.name,
                     projectData.description,
                     projectData.color || '#f06a6a',
+                    projectData.is_personal ? 1 : 0,
                     projectData.owner_id,
                     projectData.created_at,
                     projectData.updated_at

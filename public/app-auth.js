@@ -9,7 +9,9 @@ let currentView = 'all';
 let currentProjectId = null;
 let currentFilters = {
     status: '',
-    search: ''
+    search: '',
+    priority: '',
+    sort: '' // none (no sorting)
 };
 let taskToDelete = null;
 let currentProjectForSettings = null;
@@ -78,10 +80,29 @@ function setupEventListeners() {
     document.getElementById('taskForm').addEventListener('submit', handleTaskSubmit);
     document.getElementById('projectForm').addEventListener('submit', handleProjectSubmit);
 
-    document.getElementById('statusFilter').addEventListener('change', (e) => {
-        currentFilters.status = e.target.value;
-        renderTasks(filterTasks());
-    });
+    const statusEl = document.getElementById('statusFilter');
+    if (statusEl) {
+        statusEl.addEventListener('change', (e) => {
+            currentFilters.status = e.target.value;
+            renderTasks(filterTasks());
+        });
+    }
+
+    const priorityFilterEl = document.getElementById('priorityFilter');
+    if (priorityFilterEl) {
+        priorityFilterEl.addEventListener('change', (e) => {
+            currentFilters.priority = e.target.value;
+            renderTasks(filterTasks());
+        });
+    }
+
+    const sortSelectEl = document.getElementById('sortSelect');
+    if (sortSelectEl) {
+        sortSelectEl.addEventListener('change', (e) => {
+            currentFilters.sort = e.target.value;
+            renderTasks(filterTasks());
+        });
+    }
 
     document.getElementById('searchInput').addEventListener('input', (e) => {
         currentFilters.search = e.target.value.toLowerCase();
@@ -103,9 +124,18 @@ function setupEventListeners() {
     // Color preset buttons
     document.querySelectorAll('.color-preset').forEach(btn => {
         btn.addEventListener('click', (e) => {
-            const color = e.target.getAttribute('data-color');
+            const color = e.currentTarget.getAttribute('data-color');
             document.getElementById('projectColor').value = color;
+            updateColorPresetSelection(color);
         });
+    });
+}
+
+// Highlight selected color preset with a black border
+function updateColorPresetSelection(selectedColor) {
+    document.querySelectorAll('.color-preset').forEach(btn => {
+        const c = btn.getAttribute('data-color');
+        btn.classList.toggle('selected', c?.toLowerCase() === selectedColor?.toLowerCase());
     });
 }
 
@@ -223,8 +253,9 @@ function switchToProject(projectId) {
     const titleEl = document.getElementById('pageTitle');
     const projectColor = project.color || '#f06a6a';
     titleEl.innerHTML = `
-        <span class="project-color-dot" style="width:10px;height:10px;background-color:${projectColor};margin-right:8px;display:inline-block;vertical-align:middle;"></span>
+        <span class="project-color-dot" style="width:10px;height:10px;background-color:${projectColor};display:inline-block;vertical-align:middle;"></span>
         ${escapeHtml(project.name)}
+        <button class="icon-btn title-gear" type="button" onclick="viewProjectDetails('${project.id}')" title="Project details">⚙️</button>
     `;
 
     renderTasks(filterTasks());
@@ -276,7 +307,10 @@ function renderProjectsGrid() {
             <div class="project-card" onclick="viewProjectDetails('${project.id}')">
                 <div class="project-card-header">
                     <div>
-                        <h3 class="project-card-title">${escapeHtml(project.name)}</h3>
+                        <h3 class="project-card-title">
+                            <span class="project-color-indicator" style="background-color: ${project.color || '#f06a6a'}; margin-right: 6px;"></span>
+                            ${escapeHtml(project.name)}
+                        </h3>
                         ${isOwner ? '<span class="project-owner-badge">Owner</span>' : ''}
                     </div>
                     ${isOwner ? `
@@ -314,9 +348,14 @@ function filterTasks() {
         filtered = filtered.filter(t => t.project_id === currentProjectId);
     }
 
-    // Filter by status
+    // Filter by status (legacy; no UI currently sets this)
     if (currentFilters.status) {
         filtered = filtered.filter(t => t.status === currentFilters.status);
+    }
+
+    // Filter by priority
+    if (currentFilters.priority) {
+        filtered = filtered.filter(t => (t.priority || 'none').toLowerCase() === currentFilters.priority);
     }
 
     // Filter by search
@@ -325,6 +364,33 @@ function filterTasks() {
             t.name.toLowerCase().includes(currentFilters.search) ||
             t.description.toLowerCase().includes(currentFilters.search)
         );
+    }
+
+    // Sort
+    const sortMode = currentFilters.sort || '';
+    if (sortMode === 'priority') {
+        const rank = { high: 1, medium: 2, low: 3, none: 4 };
+        filtered.sort((a, b) => {
+            const ra = rank[(a.priority || 'none').toLowerCase()] ?? 99;
+            const rb = rank[(b.priority || 'none').toLowerCase()] ?? 99;
+            if (ra !== rb) return ra - rb;
+            const ad = new Date(a.date || a.created_at || 0).getTime();
+            const bd = new Date(b.date || b.created_at || 0).getTime();
+            return bd - ad;
+        });
+    } else if (sortMode === 'due') {
+        filtered.sort((a, b) => {
+            // Ascending by due date (earliest first). Missing dates go last.
+            const ad = new Date(a.date || 0).getTime();
+            const bd = new Date(b.date || 0).getTime();
+            const aDue = isNaN(ad) ? Infinity : ad;
+            const bDue = isNaN(bd) ? Infinity : bd;
+            if (aDue !== bDue) return aDue - bDue;
+            // Tie-breaker: newest created first
+            const ac = new Date(a.created_at || 0).getTime();
+            const bc = new Date(b.created_at || 0).getTime();
+            return bc - ac;
+        });
     }
 
     return filtered;
@@ -577,22 +643,23 @@ function viewTaskDetails(id) {
         day: 'numeric'
     });
 
-    // Priority display with icon
+    // Priority display with triangle marker
     const priority = (typeof task.priority === 'string' ? task.priority : 'none').toLowerCase().trim();
-    const priorityIcons = {
-        'high': '🔴',
-        'medium': '🟠',
-        'low': '🔵',
-        'none': '⚪'
-    };
-    const priorityDisplay = `${priorityIcons[priority]} ${priority.charAt(0).toUpperCase() + priority.slice(1)}`;
+    const priorityColors = { high: '#ef4444', medium: '#f59e0b', low: '#10b981' };
+    const pColor = priorityColors[priority];
+    const priorityDisplay = pColor && priority !== 'none'
+        ? `<span class="priority-triangle-inline" style="border-left-color: ${pColor}; margin-right: 6px;"></span>${priority.charAt(0).toUpperCase() + priority.slice(1)}`
+        : `<span class="priority-triangle-inline" style="border-left-color: transparent; margin-right: 6px;"></span>${priority.charAt(0).toUpperCase() + priority.slice(1)}`;
 
     document.getElementById('detailsTaskName').textContent = task.name;
     document.getElementById('detailsTaskDescription').textContent = task.description || 'No description';
-    document.getElementById('detailsTaskProject').textContent = project ? project.name : 'No project';
+    const projColor = project ? (project.color || '#f06a6a') : '#cccccc';
+    document.getElementById('detailsTaskProject').innerHTML = project
+        ? `<span class="project-color-dot" style="background-color: ${projColor}; margin-right: 6px;"></span>${escapeHtml(project.name)}`
+        : 'No project';
     document.getElementById('detailsTaskAssignee').textContent = assignee ? assignee.name : 'Unassigned';
     document.getElementById('detailsTaskDate').textContent = formattedDate;
-    document.getElementById('detailsTaskPriority').textContent = priorityDisplay;
+    document.getElementById('detailsTaskPriority').innerHTML = priorityDisplay;
 
     const statusBadge = document.getElementById('detailsTaskStatus');
     statusBadge.textContent = task.status.replace('-', ' ');
@@ -784,6 +851,7 @@ function openProjectModal() {
     document.getElementById('projectForm').reset();
     document.getElementById('projectId').value = '';
     document.getElementById('projectColor').value = '#f06a6a';
+    updateColorPresetSelection('#f06a6a');
     document.getElementById('projectModalTitle').textContent = 'Create New Project';
     document.getElementById('projectSubmitBtnText').textContent = 'Create Project';
 
@@ -880,11 +948,30 @@ function openProjectSettings(projectId) {
     }
     if (colorRowEl) {
         const color = project.color || '#f06a6a';
-        colorRowEl.innerHTML = `<span class="project-color-dot" style="background-color:${color}; margin-right: 6px;"></span> ${color}`;
+        colorRowEl.innerHTML = `<span class="project-color-dot project-color-dot-lg" style="background-color:${color};" title="Project color"></span>`;
     }
 
-    // Render members
-    renderMembersList(project);
+    // Personal project: hide editing capabilities and members
+    const editBtn = document.getElementById('editProjectSettingsBtn');
+    const membersSectionEl = document.getElementById('settingsTeamMembersSection');
+    const dangerZoneEl = document.getElementById('settingsDangerZone');
+    if (project.is_personal) {
+        if (editBtn) editBtn.style.display = 'none';
+        if (membersSectionEl) membersSectionEl.style.display = 'none';
+        if (dangerZoneEl) dangerZoneEl.style.display = 'none';
+    } else {
+        if (editBtn) editBtn.style.display = '';
+        if (membersSectionEl) membersSectionEl.style.display = '';
+        if (dangerZoneEl) dangerZoneEl.style.display = '';
+    }
+
+    // Render members (for non-personal)
+    if (!project.is_personal) {
+        renderMembersList(project);
+    } else {
+        const membersList = document.getElementById('membersList');
+        if (membersList) membersList.innerHTML = '';
+    }
 
     // Populate add member dropdown
     const memberIds = [project.owner_id, ...(project.members || [])];
@@ -1086,7 +1173,7 @@ function viewProjectDetails(projectId) {
     document.getElementById('detailsProjectTasks').textContent = `${projectTasks.length} tasks`;
     // Show project color
     const color = project.color || '#f06a6a';
-    document.getElementById('detailsProjectColor').innerHTML = `<span class="project-color-dot" style="background-color:${color}; margin-right: 6px;"></span> ${color}`;
+    document.getElementById('detailsProjectColor').innerHTML = `<span class="project-color-dot project-color-dot-lg" style="background-color:${color};" title="Project color"></span>`;
 
     // Render members
     const membersContainer = document.getElementById('detailsProjectMembers');
@@ -1096,6 +1183,17 @@ function viewProjectDetails(projectId) {
         membersContainer.innerHTML = members.map(member => `
             <div class="member-tag">${escapeHtml(member.name)}</div>
         `).join('');
+    }
+
+    // Hide actions for personal project
+    const editBtn = document.getElementById('projectDetailsEditBtn');
+    const deleteBtn = document.getElementById('projectDetailsDeleteBtn');
+    if (project.is_personal) {
+        if (editBtn) editBtn.style.display = 'none';
+        if (deleteBtn) deleteBtn.style.display = 'none';
+    } else {
+        if (editBtn) editBtn.style.display = '';
+        if (deleteBtn) deleteBtn.style.display = '';
     }
 
     document.getElementById('projectDetailsModal').classList.add('active');
@@ -1157,10 +1255,17 @@ function editProject(projectId) {
         return;
     }
 
+    if (project.is_personal) {
+        showError('Personal projects cannot be edited');
+        return;
+    }
+
     document.getElementById('projectId').value = project.id;
     document.getElementById('projectName').value = project.name || '';
     document.getElementById('projectDescription').value = project.description || '';
-    document.getElementById('projectColor').value = project.color || '#f06a6a';
+    const colorVal = project.color || '#f06a6a';
+    document.getElementById('projectColor').value = colorVal;
+    updateColorPresetSelection(colorVal);
     document.getElementById('projectModalTitle').textContent = 'Edit Project';
     document.getElementById('projectSubmitBtnText').textContent = 'Update Project';
 
@@ -1477,7 +1582,7 @@ class CustomSelect {
         this.selectedContainer.style.gap = '0.5rem';
 
         this.selectedDot = document.createElement('span');
-        this.selectedDot.className = 'priority-dot';
+        this.selectedDot.className = 'priority-triangle-inline';
         this.selectedDot.style.display = 'none';
 
         // Create selected text span
@@ -1520,11 +1625,11 @@ class CustomSelect {
 
             // If this is the priority select, add colored dot
             if (this.selectElement.id === 'taskPriority') {
-                const dot = document.createElement('span');
-                dot.className = 'priority-dot';
+                const tri = document.createElement('span');
+                tri.className = 'priority-triangle-inline';
                 const color = this.getPriorityColor(option.value);
-                if (color) dot.style.backgroundColor = color;
-                optionBtn.appendChild(dot);
+                if (color) tri.style.borderLeftColor = color;
+                optionBtn.appendChild(tri);
                 const label = document.createElement('span');
                 label.textContent = option.textContent;
                 optionBtn.appendChild(label);
@@ -1553,7 +1658,7 @@ class CustomSelect {
                 const color = this.getPriorityColor(value);
                 if (color && value !== 'none') {
                     this.selectedDot.style.display = 'inline-block';
-                    this.selectedDot.style.backgroundColor = color;
+                    this.selectedDot.style.borderLeftColor = color;
                 } else {
                     this.selectedDot.style.display = 'none';
                 }
