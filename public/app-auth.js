@@ -90,11 +90,20 @@ function setupEventListeners() {
     // Close modals on escape
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') {
+            closeTaskDetailsModal();
             closeTaskModal();
             closeProjectModal();
             closeProjectSettingsModal();
             closeDeleteModal();
         }
+    });
+
+    // Color preset buttons
+    document.querySelectorAll('.color-preset').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const color = e.target.getAttribute('data-color');
+            document.getElementById('projectColor').value = color;
+        });
     });
 }
 
@@ -331,7 +340,6 @@ function renderTasks(tasksToRender) {
 function createTaskCard(task) {
     const dueDate = new Date(task.date);
     const formattedDate = dueDate.toLocaleDateString('en-US', {
-        year: 'numeric',
         month: 'short',
         day: 'numeric'
     });
@@ -339,44 +347,51 @@ function createTaskCard(task) {
     const isOverdue = new Date() > dueDate && task.status !== 'completed';
     const isCompleted = task.status === 'completed';
 
-    const assignee = users.find(u => u.id === task.assigned_to_id);
-    const creator = users.find(u => u.id === task.created_by_id);
     const project = projects.find(p => p.id === task.project_id);
 
+    // Generate project abbreviation
+    let projectAbbr = '';
+    let projectColor = '#cccccc';
+    if (project) {
+        // Special case for "Personal" projects
+        if (project.name.toLowerCase().includes('personal')) {
+            projectAbbr = 'Personal';
+        } else {
+            // First 2 letters of each word
+            const words = project.name.split(' ');
+            projectAbbr = words.map(w => w.charAt(0).toUpperCase()).slice(0, 2).join('');
+        }
+        projectColor = project.color || '#f06a6a';
+    }
+
+    // Priority indicator colors
+    const priority = task.priority || 'medium';
+    const priorityColors = {
+        'high': '#ef4444',      // red
+        'medium': '#f59e0b',    // orange/yellow
+        'low': '#10b981'        // green
+    };
+    const priorityColor = priorityColors[priority];
+
     return `
-        <div class="task-card ${task.status}">
-            <div class="task-header">
-                <div class="task-checkbox ${isCompleted ? 'checked' : ''}"
-                     onclick="quickCompleteTask('${task.id}', ${!isCompleted})"
-                     title="${isCompleted ? 'Mark as incomplete' : 'Mark as complete'}">
-                </div>
-                <div class="task-title-section">
-                    <h3 class="task-title">${escapeHtml(task.name)}</h3>
-                    ${project ? `<div class="task-project">📁 ${escapeHtml(project.name)}</div>` : ''}
-                    ${creator ? `<div class="task-creator">Created by ${escapeHtml(creator.name)}</div>` : ''}
-                </div>
-                <div class="task-actions">
-                    <button class="task-btn" onclick="editTask('${task.id}')" title="Edit task">✏️</button>
-                    <button class="task-btn delete" onclick="deleteTask('${task.id}')" title="Delete task">🗑️</button>
-                </div>
+        <div class="task-card-compact ${task.status}" onclick="viewTaskDetails('${task.id}')">
+            <div class="priority-triangle" style="border-top-color: ${priorityColor};" title="Priority: ${priority}"></div>
+            <div class="task-card-main">
+                <button class="task-checkbox ${isCompleted ? 'checked' : ''}"
+                        onclick="event.stopPropagation(); quickCompleteTask('${task.id}', ${!isCompleted})"
+                        title="${isCompleted ? 'Mark as incomplete' : 'Mark as complete'}">
+                    ${isCompleted ? '<span class="checkmark">✓</span>' : ''}
+                </button>
+                <h3 class="task-title-compact">${escapeHtml(task.name)}</h3>
             </div>
-
-            <p class="task-description">${escapeHtml(task.description)}</p>
-
-            <div class="task-meta">
-                <div class="task-meta-item">
-                    <span class="assigned-to-badge">
-                        👤 ${assignee ? escapeHtml(assignee.name) : 'Unknown'}
-                    </span>
-                </div>
-                <div class="task-meta-item">
-                    <span class="task-meta-label">📅 Due:</span>
-                    <span class="task-meta-value" style="${isOverdue ? 'color: var(--danger-color);' : ''}">${formattedDate}</span>
-                </div>
-            </div>
-
-            <div class="task-footer">
-                <span class="task-status ${task.status}">${task.status.replace('-', ' ')}</span>
+            <div class="task-card-footer">
+                <span class="task-due ${isOverdue ? 'overdue' : ''}">${formattedDate}</span>
+                ${project ? `
+                    <div class="task-project-badge">
+                        <span class="project-color-dot" style="background-color: ${projectColor}"></span>
+                        <span class="project-abbr">${projectAbbr}</span>
+                    </div>
+                ` : ''}
             </div>
         </div>
     `;
@@ -443,7 +458,8 @@ function loadProjectMembers(projectId) {
 
     const assigneeSelect = document.getElementById('taskAssignee');
     const memberIds = [project.owner_id, ...(project.members || [])];
-    const projectMembers = users.filter(u => memberIds.includes(u.id));
+    // Include admin users for testing purposes (TODO: remove this later)
+    const projectMembers = users.filter(u => memberIds.includes(u.id) || u.is_admin);
 
     assigneeSelect.innerHTML = '<option value="">Select person...</option>' +
         projectMembers.map(u => `<option value="${u.id}">${escapeHtml(u.name)}</option>`).join('');
@@ -456,29 +472,109 @@ function closeTaskModal() {
 
 // Edit task
 function editTask(id) {
+    try {
+        const task = tasks.find(t => t.id === id);
+        if (!task) {
+            showError('Task not found');
+            return;
+        }
+
+        document.getElementById('taskId').value = task.id;
+        document.getElementById('taskName').value = task.name || '';
+        document.getElementById('taskDescription').value = task.description || '';
+        document.getElementById('taskDate').value = task.date || '';
+        document.getElementById('taskPriority').value = task.priority || 'medium';
+
+        // Populate dropdowns
+        const projectSelect = document.getElementById('taskProject');
+        projectSelect.innerHTML = '<option value="">Select project...</option>' +
+            projects.map(p => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('');
+        projectSelect.value = task.project_id || '';
+
+        // Load project members and set assignee
+        if (task.project_id) {
+            loadProjectMembers(task.project_id);
+            // Set assignee after a brief delay to ensure dropdown is populated
+            setTimeout(() => {
+                document.getElementById('taskAssignee').value = task.assigned_to_id || '';
+            }, 0);
+        }
+
+        document.getElementById('taskModalTitle').textContent = 'Edit Task';
+        document.getElementById('taskSubmitBtnText').textContent = 'Update Task';
+
+        // Open modal without resetting form
+        document.getElementById('taskModal').classList.add('active');
+    } catch (error) {
+        console.error('Error in editTask:', error);
+        showError('Failed to open edit modal');
+    }
+}
+
+// View task details
+let currentTaskDetailsId = null;
+
+function viewTaskDetails(id) {
     const task = tasks.find(t => t.id === id);
-    if (!task) return;
+    if (!task) {
+        return;
+    }
 
-    document.getElementById('taskId').value = task.id;
-    document.getElementById('taskName').value = task.name;
-    document.getElementById('taskDescription').value = task.description;
-    document.getElementById('taskDate').value = task.date;
-    document.getElementById('taskStatus').value = task.status;
+    currentTaskDetailsId = id;
 
-    // Populate dropdowns
-    const projectSelect = document.getElementById('taskProject');
-    projectSelect.innerHTML = '<option value="">Select project...</option>' +
-        projects.map(p => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('');
-    projectSelect.value = task.project_id;
+    const assignee = users.find(u => u.id === task.assigned_to_id);
+    const project = projects.find(p => p.id === task.project_id);
 
-    // Load project members and set assignee
-    loadProjectMembers(task.project_id);
-    document.getElementById('taskAssignee').value = task.assigned_to_id;
+    const dueDate = new Date(task.date);
+    const formattedDate = dueDate.toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+    });
 
-    document.getElementById('taskModalTitle').textContent = 'Edit Task';
-    document.getElementById('taskSubmitBtnText').textContent = 'Update Task';
+    // Priority display with icon
+    const priority = task.priority || 'medium';
+    const priorityIcons = {
+        'high': '🔴',
+        'medium': '🟡',
+        'low': '🟢'
+    };
+    const priorityDisplay = `${priorityIcons[priority]} ${priority.charAt(0).toUpperCase() + priority.slice(1)}`;
 
-    openTaskModal();
+    document.getElementById('detailsTaskName').textContent = task.name;
+    document.getElementById('detailsTaskDescription').textContent = task.description || 'No description';
+    document.getElementById('detailsTaskProject').textContent = project ? project.name : 'No project';
+    document.getElementById('detailsTaskAssignee').textContent = assignee ? assignee.name : 'Unassigned';
+    document.getElementById('detailsTaskDate').textContent = formattedDate;
+    document.getElementById('detailsTaskPriority').textContent = priorityDisplay;
+
+    const statusBadge = document.getElementById('detailsTaskStatus');
+    statusBadge.textContent = task.status.replace('-', ' ');
+    statusBadge.className = `task-status ${task.status}`;
+
+    document.getElementById('taskDetailsModal').classList.add('active');
+}
+
+// Close task details modal
+function closeTaskDetailsModal() {
+    document.getElementById('taskDetailsModal').classList.remove('active');
+    currentTaskDetailsId = null;
+}
+
+// Edit task from details modal
+function editTaskFromDetails() {
+    if (!currentTaskDetailsId) return;
+    const taskId = currentTaskDetailsId; // Store ID before closing modal
+    closeTaskDetailsModal();
+    editTask(taskId);
+}
+
+// Delete task from details modal
+async function deleteTaskFromDetails() {
+    if (!currentTaskDetailsId) return;
+    const taskId = currentTaskDetailsId; // Store ID before closing modal
+    closeTaskDetailsModal();
+    await deleteTask(taskId);
 }
 
 // Handle task submit
@@ -502,7 +598,7 @@ async function handleTaskSubmit(e) {
         date: document.getElementById('taskDate').value,
         project_id: document.getElementById('taskProject').value,
         assigned_to_id: document.getElementById('taskAssignee').value,
-        status: document.getElementById('taskStatus').value
+        priority: document.getElementById('taskPriority').value
     };
 
     try {
@@ -527,13 +623,8 @@ async function handleTaskSubmit(e) {
         await loadTasks();
         updateUI();
 
-        // Check for celebration
-        if (result._wasCompleted || (taskData.status === 'completed' && previousTask?.status !== 'completed')) {
-            celebrate();
-            showSuccess('🎉 Awesome! Task completed!');
-        } else {
-            showSuccess(taskId ? 'Task updated successfully!' : 'Task created successfully!');
-        }
+        // Success message (celebration only happens via checkbox)
+        showSuccess(taskId ? 'Task updated successfully!' : 'Task created successfully!');
     } catch (error) {
         showError(error.message);
     } finally {
@@ -629,6 +720,7 @@ async function confirmDelete() {
 function openProjectModal() {
     document.getElementById('projectForm').reset();
     document.getElementById('projectId').value = '';
+    document.getElementById('projectColor').value = '#f06a6a';
     document.getElementById('projectModalTitle').textContent = 'Create New Project';
     document.getElementById('projectSubmitBtnText').textContent = 'Create Project';
     document.getElementById('projectModal').classList.add('active');
@@ -654,7 +746,8 @@ async function handleProjectSubmit(e) {
     const projectId = document.getElementById('projectId').value;
     const projectData = {
         name: document.getElementById('projectName').value,
-        description: document.getElementById('projectDescription').value
+        description: document.getElementById('projectDescription').value,
+        color: document.getElementById('projectColor').value
     };
 
     try {
@@ -874,24 +967,14 @@ async function deleteCurrentProject() {
 
 // CELEBRATION ANIMATION
 function celebrate() {
-    const duration = 3000;
-    const animationEnd = Date.now() + duration;
-
     function randomInRange(min, max) {
         return Math.random() * (max - min) + min;
     }
 
-    const interval = setInterval(function() {
-        const timeLeft = animationEnd - Date.now();
-        if (timeLeft <= 0) {
-            return clearInterval(interval);
-        }
-
-        const particleCount = 50 * (timeLeft / duration);
-        for (let i = 0; i < particleCount; i++) {
-            createConfetti(randomInRange(0.1, 0.9), randomInRange(0.1, 0.3));
-        }
-    }, 250);
+    // Create one burst of confetti
+    for (let i = 0; i < 30; i++) {
+        createConfetti(randomInRange(0.1, 0.9), randomInRange(0.1, 0.3));
+    }
 }
 
 function createConfetti(x, y) {
@@ -908,13 +991,13 @@ function createConfetti(x, y) {
         top: ${y * 100}%;
         opacity: 1;
         transform: rotate(0deg);
-        animation: confetti-fall ${2 + Math.random() * 2}s linear forwards;
+        animation: confetti-fall 0.5s linear forwards;
         z-index: 10000;
         border-radius: ${Math.random() > 0.5 ? '50%' : '0'};
     `;
 
     document.body.appendChild(confetti);
-    setTimeout(() => confetti.remove(), 4000);
+    setTimeout(() => confetti.remove(), 500);
 }
 
 // UTILITY FUNCTIONS
@@ -990,3 +1073,179 @@ style.textContent = `
     }
 `;
 document.head.appendChild(style);
+
+// CUSTOM SELECT DROPDOWN
+class CustomSelect {
+    constructor(selectElement) {
+        this.selectElement = selectElement;
+        this.selectedValue = selectElement.value;
+        this.isOpen = false;
+        this.create();
+        this.addEventListeners();
+    }
+
+    create() {
+        // Create custom select container
+        this.container = document.createElement('div');
+        this.container.className = 'custom-select';
+
+        // Create trigger button
+        this.trigger = document.createElement('button');
+        this.trigger.type = 'button';
+        this.trigger.className = 'custom-select-trigger';
+
+        // Create selected text span
+        this.selectedText = document.createElement('span');
+        this.updateSelectedText();
+        this.trigger.appendChild(this.selectedText);
+
+        // Create arrow
+        const arrow = document.createElement('span');
+        arrow.className = 'arrow';
+        this.trigger.appendChild(arrow);
+
+        // Create dropdown
+        this.dropdown = document.createElement('div');
+        this.dropdown.className = 'custom-select-dropdown';
+
+        // Create options
+        this.createOptions();
+
+        // Assemble
+        this.container.appendChild(this.trigger);
+        this.container.appendChild(this.dropdown);
+
+        // Replace original select
+        this.selectElement.style.display = 'none';
+        this.selectElement.parentNode.insertBefore(this.container, this.selectElement);
+    }
+
+    createOptions() {
+        this.dropdown.innerHTML = '';
+        const options = Array.from(this.selectElement.options);
+
+        options.forEach(option => {
+            const optionBtn = document.createElement('button');
+            optionBtn.type = 'button';
+            optionBtn.className = 'custom-select-option';
+            optionBtn.textContent = option.textContent;
+            optionBtn.dataset.value = option.value;
+
+            if (option.value === this.selectedValue) {
+                optionBtn.classList.add('selected');
+            }
+
+            optionBtn.addEventListener('click', () => this.selectOption(option.value));
+            this.dropdown.appendChild(optionBtn);
+        });
+    }
+
+    updateSelectedText() {
+        const selectedOption = this.selectElement.options[this.selectElement.selectedIndex];
+        if (selectedOption && selectedOption.value) {
+            this.selectedText.textContent = selectedOption.textContent;
+            this.selectedText.classList.remove('placeholder');
+        } else {
+            this.selectedText.textContent = this.selectElement.options[0]?.textContent || 'Select...';
+            this.selectedText.classList.add('placeholder');
+        }
+    }
+
+    selectOption(value) {
+        this.selectedValue = value;
+        this.selectElement.value = value;
+
+        // Trigger change event on original select
+        const event = new Event('change', { bubbles: true });
+        this.selectElement.dispatchEvent(event);
+
+        // Update UI
+        this.updateSelectedText();
+        this.dropdown.querySelectorAll('.custom-select-option').forEach(opt => {
+            opt.classList.toggle('selected', opt.dataset.value === value);
+        });
+
+        this.close();
+    }
+
+    toggle() {
+        this.isOpen ? this.close() : this.open();
+    }
+
+    open() {
+        this.isOpen = true;
+        this.container.classList.add('open');
+    }
+
+    close() {
+        this.isOpen = false;
+        this.container.classList.remove('open');
+    }
+
+    refresh() {
+        this.createOptions();
+        this.updateSelectedText();
+    }
+
+    addEventListeners() {
+        this.trigger.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            this.toggle();
+        });
+
+        // Close when clicking outside
+        document.addEventListener('click', (e) => {
+            if (!this.container.contains(e.target)) {
+                this.close();
+            }
+        });
+
+        // Observe changes to the original select
+        const observer = new MutationObserver(() => {
+            this.refresh();
+        });
+        observer.observe(this.selectElement, { childList: true, subtree: true });
+    }
+}
+
+// Initialize custom selects
+function initCustomSelects() {
+    const selects = document.querySelectorAll('.form-select');
+    selects.forEach(select => {
+        if (!select.dataset.customized) {
+            new CustomSelect(select);
+            select.dataset.customized = 'true';
+        }
+    });
+}
+
+// Call after DOM is ready and whenever modals open
+document.addEventListener('DOMContentLoaded', () => {
+    setTimeout(initCustomSelects, 100);
+});
+
+// Re-initialize when modals open
+const originalOpenTaskModal = openTaskModal;
+window.openTaskModal = function() {
+    originalOpenTaskModal();
+    setTimeout(initCustomSelects, 50);
+};
+
+const originalOpenProjectModal = openProjectModal;
+window.openProjectModal = function() {
+    originalOpenProjectModal();
+    setTimeout(initCustomSelects, 50);
+};
+
+const originalOpenProjectSettings = openProjectSettings;
+window.openProjectSettings = function(projectId) {
+    originalOpenProjectSettings(projectId);
+    setTimeout(initCustomSelects, 50);
+};
+
+const originalEditTask = editTask;
+window.editTask = function(id) {
+    originalEditTask(id);
+    setTimeout(initCustomSelects, 50);
+};

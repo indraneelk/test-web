@@ -117,6 +117,57 @@
     </div>
 
     <!-- Task Modal -->
+    <!-- Task Details Modal -->
+    <div id="taskDetailsModal" class="modal">
+        <div class="modal-backdrop" onclick="closeTaskDetailsModal()"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="taskDetailsTitle">Task Details</h2>
+                <button class="close-btn" onclick="closeTaskDetailsModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="details-section">
+                    <h3 id="detailsTaskName"></h3>
+                    <div class="details-meta">
+                        <span class="task-status" id="detailsTaskStatus"></span>
+                    </div>
+                </div>
+
+                <div class="details-section">
+                    <label class="details-label">Description</label>
+                    <p id="detailsTaskDescription"></p>
+                </div>
+
+                <div class="details-row">
+                    <div class="details-section">
+                        <label class="details-label">Project</label>
+                        <p id="detailsTaskProject"></p>
+                    </div>
+                    <div class="details-section">
+                        <label class="details-label">Assigned To</label>
+                        <p id="detailsTaskAssignee"></p>
+                    </div>
+                </div>
+
+                <div class="details-row">
+                    <div class="details-section">
+                        <label class="details-label">Due Date</label>
+                        <p id="detailsTaskDate"></p>
+                    </div>
+                    <div class="details-section">
+                        <label class="details-label">Priority</label>
+                        <p id="detailsTaskPriority"></p>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-primary" onclick="editTaskFromDetails()">Edit Task</button>
+                <button type="button" class="btn btn-secondary" onclick="deleteTaskFromDetails()">Delete Task</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Task Edit Modal -->
     <div id="taskModal" class="modal">
         <div class="modal-backdrop" onclick="closeTaskModal()"></div>
         <div class="modal-content">
@@ -160,17 +211,16 @@
                     </div>
 
                     <div class="form-group">
-                        <label for="taskStatus">Status</label>
-                        <select id="taskStatus" class="form-select">
-                            <option value="pending">Pending</option>
-                            <option value="in-progress">In Progress</option>
-                            <option value="completed">Completed</option>
+                        <label for="taskPriority">Priority</label>
+                        <select id="taskPriority" class="form-select">
+                            <option value="low">Low</option>
+                            <option value="medium" selected>Medium</option>
+                            <option value="high">High</option>
                         </select>
                     </div>
                 </div>
 
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" onclick="closeTaskModal()">Cancel</button>
                     <button type="submit" class="btn btn-primary">
                         <span id="taskSubmitBtnText">Create Task</span>
                     </button>
@@ -200,8 +250,24 @@
                     <textarea id="projectDescription" class="form-textarea" rows="3" placeholder="Describe the project..."></textarea>
                 </div>
 
+                <div class="form-group">
+                    <label for="projectColor">Project Color</label>
+                    <div class="color-picker-group">
+                        <input type="color" id="projectColor" class="color-input" value="#f06a6a">
+                        <div class="color-presets">
+                            <button type="button" class="color-preset" data-color="#f06a6a" style="background: #f06a6a"></button>
+                            <button type="button" class="color-preset" data-color="#ffc82c" style="background: #ffc82c"></button>
+                            <button type="button" class="color-preset" data-color="#13ce66" style="background: #13ce66"></button>
+                            <button type="button" class="color-preset" data-color="#667eea" style="background: #667eea"></button>
+                            <button type="button" class="color-preset" data-color="#764ba2" style="background: #764ba2"></button>
+                            <button type="button" class="color-preset" data-color="#f093fb" style="background: #f093fb"></button>
+                            <button type="button" class="color-preset" data-color="#4facfe" style="background: #4facfe"></button>
+                            <button type="button" class="color-preset" data-color="#43e97b" style="background: #43e97b"></button>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" onclick="closeProjectModal()">Cancel</button>
                     <button type="submit" class="btn btn-primary">
                         <span id="projectSubmitBtnText">Create Project</span>
                     </button>

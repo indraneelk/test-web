@@ -211,6 +211,20 @@ app.post('/api/auth/register', async (req, res) => {
         await dataService.createUser(newUser);
         await logActivity(newUser.id, 'user_registered', `User ${newUser.name} registered`);
 
+        // Create personal project for the new user
+        const personalProject = {
+            id: generateId('project'),
+            name: `${newUser.name}'s Personal Tasks`,
+            description: 'Personal tasks and to-dos',
+            owner_id: newUser.id,
+            members: [],
+            is_personal: true,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+        };
+        await dataService.createProject(personalProject);
+        await logActivity(newUser.id, 'project_created', `Personal project created`, null, personalProject.id);
+
         // Return user without password
         const { password_hash: _, ...userWithoutPassword } = newUser;
         res.status(201).json({ user: userWithoutPassword });
@@ -483,6 +497,11 @@ app.delete('/api/projects/:id', requireAuth, async (req, res) => {
             return res.status(403).json({ error: 'Only project owner can delete project' });
         }
 
+        // Prevent deletion of personal projects
+        if (project.is_personal) {
+            return res.status(403).json({ error: 'Cannot delete personal project' });
+        }
+
         await dataService.deleteProject(req.params.id);
 
         await logActivity(req.session.userId, 'project_deleted', `Project "${project.name}" deleted`, null, req.params.id);
@@ -511,6 +530,11 @@ app.post('/api/projects/:id/members', requireAuth, async (req, res) => {
         // Check if current user is owner
         if (!(await isProjectOwner(req.session.userId, req.params.id))) {
             return res.status(403).json({ error: 'Only project owner can add members' });
+        }
+
+        // Prevent adding members to personal projects
+        if (project.is_personal) {
+            return res.status(403).json({ error: 'Cannot add members to personal project' });
         }
 
         // Check if user exists
@@ -552,6 +576,11 @@ app.delete('/api/projects/:id/members/:userId', requireAuth, async (req, res) =>
         // Check if current user is owner
         if (!(await isProjectOwner(req.session.userId, req.params.id))) {
             return res.status(403).json({ error: 'Only project owner can remove members' });
+        }
+
+        // Prevent removing members from personal projects
+        if (project.is_personal) {
+            return res.status(403).json({ error: 'Cannot remove members from personal project' });
         }
 
         // Check if user is actually a member
@@ -621,7 +650,7 @@ app.get('/api/tasks/:id', requireAuth, async (req, res) => {
 // Create new task
 app.post('/api/tasks', requireAuth, async (req, res) => {
     try {
-        const { name, description, date, project_id, assigned_to_id, status } = req.body;
+        const { name, description, date, project_id, assigned_to_id, priority } = req.body;
 
         // Validate required fields
         if (!name || !description || !date || !project_id || !assigned_to_id) {
@@ -646,10 +675,10 @@ app.post('/api/tasks', requireAuth, async (req, res) => {
             return res.status(400).json({ error: 'Invalid date format' });
         }
 
-        // Validate status
-        const validStatuses = ['pending', 'in-progress', 'completed'];
-        if (status && !validStatuses.includes(status)) {
-            return res.status(400).json({ error: 'Invalid status. Must be: pending, in-progress, or completed' });
+        // Validate priority
+        const validPriorities = ['low', 'medium', 'high'];
+        if (priority && !validPriorities.includes(priority)) {
+            return res.status(400).json({ error: 'Invalid priority. Must be: low, medium, or high' });
         }
 
         // Check if user is member of the project
@@ -670,7 +699,8 @@ app.post('/api/tasks', requireAuth, async (req, res) => {
             project_id: project_id,
             assigned_to_id: assigned_to_id,
             created_by_id: req.session.userId,
-            status: status || 'pending',
+            status: 'pending',
+            priority: priority || 'medium',
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString()
         };
@@ -699,7 +729,7 @@ app.put('/api/tasks/:id', requireAuth, async (req, res) => {
             return res.status(403).json({ error: 'Access denied' });
         }
 
-        const { name, description, date, assigned_to_id, status } = req.body;
+        const { name, description, date, assigned_to_id, status, priority } = req.body;
 
         // Validate name if provided
         if (name !== undefined && !validateString(name, 1, 200)) {
@@ -719,10 +749,16 @@ app.put('/api/tasks/:id', requireAuth, async (req, res) => {
             }
         }
 
-        // Validate status if provided
+        // Validate status if provided (for checkbox completion)
         const validStatuses = ['pending', 'in-progress', 'completed'];
         if (status !== undefined && !validStatuses.includes(status)) {
             return res.status(400).json({ error: 'Invalid status. Must be: pending, in-progress, or completed' });
+        }
+
+        // Validate priority if provided
+        const validPriorities = ['low', 'medium', 'high'];
+        if (priority !== undefined && !validPriorities.includes(priority)) {
+            return res.status(400).json({ error: 'Invalid priority. Must be: low, medium, or high' });
         }
 
         // If changing assigned user, verify they're in the project
@@ -737,7 +773,8 @@ app.put('/api/tasks/:id', requireAuth, async (req, res) => {
             description: description !== undefined ? sanitizeString(description) : task.description,
             date: date || task.date,
             assigned_to_id: assigned_to_id || task.assigned_to_id,
-            status: status || task.status
+            status: status !== undefined ? status : task.status,
+            priority: priority || task.priority || 'medium'
         };
 
         const updatedTask = await dataService.updateTask(req.params.id, updates);

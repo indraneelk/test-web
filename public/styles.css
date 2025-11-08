@@ -114,6 +114,7 @@ body {
 .filter-select {
     width: 100%;
     padding: 0.5rem;
+    padding-right: 2rem;
     border: 1px solid var(--border-color);
     border-radius: 0.375rem;
     background-color: white;
@@ -267,36 +268,135 @@ body {
 
 .task-list {
     display: grid;
+    grid-template-columns: repeat(auto-fill, 340px);
     gap: 1rem;
 }
 
-.task-card {
+/* Compact Task Card */
+.task-card-compact {
     background-color: var(--card-bg);
     border: 1px solid var(--border-color);
-    border-radius: 0.75rem;
-    padding: 1.5rem;
+    border-radius: 0.5rem;
+    padding: 0.875rem 1rem;
     transition: all 0.2s;
     cursor: pointer;
     position: relative;
-    border-left: 4px solid var(--primary-color);
+    width: 340px;
+    height: 110px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
 }
 
-.task-card:hover {
+.task-card-compact:hover {
     box-shadow: var(--shadow);
-    transform: translateY(-2px);
+    background-color: #fafafa;
 }
 
-.task-card.completed {
-    border-left-color: var(--success-color);
-    opacity: 0.85;
+.task-card-compact.completed .task-title-compact {
+    text-decoration: line-through;
+    opacity: 0.6;
 }
 
-.task-card.in-progress {
-    border-left-color: var(--warning-color);
+.task-card-main {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
 }
 
-.task-card.pending {
-    border-left-color: var(--danger-color);
+.task-checkbox {
+    width: 20px;
+    height: 20px;
+    min-width: 20px;
+    flex-shrink: 0;
+    border: 2px solid var(--border-color);
+    border-radius: 50%;
+    background: white;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    margin-top: 2px;
+}
+
+.task-checkbox:hover {
+    border-color: var(--primary-color);
+    background-color: #fff5f5;
+}
+
+.task-checkbox.checked {
+    background-color: var(--success-color);
+    border-color: var(--success-color);
+}
+
+.task-checkbox .checkmark {
+    color: white;
+    font-size: 0.75rem;
+    font-weight: bold;
+}
+
+.task-title-compact {
+    font-size: 0.9375rem;
+    font-weight: 500;
+    color: var(--text-primary);
+    margin: 0;
+    flex: 1;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    line-height: 1.4;
+}
+
+.priority-triangle {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 0;
+    height: 0;
+    border-style: solid;
+    border-width: 0 20px 20px 0;
+    border-color: transparent #ef4444 transparent transparent;
+    border-top-right-radius: 0.5rem;
+}
+
+.task-card-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-left: 32px;
+}
+
+.task-due {
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+}
+
+.task-due.overdue {
+    color: var(--danger-color);
+    font-weight: 600;
+}
+
+.task-project-badge {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+}
+
+.project-color-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+}
+
+.project-abbr {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
 }
 
 .task-header {
@@ -309,6 +409,33 @@ body {
 
 .task-title-section {
     flex: 1;
+}
+
+.complete-btn {
+    padding: 0.5rem 1rem;
+    border: none;
+    background: var(--primary-color);
+    color: white;
+    font-weight: 600;
+    font-size: 0.875rem;
+    border-radius: 0.375rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+}
+
+.complete-btn:hover {
+    background: var(--primary-hover);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(240, 106, 106, 0.25);
+}
+
+.complete-btn.completed {
+    background: var(--success-color);
+}
+
+.complete-btn.completed:hover {
+    background: #10b956;
 }
 
 .task-title {
@@ -362,13 +489,32 @@ body {
     font-size: 0.9375rem;
     margin-bottom: 1rem;
     line-height: 1.6;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 1;
+    -webkit-box-orient: vertical;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.task-description.expanded {
+    -webkit-line-clamp: unset;
+    display: block;
 }
 
 .task-meta {
     display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+}
+
+.task-meta-left {
+    display: flex;
     gap: 1.5rem;
     flex-wrap: wrap;
-    margin-bottom: 1rem;
+    flex: 1;
 }
 
 .task-meta-item {
@@ -489,6 +635,7 @@ body {
     overflow-y: auto;
     box-shadow: var(--shadow-lg);
     animation: slideUp 0.3s;
+    margin: 1rem;
 }
 
 .modal-small {
@@ -546,7 +693,8 @@ body {
     padding: 1.5rem;
 }
 
-#taskForm {
+#taskForm,
+#projectForm {
     padding: 1.5rem;
 }
 
@@ -584,6 +732,10 @@ label {
     transition: all 0.2s;
 }
 
+.form-select {
+    padding-right: 2.5rem;
+}
+
 .form-input:focus,
 .form-textarea:focus,
 .form-select:focus {
@@ -597,12 +749,165 @@ label {
     min-height: 100px;
 }
 
+.color-picker-group {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.color-input {
+    width: 60px;
+    height: 40px;
+    border: 1px solid var(--border-color);
+    border-radius: 0.5rem;
+    cursor: pointer;
+}
+
+.color-presets {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.color-preset {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    border: 2px solid transparent;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.color-preset:hover {
+    transform: scale(1.1);
+    border-color: var(--text-primary);
+}
+
 .modal-footer {
     display: flex;
     justify-content: flex-end;
     gap: 1rem;
     padding: 1.5rem;
     border-top: 1px solid var(--border-color);
+}
+
+/* Custom Dropdown */
+.custom-select {
+    position: relative;
+    width: 100%;
+}
+
+.custom-select-trigger {
+    width: 100%;
+    padding: 0.75rem;
+    padding-right: 2.5rem;
+    border: 1px solid var(--border-color);
+    border-radius: 0.5rem;
+    background-color: white;
+    color: var(--text-primary);
+    font-size: 0.9375rem;
+    font-family: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.custom-select-trigger:hover {
+    border-color: var(--primary-color);
+}
+
+.custom-select-trigger:focus,
+.custom-select.open .custom-select-trigger {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(240, 106, 106, 0.1);
+}
+
+.custom-select-trigger .arrow {
+    position: absolute;
+    right: 1.25rem;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 0;
+    height: 0;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 5px solid var(--text-secondary);
+    transition: transform 0.2s;
+}
+
+.custom-select.open .custom-select-trigger .arrow {
+    transform: translateY(-50%) rotate(180deg);
+}
+
+.custom-select-trigger .placeholder {
+    color: var(--text-secondary);
+}
+
+.custom-select-dropdown {
+    position: absolute;
+    top: calc(100% + 0.25rem);
+    left: 0;
+    right: 0;
+    background: white;
+    border: 1px solid var(--border-color);
+    border-radius: 0.5rem;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    max-height: 250px;
+    overflow-y: auto;
+    z-index: 1000;
+    display: none;
+}
+
+.custom-select.open .custom-select-dropdown {
+    display: block;
+}
+
+.custom-select-option {
+    padding: 0.75rem 1rem;
+    cursor: pointer;
+    transition: all 0.15s;
+    color: var(--text-primary);
+    font-size: 0.9375rem;
+    border: none;
+    background: none;
+    width: 100%;
+    text-align: left;
+}
+
+.custom-select-option:hover {
+    background-color: #f5f5f5;
+}
+
+.custom-select-option.selected {
+    background-color: var(--primary-color);
+    color: white;
+}
+
+.custom-select-option.selected:hover {
+    background-color: #e05555;
+}
+
+/* Scrollbar styling for custom dropdown */
+.custom-select-dropdown::-webkit-scrollbar {
+    width: 8px;
+}
+
+.custom-select-dropdown::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 0.5rem;
+}
+
+.custom-select-dropdown::-webkit-scrollbar-thumb {
+    background: #ccc;
+    border-radius: 0.5rem;
+}
+
+.custom-select-dropdown::-webkit-scrollbar-thumb:hover {
+    background: #999;
 }
 
 /* Responsive Design */

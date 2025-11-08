@@ -50,7 +50,18 @@ class DataService {
             this.writeJSON(this.USERS_FILE, defaultUsers);
         }
         if (!fs.existsSync(this.PROJECTS_FILE)) {
-            this.writeJSON(this.PROJECTS_FILE, []);
+            // Create default personal project for admin
+            const defaultProjects = [{
+                id: 'project-admin-personal',
+                name: 'Admin User\'s Personal Tasks',
+                description: 'Personal tasks and to-dos',
+                owner_id: 'user-admin',
+                members: [],
+                is_personal: true,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+            }];
+            this.writeJSON(this.PROJECTS_FILE, defaultProjects);
         }
         if (!fs.existsSync(this.TASKS_FILE)) {
             this.writeJSON(this.TASKS_FILE, []);
@@ -287,8 +298,8 @@ class DataService {
     async createTask(taskData) {
         if (this.useD1) {
             await this.d1.query(
-                `INSERT INTO tasks (id, name, description, date, project_id, assigned_to_id, created_by_id, status, created_at, updated_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                `INSERT INTO tasks (id, name, description, date, project_id, assigned_to_id, created_by_id, status, priority, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                 [
                     taskData.id,
                     taskData.name,
@@ -297,7 +308,8 @@ class DataService {
                     taskData.project_id,
                     taskData.assigned_to_id,
                     taskData.created_by_id,
-                    taskData.status,
+                    taskData.status || 'pending',
+                    taskData.priority || 'medium',
                     taskData.created_at,
                     taskData.updated_at
                 ]
@@ -314,13 +326,14 @@ class DataService {
     async updateTask(taskId, updates) {
         if (this.useD1) {
             await this.d1.query(
-                `UPDATE tasks SET name = ?, description = ?, date = ?, assigned_to_id = ?, status = ?, updated_at = ? WHERE id = ?`,
+                `UPDATE tasks SET name = ?, description = ?, date = ?, assigned_to_id = ?, status = ?, priority = ?, updated_at = ? WHERE id = ?`,
                 [
                     updates.name,
                     updates.description,
                     updates.date,
                     updates.assigned_to_id,
                     updates.status,
+                    updates.priority || 'medium',
                     new Date().toISOString(),
                     taskId
                 ]
