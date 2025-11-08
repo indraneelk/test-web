@@ -106,10 +106,11 @@ const logActivity = async (userId, action, details, taskId = null, projectId = n
     });
 };
 
-// Supabase JWT verification via JWKS (supports RS256 and HS256)
-const { jwtVerify, createRemoteJWKSet } = require('jose');
+// Supabase JWT verification using JWT secret (HS256)
+const { jwtVerify } = require('jose');
 const SUPABASE_URL = process.env.SUPABASE_URL || '';
-let SUPABASE_JWKS = null;
+const SUPABASE_JWT_SECRET = process.env.SUPABASE_JWT_SECRET || '';
+
 function getProjectRefFromUrl(urlStr) {
     try {
         const u = new URL(urlStr);
@@ -118,14 +119,19 @@ function getProjectRefFromUrl(urlStr) {
         return '';
     }
 }
+
 async function verifySupabaseJWT(token) {
+    if (!SUPABASE_JWT_SECRET) throw new Error('SUPABASE_JWT_SECRET not configured');
     const ref = getProjectRefFromUrl(SUPABASE_URL);
     if (!ref) throw new Error('SUPABASE_URL not configured');
-    const jwksUrl = new URL('/auth/v1/jwks', SUPABASE_URL);
-    SUPABASE_JWKS = SUPABASE_JWKS || createRemoteJWKSet(jwksUrl);
-    const { payload } = await jwtVerify(token, SUPABASE_JWKS, {
-        algorithms: ['RS256', 'HS256']
+
+    // Create secret key from JWT secret string
+    const secret = new TextEncoder().encode(SUPABASE_JWT_SECRET);
+
+    const { payload } = await jwtVerify(token, secret, {
+        algorithms: ['HS256']
     });
+
     if (payload.exp && Date.now() / 1000 > payload.exp) throw new Error('Token expired');
     if (payload.iss && !String(payload.iss).includes(ref)) throw new Error('Invalid issuer');
     return payload; // { sub, email, user_metadata?, ... }
@@ -996,6 +1002,22 @@ app.get('/api/tasks', requireAuth, async (req, res) => {
         const tasks = await dataService.getTasks();
         const projects = await dataService.getProjects();
         const userId = req.session.userId;
+
+        // Auto-archive tasks that have been completed for 7+ days
+        const now = new Date();
+        const sevenDaysInMs = 7 * 24 * 60 * 60 * 1000;
+
+        for (const task of tasks) {
+            if (task.status === 'completed' && task.completed_at && !task.archived) {
+                const completedDate = new Date(task.completed_at);
+                const daysSinceCompletion = now - completedDate;
+
+                if (daysSinceCompletion >= sevenDaysInMs) {
+                    await dataService.updateTask(task.id, { ...task, archived: true });
+                    task.archived = true; // Update in memory for this response
+                }
+            }
+        }
 
         // Get user's project IDs
         const userProjectIds = [];

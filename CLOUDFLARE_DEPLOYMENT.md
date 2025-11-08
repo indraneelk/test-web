@@ -30,68 +30,52 @@ Update `wrangler.toml` line 9 with your database_id.
 
 ## Step 2: Run Database Migrations
 
+Apply the schema and repo migrations:
+
 ```bash
-# Apply the schema
-wrangler d1 execute task-manager-db --file=./migrations/0001_initial_schema.sql
+wrangler d1 execute task-manager-db --file=./schema.sql
+wrangler d1 execute task-manager-db --file=./migrations/002_add_color_to_projects.sql
+wrangler d1 execute task-manager-db --file=./migrations/003_add_is_personal_to_projects.sql
+wrangler d1 execute task-manager-db --file=./migrations/004_add_initials_to_users.sql
 ```
 
-## Step 3: Add Secrets
+## Step 3: Add Secrets (provide your own values)
 
 ```bash
-# Add all required secrets
-wrangler secret put SUPABASE_ANON_KEY
-# Paste: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im94YmFzd3B5eHJ5dnlnYW1ndHN1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI1Njc2NjQsImV4cCI6MjA3ODE0MzY2NH0.Et4f6gG_wDecBkvLvuZLtvaumkUo_URTPj5hw7nD1fI
+wrangler secret put SUPABASE_URL              # e.g. https://<project-ref>.supabase.co
+wrangler secret put SUPABASE_ANON_KEY         # public anon key (safe for client)
+wrangler secret put SUPABASE_JWT_SECRET       # ONLY if your project uses HS256
+wrangler secret put SESSION_SECRET            # if you keep cookie sessions (not needed for pure Bearer)
 
+# Optional: only if you plan server-side admin calls to Supabase
 wrangler secret put SUPABASE_SERVICE_ROLE_KEY
-# Paste: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im94YmFzd3B5eHJ5dnlnYW1ndHN1Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2MjU2NzY2NCwiZXhwIjoyMDc4MTQzNjY0fQ.kXbCxeNwuzfK_nZJ-XRyD8lZdSmi-CeHeOUU7icox8U
-
-wrangler secret put SUPABASE_JWT_SECRET
-# Paste: Wj0qMDoTMW1MsmSulmFy7In5uJniONjo1Ec1aDqH7Lk26ZzG5JEMKSilPSeKl4NBfquZVn8H9s8UCOqQkXVGCw==
-
-wrangler secret put SESSION_SECRET
-# Generate a random string: openssl rand -base64 32
 ```
 
-## Step 4: Deploy Worker
+## Step 4: Choose a Topology
+
+### Option 1 (Recommended): Pages + Pages Functions (single domain)
+
+- Host UI and API together. Add a `functions/` directory (or a root `_worker.js`) for API routes.
+- Bind D1 and secrets to the Pages project in `wrangler.toml`.
+
+Deploy:
 
 ```bash
-# Deploy to Cloudflare
-wrangler deploy
-
-# Your API will be available at:
-# https://team-task-manager.<your-subdomain>.workers.dev
-```
-
-## Step 5: Deploy Frontend (Pages)
-
-```bash
-# Deploy static files
 wrangler pages deploy public --project-name=team-task-manager
-
-# Your frontend will be at:
-# https://team-task-manager.pages.dev
 ```
 
-## Step 6: Update Frontend API URL
+### Option 2: Separate Worker (API) + Pages (UI)
 
-Edit `public/app-auth.js` and update the API URLs to point to your Worker:
+- Deploy the API Worker and the static UI via Pages.
 
-```javascript
-// Change from:
-const API_AUTH = '/api/auth';
-const API_TASKS = '/api/tasks';
-
-// To:
-const API_AUTH = 'https://team-task-manager.<your-subdomain>.workers.dev/api/auth';
-const API_TASKS = 'https://team-task-manager.<your-subdomain>.workers.dev/api/tasks';
+```bash
+wrangler deploy
+wrangler pages deploy public --project-name=team-task-manager
 ```
 
-Or use environment-based configuration:
-```javascript
-const WORKER_URL = window.location.hostname.includes('localhost')
-    ? 'http://localhost:5001'
-    : 'https://team-task-manager.<your-subdomain>.workers.dev';
-```
+Frontend configuration for Option 2:
+- Expose `/api/config/public` from the Worker to return API base URL and Supabase public info.
+- The UI fetches that JSON and configures endpoints dynamically; avoid hardcoded domains in code.
 
 ## Architecture Overview
 
@@ -114,7 +98,6 @@ const WORKER_URL = window.location.hostname.includes('localhost')
 │  D1 Database                        │
 │  - users, tasks, projects           │
 │  - activity_logs                    │
-│  - refresh_tokens                   │
 └─────────────────────────────────────┘
 
 External Services:
@@ -125,16 +108,16 @@ External Services:
 ## Key Differences from Local Setup
 
 ### Authentication
-- **Local**: Express sessions stored in files
-- **Cloudflare**: JWT tokens in httpOnly cookies
+- **Local**: Express sessions (Node)
+- **Cloudflare**: Stateless JWT verification per request (Authorization: Bearer). Prefer this across Pages/Workers.
 
 ### Database
 - **Local**: JSON files in `data/`
 - **Cloudflare**: D1 SQL database
 
 ### Real-time Updates
-- **Plan A**: Polling every 30-60s
-- **Plan B**: Supabase Realtime channels
+- **Plan A**: Polling every 30–60s + refetch on tab focus and after writes
+- **Plan B**: Supabase Realtime broadcast channels
 
 ## Plan B: Supabase Realtime Implementation
 
@@ -182,35 +165,100 @@ const channel = supabase.channel('task-updates')
 
 ## Next Steps
 
-1. ✅ **worker.js implemented** - Complete with JWT auth and all endpoints
-2. ✅ **Plan A polling** - Frontend refetches tasks every 60s + tab focus
-3. ⏳ **Plan B Supabase Realtime** - Broadcast infrastructure ready, needs integration into endpoints
-4. **Test authentication flow** - Ensure JWT cookies work
-5. **Migrate existing data** - Export from JSON, import to D1
+1. **Implement Functions/_worker.js** – Port API endpoints (stateless JWT, D1 binding)
+2. **Add Plan A polling** – Frontend refetches tasks periodically + on focus/after POST/PUT
+3. **Add Plan B Supabase Realtime** – Server publishes broadcast after D1 writes; clients refetch scope
+4. **Test authentication flow** – JOSE verify with JWKS (RS256) or HMAC (HS256); validate iss/aud
+5. **Migrate existing data** – Export from JSON, import to D1 using schema+migrations
 
 ## Files Created/Modified
 
-- ✅ `migrations/0001_initial_schema.sql` - D1 database schema
-- ✅ `wrangler.toml` - Updated configuration
-- ⏳ `worker.js` - Needs complete rewrite (partially done)
-- ⏳ `public/app-auth.js` - Needs Plan A + Plan B additions
-- ⏳ `public/realtime.js` - New file for Plan B
+- ✅ `schema.sql` + `migrations/002/003/004` – D1 schema + migrations
+- ✅ `wrangler.toml` – Bind D1 and secrets
+- ✅ `functions/_worker.js` (or `worker.js`) – Stateless API (scaffolded)
+- ✅ `public/app-auth.js` – Plan A polling + Bearer wiring; optional Plan B subscription
+- ⏳ `public/realtime.js` – Optional helper for Plan B
 
 ## Status
 
-- [x] D1 Schema created
+- [x] D1 Schema/Migrations ready
 - [x] Wrangler configuration updated
-- [ ] Worker.js implementation (IN PROGRESS - needs developer completion)
-- [ ] Plan A polling implementation
-- [ ] Plan B Supabase Realtime implementation
+- [x] Functions/_worker.js scaffold added (health, db-check, auth/me)
+- [x] Plan A polling implemented in frontend
+- [~] Plan B Supabase Realtime hooks: server helper + client subscription placeholder
 - [ ] Deployment testing
 
 ## Developer Notes
 
-The current `worker.js` file is outdated and doesn't include:
-- JWT authentication
-- All API endpoints from server-auth.js
-- Supabase integration
-- Plan B broadcast logic
+The current Worker scaffold is outdated and doesn't include:
+- Stateless JWT verification (JOSE), strict `iss`/`aud` checks
+- API endpoints ported from server-auth.js
+- Supabase Realtime publish logic
 
-**Recommendation**: Use server-auth.js as reference and port all endpoints to Worker format.
+Recommendation:
+- Use Pages Functions or `_worker.js` and verify JWT per request (JOSE + JWKS, HS256 fallback).
+- Use `env.DB` for D1.
+
+## Frontend Authorization: Bearer
+
+The UI sends Supabase access tokens automatically with each API call.
+
+Pattern used in `public/app-auth.js`:
+
+```js
+async function ensureSupabase() {
+  if (window.supabase && !window._supa) {
+    const cfg = await (await fetch('/api/config/public')).json();
+    window._supa = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey);
+  }
+  return window._supa || null;
+}
+
+async function getAccessToken() {
+  try {
+    const client = await ensureSupabase();
+    if (client) {
+      const { data } = await client.auth.getSession();
+      if (data?.session?.access_token) return data.session.access_token;
+    }
+  } catch {}
+  return sessionStorage.getItem('sb_at') || null;
+}
+
+async function authFetch(url, options = {}) {
+  const token = await getAccessToken();
+  const headers = new Headers(options.headers || {});
+  if (token) headers.set('Authorization', `Bearer ${token}`);
+  return fetch(url, { ...options, headers, credentials: token ? undefined : 'include' });
+}
+```
+
+Notes:
+- When a Supabase token is available, we attach `Authorization: Bearer <token>` and do not send cookies.
+- If no token is found, we fall back to cookie mode for local dev.
+- Login stores the Supabase access token in `sessionStorage` as `sb_at` for immediate use.
+
+## Pages Functions Scaffold
+
+Added a minimal `functions/_worker.js` with:
+- JOSE JWT verification (JWKS preferred, HS256 fallback) and strict `iss`/`aud` checks
+- `GET /api/health` → { ok: true }
+- `GET /api/db-check` → counts from D1 (users/projects/tasks)
+- `GET /api/auth/me` → returns the current user (by Supabase `sub`)
+
+Bind your D1 and secrets in `wrangler.toml` for the Pages project. Example:
+
+```toml
+[[d1_databases]]
+binding = "DB"
+database_name = "task-manager-db"
+database_id = "<your-database-id>"
+```
+
+## Plan B: Notes
+
+- Server helper `broadcastChange()` exists in `worker.js` to publish to a `task-updates` channel.
+- Clients subscribe when `window.supabase` is available; otherwise Plan B is skipped gracefully.
+- Scope channels per project later (e.g., `tasks-<projectId>`) to reduce reloads.
+- Prefer Bearer tokens over cookies across domains.
+- Optionally prewarm JWKS on boot to reduce cold-start latency.

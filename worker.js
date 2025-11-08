@@ -1,8 +1,7 @@
 // Cloudflare Worker for Team Task Manager
 // Uses D1 Database, Supabase Auth, and JWT-based authentication
 
-import { jwtVerify, SignJWT } from 'jose';
-import { createClient } from '@supabase/supabase-js';
+import { jwtVerify, SignJWT, createRemoteJWKSet } from 'jose';
 
 // ==================== HELPER FUNCTIONS ====================
 
@@ -38,18 +37,31 @@ async function verifyJWT(token, secret) {
 }
 
 async function verifySupabaseJWT(token, env) {
+    const supabaseUrl = env.SUPABASE_URL;
+    if (!supabaseUrl) return null;
+    const expectedIss = new URL('/auth/v1', supabaseUrl).toString();
     try {
-        const secret = new TextEncoder().encode(env.SUPABASE_JWT_SECRET);
-        const { payload } = await jwtVerify(token, secret, {
-            algorithms: ['HS256']
-        });
-
-        if (payload.exp && Date.now() / 1000 > payload.exp) {
-            throw new Error('Token expired');
-        }
+        const jwks = createRemoteJWKSet(new URL('/auth/v1/jwks', supabaseUrl));
+        const { payload } = await jwtVerify(token, jwks, { algorithms: ['RS256'] });
+        if (payload.exp && Date.now() / 1000 > payload.exp) throw new Error('Token expired');
+        if (payload.iss && payload.iss !== expectedIss) throw new Error('Invalid issuer');
+        if (payload.aud && payload.aud !== 'authenticated') throw new Error('Invalid audience');
         return payload;
-    } catch (error) {
-        console.error('JWT verification failed:', error);
+    } catch (e) {
+        if (env.SUPABASE_JWT_SECRET) {
+            try {
+                const secret = new TextEncoder().encode(env.SUPABASE_JWT_SECRET);
+                const { payload } = await jwtVerify(token, secret, { algorithms: ['HS256'] });
+                if (payload.exp && Date.now() / 1000 > payload.exp) throw new Error('Token expired');
+                if (payload.iss && payload.iss !== expectedIss) throw new Error('Invalid issuer');
+                if (payload.aud && payload.aud !== 'authenticated') throw new Error('Invalid audience');
+                return payload;
+            } catch (err) {
+                console.error('HS256 verification failed:', err);
+                return null;
+            }
+        }
+        console.error('RS256 verification failed:', e);
         return null;
     }
 }
@@ -135,9 +147,7 @@ async function getUserByEmail(db, email) {
     return await db.prepare('SELECT * FROM users WHERE email = ?').bind(email).first();
 }
 
-async function getUserBySupabaseId(db, supabaseId) {
-    return await db.prepare('SELECT * FROM users WHERE supabase_id = ?').bind(supabaseId).first();
-}
+// Removed getUserBySupabaseId: we standardize on id = Supabase sub
 
 async function getProjectById(db, projectId) {
     return await db.prepare('SELECT * FROM projects WHERE id = ?').bind(projectId).first();
@@ -147,19 +157,9 @@ async function isProjectMember(db, userId, projectId) {
     const project = await getProjectById(db, projectId);
     if (!project) return false;
     if (project.owner_id === userId) return true;
-
-    // Check if members is stored as JSON string
-    if (project.members) {
-        try {
-            const members = typeof project.members === 'string'
-                ? JSON.parse(project.members)
-                : project.members;
-            return Array.isArray(members) && members.includes(userId);
-        } catch (e) {
-            return false;
-        }
-    }
-    return false;
+    const row = await db.prepare('SELECT 1 FROM project_members WHERE project_id = ? AND user_id = ?')
+        .bind(projectId, userId).first();
+    return !!row;
 }
 
 async function isProjectOwner(db, userId, projectId) {
@@ -170,16 +170,26 @@ async function isProjectOwner(db, userId, projectId) {
 // ==================== AUTHENTICATION MIDDLEWARE ====================
 
 async function authenticate(request, env) {
+    // Prefer Authorization: Bearer <access_token> (stateless)
+    const auth = request.headers.get('Authorization');
+    if (auth && auth.startsWith('Bearer ')) {
+        const token = auth.slice(7);
+        const claims = await verifySupabaseJWT(token, env);
+        if (claims && claims.sub) {
+            const user = await getUserById(env.DB, claims.sub);
+            if (user) return user;
+        }
+    }
+    // Fallback to cookie session (if present)
     const token = getCookie(request, 'auth_token');
-    if (!token) return null;
-
-    const payload = await verifyJWT(token, env.SESSION_SECRET);
-    if (!payload || !payload.userId) return null;
-
-    const user = await getUserById(env.DB, payload.userId);
-    if (!user) return null;
-
-    return user;
+    if (token && env.SESSION_SECRET) {
+        const payload = await verifyJWT(token, env.SESSION_SECRET);
+        if (payload && payload.userId) {
+            const user = await getUserById(env.DB, payload.userId);
+            if (user) return user;
+        }
+    }
+    return null;
 }
 
 // ==================== API RESPONSE HELPERS ====================
@@ -221,45 +231,21 @@ async function handleSupabaseLogin(request, env) {
         }
 
         const { sub, email } = payload;
-
-        // Find or create user
-        let user = await getUserBySupabaseId(env.DB, sub);
-
-        if (!user && email) {
-            // Check by email for migration
-            user = await getUserByEmail(env.DB, email);
-            if (user) {
-                // Update with Supabase ID
-                await env.DB.prepare(
-                    'UPDATE users SET supabase_id = ?, updated_at = ? WHERE id = ?'
-                ).bind(sub, getCurrentTimestamp(), user.id).run();
-                user.supabase_id = sub;
-            }
-        }
-
+        // Find or create user by id=sub
+        let user = await getUserById(env.DB, sub);
         if (!user) {
-            // Create new user
-            const userId = generateId('user');
             const now = getCurrentTimestamp();
-            const initials = email ? email.substring(0, 2).toUpperCase() : 'U';
-            const colors = ['#355C7D', '#6C5B7B', '#C06C84', '#F67280', '#F8B195'];
-            const color = colors[Math.floor(Math.random() * colors.length)];
-
+            const name = email ? email.split('@')[0] : 'User';
+            const initials = name.substring(0, 2).toUpperCase();
+            const username = name.toLowerCase();
+            // Satisfy NOT NULL password_hash with a placeholder
             await env.DB.prepare(
-                'INSERT INTO users (id, supabase_id, email, username, name, initials, color, is_admin, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-            ).bind(userId, sub, email, email?.split('@')[0] || 'user', email || 'User', initials, color, 0, now, now).run();
-
-            user = await getUserById(env.DB, userId);
+                'INSERT INTO users (id, username, password_hash, name, email, initials, is_admin, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+            ).bind(sub, username, 'supabase', name, email || null, initials, 0, now, now).run();
+            user = await getUserById(env.DB, sub);
         }
-
-        // Create session JWT
-        const sessionToken = await createJWT({ userId: user.id }, env.SESSION_SECRET, '24h');
-
         const { password_hash, ...userWithoutPassword } = user;
-
-        return jsonResponse({ user: userWithoutPassword }, 200, {
-            'Set-Cookie': setCookie('auth_token', sessionToken, { maxAge: 86400 })
-        });
+        return jsonResponse({ user: userWithoutPassword });
     } catch (error) {
         console.error('Supabase login error:', error);
         return errorResponse('Login failed: ' + error.message, 500);
@@ -281,45 +267,20 @@ async function handleSupabaseCallback(request, env) {
         }
 
         const { sub, email, user_metadata } = payload;
-
-        // Find user by Supabase ID
-        let user = await getUserBySupabaseId(env.DB, sub);
-
-        if (!user && email) {
-            user = await getUserByEmail(env.DB, email);
-        }
-
+        let user = await getUserById(env.DB, sub);
         if (!user) {
-            // New user - create account
-            const userId = generateId('user');
             const now = getCurrentTimestamp();
             const name = user_metadata?.name || email?.split('@')[0] || 'User';
             const initials = name.substring(0, 2).toUpperCase();
-            const colors = ['#355C7D', '#6C5B7B', '#C06C84', '#F67280', '#F8B195'];
-            const color = colors[Math.floor(Math.random() * colors.length)];
-
+            const username = (email?.split('@')[0] || 'user').toLowerCase();
             await env.DB.prepare(
-                'INSERT INTO users (id, supabase_id, email, username, name, initials, color, is_admin, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-            ).bind(userId, sub, email, email?.split('@')[0] || 'user', name, initials, color, 0, now, now).run();
-
-            user = await getUserById(env.DB, userId);
-            await logActivity(env.DB, userId, 'user_created', `User ${name} created via magic link`);
-        } else if (!user.supabase_id) {
-            // Update existing user with Supabase ID
-            await env.DB.prepare(
-                'UPDATE users SET supabase_id = ?, updated_at = ? WHERE id = ?'
-            ).bind(sub, getCurrentTimestamp(), user.id).run();
-            user.supabase_id = sub;
+                'INSERT INTO users (id, username, password_hash, name, email, initials, is_admin, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+            ).bind(sub, username, 'supabase', name, email || null, initials, 0, now, now).run();
+            user = await getUserById(env.DB, sub);
+            await logActivity(env.DB, sub, 'user_created', `User ${name} created via magic link`);
         }
-
-        // Create session JWT
-        const sessionToken = await createJWT({ userId: user.id }, env.SESSION_SECRET, '24h');
-
         const { password_hash, ...userWithoutPassword } = user;
-
-        return jsonResponse({ user: userWithoutPassword }, 200, {
-            'Set-Cookie': setCookie('auth_token', sessionToken, { maxAge: 86400 })
-        });
+        return jsonResponse({ user: userWithoutPassword });
     } catch (error) {
         console.error('Supabase callback error:', error);
         return errorResponse('Authentication failed: ' + error.message, 500);
@@ -355,7 +316,7 @@ async function handleUpdateMe(request, env) {
 
     try {
         const body = await request.json();
-        const { name, initials, color } = body;
+        const { name, initials } = body;
 
         const updates = [];
         const values = [];
@@ -367,10 +328,6 @@ async function handleUpdateMe(request, env) {
         if (initials) {
             updates.push('initials = ?');
             values.push(initials.trim().substring(0, 2).toUpperCase());
-        }
-        if (color) {
-            updates.push('color = ?');
-            values.push(color);
         }
 
         if (updates.length === 0) {
@@ -441,28 +398,29 @@ async function handleGetProjects(request, env) {
         return errorResponse('Authentication required', 401);
     }
 
-    const { results } = await env.DB.prepare(
-        'SELECT * FROM projects ORDER BY created_at DESC'
-    ).all();
+    // Owned projects
+    const { results: owned } = await env.DB.prepare(
+        'SELECT * FROM projects WHERE owner_id = ? ORDER BY created_at DESC'
+    ).bind(user.id).all();
 
-    // Filter projects user has access to and parse members JSON
-    const userProjects = results.filter(p => {
-        if (p.owner_id === user.id) return true;
-        if (p.members) {
-            try {
-                const members = typeof p.members === 'string' ? JSON.parse(p.members) : p.members;
-                return Array.isArray(members) && members.includes(user.id);
-            } catch (e) {
-                return false;
-            }
-        }
-        return false;
-    }).map(p => ({
-        ...p,
-        members: p.members ? (typeof p.members === 'string' ? JSON.parse(p.members) : p.members) : []
-    }));
+    // Member projects
+    const { results: memberRows } = await env.DB.prepare(
+        'SELECT p.* FROM projects p INNER JOIN project_members m ON p.id = m.project_id WHERE m.user_id = ? ORDER BY p.created_at DESC'
+    ).bind(user.id).all();
 
-    return jsonResponse(userProjects);
+    // Deduplicate
+    const projectMap = new Map();
+    [...owned, ...memberRows].forEach(p => projectMap.set(p.id, p));
+    const projects = Array.from(projectMap.values());
+
+    // Attach members array
+    for (const p of projects) {
+        const { results: members } = await env.DB.prepare('SELECT user_id FROM project_members WHERE project_id = ?')
+            .bind(p.id).all();
+        p.members = members.map(r => r.user_id);
+    }
+
+    return jsonResponse(projects);
 }
 
 async function handleGetProject(request, env, projectId) {
@@ -481,11 +439,9 @@ async function handleGetProject(request, env, projectId) {
         return errorResponse('Access denied', 403);
     }
 
-    // Parse members JSON if string
-    if (project.members && typeof project.members === 'string') {
-        project.members = JSON.parse(project.members);
-    }
-
+    const { results: members } = await env.DB.prepare('SELECT user_id FROM project_members WHERE project_id = ?')
+        .bind(projectId).all();
+    project.members = members.map(r => r.user_id);
     return jsonResponse(project);
 }
 
@@ -507,23 +463,12 @@ async function handleCreateProject(request, env) {
         const now = getCurrentTimestamp();
 
         await env.DB.prepare(
-            'INSERT INTO projects (id, name, description, color, owner_id, members, is_personal, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
-        ).bind(
-            projectId,
-            name.trim(),
-            description?.trim() || '',
-            color,
-            user.id,
-            JSON.stringify([]),
-            is_personal ? 1 : 0,
-            now,
-            now
-        ).run();
+            'INSERT INTO projects (id, name, description, color, owner_id, is_personal, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+        ).bind(projectId, name.trim(), description?.trim() || '', color, user.id, is_personal ? 1 : 0, now, now).run();
 
         await logActivity(env.DB, user.id, 'project_created', `Project "${name}" created`, null, projectId);
 
         const project = await getProjectById(env.DB, projectId);
-        project.members = [];
 
         return jsonResponse(project, 201);
     } catch (error) {
@@ -578,10 +523,6 @@ async function handleUpdateProject(request, env, projectId) {
         await logActivity(env.DB, user.id, 'project_updated', `Project updated`, null, projectId);
 
         const project = await getProjectById(env.DB, projectId);
-        if (project.members && typeof project.members === 'string') {
-            project.members = JSON.parse(project.members);
-        }
-
         return jsonResponse(project);
     } catch (error) {
         console.error('Update project error:', error);
@@ -642,22 +583,16 @@ async function handleAddProjectMember(request, env, projectId) {
             return errorResponse('User not found', 404);
         }
 
-        const project = await getProjectById(env.DB, projectId);
-        let members = project.members ? (typeof project.members === 'string' ? JSON.parse(project.members) : project.members) : [];
+        // Check if already a member
+        const exists = await env.DB.prepare('SELECT 1 FROM project_members WHERE project_id = ? AND user_id = ?')
+            .bind(projectId, newMemberId).first();
+        if (exists) return errorResponse('User is already a member', 400);
 
-        if (members.includes(newMemberId)) {
-            return errorResponse('User is already a member', 400);
-        }
-
-        members.push(newMemberId);
-
-        await env.DB.prepare(
-            'UPDATE projects SET members = ?, updated_at = ? WHERE id = ?'
-        ).bind(JSON.stringify(members), getCurrentTimestamp(), projectId).run();
+        await env.DB.prepare('INSERT INTO project_members (project_id, user_id, added_at) VALUES (?, ?, ?)')
+            .bind(projectId, newMemberId, getCurrentTimestamp()).run();
 
         await logActivity(env.DB, user.id, 'project_member_added', `Added ${newMember.name} to project`, null, projectId);
-
-        return jsonResponse({ message: 'Member added successfully', members });
+        return jsonResponse({ message: 'Member added successfully' });
     } catch (error) {
         console.error('Add member error:', error);
         return errorResponse('Failed to add member', 500);
@@ -676,19 +611,12 @@ async function handleRemoveProjectMember(request, env, projectId, memberId) {
     }
 
     try {
-        const project = await getProjectById(env.DB, projectId);
-        let members = project.members ? (typeof project.members === 'string' ? JSON.parse(project.members) : project.members) : [];
-
-        members = members.filter(id => id !== memberId);
-
-        await env.DB.prepare(
-            'UPDATE projects SET members = ?, updated_at = ? WHERE id = ?'
-        ).bind(JSON.stringify(members), getCurrentTimestamp(), projectId).run();
+        await env.DB.prepare('DELETE FROM project_members WHERE project_id = ? AND user_id = ?')
+            .bind(projectId, memberId).run();
 
         const removedUser = await getUserById(env.DB, memberId);
         await logActivity(env.DB, user.id, 'project_member_removed', `Removed ${removedUser?.name || memberId} from project`, null, projectId);
-
-        return jsonResponse({ message: 'Member removed successfully', members });
+        return jsonResponse({ message: 'Member removed successfully' });
     } catch (error) {
         console.error('Remove member error:', error);
         return errorResponse('Failed to remove member', 500);
@@ -703,38 +631,18 @@ async function handleGetTasks(request, env) {
     }
 
     // Get all tasks
-    const { results: allTasks } = await env.DB.prepare(
-        'SELECT * FROM tasks ORDER BY date ASC'
-    ).all();
+    // Fetch tasks only for projects the user can access
+    const { results } = await env.DB.prepare(
+        `SELECT t.* FROM tasks t
+         WHERE t.project_id IN (
+            SELECT id FROM projects WHERE owner_id = ?
+            UNION
+            SELECT project_id FROM project_members WHERE user_id = ?
+         )
+         ORDER BY t.date ASC`
+    ).bind(user.id, user.id).all();
 
-    // Filter tasks based on project access
-    const accessibleTasks = [];
-    for (const task of allTasks) {
-        const isMember = await isProjectMember(env.DB, user.id, task.project_id);
-        if (isMember) {
-            accessibleTasks.push(task);
-        }
-    }
-
-    // Auto-archive completed tasks > 7 days
-    const now = new Date();
-    const sevenDaysInMs = 7 * 24 * 60 * 60 * 1000;
-
-    for (const task of accessibleTasks) {
-        if (task.status === 'completed' && task.completed_at && !task.archived) {
-            const completedDate = new Date(task.completed_at);
-            const daysSinceCompletion = now - completedDate;
-
-            if (daysSinceCompletion >= sevenDaysInMs) {
-                await env.DB.prepare(
-                    'UPDATE tasks SET archived = 1, updated_at = ? WHERE id = ?'
-                ).bind(getCurrentTimestamp(), task.id).run();
-                task.archived = 1;
-            }
-        }
-    }
-
-    return jsonResponse(accessibleTasks);
+    return jsonResponse(results);
 }
 
 async function handleGetTask(request, env, taskId) {
@@ -796,6 +704,7 @@ async function handleCreateTask(request, env) {
         ).run();
 
         await logActivity(env.DB, user.id, 'task_created', `Created task "${name}"`, taskId, project_id);
+        await broadcastChange(env, 'task-created', { taskId, projectId: project_id });
 
         const task = await env.DB.prepare('SELECT * FROM tasks WHERE id = ?').bind(taskId).first();
 
@@ -877,6 +786,7 @@ async function handleUpdateTask(request, env, taskId) {
         ).bind(...values).run();
 
         await logActivity(env.DB, user.id, 'task_updated', `Updated task "${name || task.name}"`, taskId, task.project_id);
+        await broadcastChange(env, 'task-updated', { taskId, projectId: task.project_id });
 
         const updatedTask = await env.DB.prepare('SELECT * FROM tasks WHERE id = ?').bind(taskId).first();
 
@@ -905,6 +815,7 @@ async function handleDeleteTask(request, env, taskId) {
         }
 
         await logActivity(env.DB, user.id, 'task_deleted', `Deleted task "${task.name}"`, taskId, task.project_id);
+        await broadcastChange(env, 'task-deleted', { taskId, projectId: task.project_id });
 
         await env.DB.prepare('DELETE FROM tasks WHERE id = ?').bind(taskId).run();
 

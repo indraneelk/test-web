@@ -9,7 +9,8 @@
       "Bash(git add:*)",
       "Bash(git pull:*)",
       "Bash(npm install:*)",
-      "Bash(node server-auth.js:*)"
+      "Bash(node server-auth.js:*)",
+      "Bash(curl:*)"
     ],
     "deny": [],
     "ask": []

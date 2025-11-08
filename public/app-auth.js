@@ -24,6 +24,41 @@ const API_USERS = '/api/users';
 const API_PROJECTS = '/api/projects';
 const API_TASKS = '/api/tasks';
 
+// Supabase client + Bearer token helper
+let supa = null;
+async function ensureSupabase() {
+    if (supa) return supa;
+    try {
+        const cfgResp = await fetch('/api/config/public', { credentials: 'include' });
+        if (!cfgResp.ok) return null;
+        const cfg = await cfgResp.json();
+        if (window.supabase && cfg.supabaseUrl && cfg.supabaseAnonKey) {
+            supa = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey);
+        }
+    } catch (_) {}
+    return supa;
+}
+
+async function getAccessToken() {
+    // Prefer supabase-js session if available
+    try {
+        const client = await ensureSupabase();
+        if (client) {
+            const { data } = await client.auth.getSession();
+            if (data?.session?.access_token) return data.session.access_token;
+        }
+    } catch (_) {}
+    // Fallback to sessionStorage
+    return sessionStorage.getItem('sb_at') || null;
+}
+
+async function authFetch(url, options = {}) {
+    const token = await getAccessToken();
+    const headers = new Headers(options.headers || {});
+    if (token) headers.set('Authorization', `Bearer ${token}`);
+    return fetch(url, { ...options, headers, credentials: token ? undefined : 'include' });
+}
+
 // Initialize app
 document.addEventListener('DOMContentLoaded', async () => {
     const isAuthenticated = await checkAuth();
@@ -32,6 +67,22 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     setupEventListeners();
     await loadData();
+    // Plan B: Supabase Realtime subscription (optional)
+    try {
+        const cfgResp = await fetch('/api/config/public');
+        if (cfgResp.ok && window.supabase) {
+            const cfg = await cfgResp.json();
+            const client = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey);
+            const ch = client.channel('task-updates');
+            ch.on('broadcast', { event: 'task-created' }, () => loadData());
+            ch.on('broadcast', { event: 'task-updated' }, () => loadData());
+            ch.on('broadcast', { event: 'task-deleted' }, () => loadData());
+            ch.on('broadcast', { event: 'project-created' }, () => loadData());
+            ch.on('broadcast', { event: 'project-updated' }, () => loadData());
+            ch.on('broadcast', { event: 'project-deleted' }, () => loadData());
+            await ch.subscribe();
+        }
+    } catch (_) {}
 
     // Plan A: Polling for updates (every 60 seconds)
     setInterval(async () => {
@@ -49,9 +100,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 // Check authentication
 async function checkAuth() {
     try {
-        const response = await fetch(`${API_AUTH}/me`, {
-            credentials: 'include'
-        });
+        const response = await authFetch(`${API_AUTH}/me`);
 
         if (!response.ok) {
             window.location.href = '/login.html';
@@ -84,7 +133,7 @@ function updateUserInfo() {
 // Logout
 async function logout() {
     try {
-        await fetch(`${API_AUTH}/logout`, {
+        await authFetch(`${API_AUTH}/logout`, {
             method: 'POST',
             credentials: 'include'
         });
@@ -213,10 +262,9 @@ async function handleUserSettingsSubmit(e) {
     if (!payload.password) delete payload.password;
 
     try {
-        const resp = await fetch(`${API_AUTH}/me`, {
+        const resp = await authFetch(`${API_AUTH}/me`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
             body: JSON.stringify(payload)
         });
         const data = await resp.json();
@@ -254,9 +302,7 @@ async function loadData() {
 // Load users
 async function loadUsers() {
     try {
-        const response = await fetch(API_USERS, {
-            credentials: 'include'
-        });
+        const response = await authFetch(API_USERS);
         users = await response.json();
     } catch (error) {
         console.error('Failed to load users:', error);
@@ -266,9 +312,7 @@ async function loadUsers() {
 // Load projects
 async function loadProjects() {
     try {
-        const response = await fetch(API_PROJECTS, {
-            credentials: 'include'
-        });
+        const response = await authFetch(API_PROJECTS);
         projects = await response.json();
         renderProjectsNav();
     } catch (error) {
@@ -279,9 +323,7 @@ async function loadProjects() {
 // Load tasks
 async function loadTasks() {
     try {
-        const response = await fetch(API_TASKS, {
-            credentials: 'include'
-        });
+        const response = await authFetch(API_TASKS);
         tasks = await response.json();
     } catch (error) {
         console.error('Failed to load tasks:', error);
@@ -844,10 +886,9 @@ async function handleTaskSubmit(e) {
         const url = taskId ? `${API_TASKS}/${taskId}` : API_TASKS;
         const method = taskId ? 'PUT' : 'POST';
 
-        const response = await fetch(url, {
+        const response = await authFetch(url, {
             method,
             headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
             body: JSON.stringify(taskData)
         });
 
@@ -893,10 +934,9 @@ async function quickCompleteTask(id, checked) {
     const newStatus = checked ? 'completed' : 'pending';
 
     try {
-        const response = await fetch(`${API_TASKS}/${id}`, {
+        const response = await authFetch(`${API_TASKS}/${id}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
             body: JSON.stringify({ ...task, status: newStatus })
         });
 
@@ -939,7 +979,7 @@ async function confirmDelete() {
     deleteBtn.textContent = 'Deleting...';
 
     try {
-        const response = await fetch(`${API_TASKS}/${taskToDelete}`, {
+        const response = await authFetch(`${API_TASKS}/${taskToDelete}`, {
             method: 'DELETE',
             credentials: 'include'
         });
@@ -1037,10 +1077,9 @@ async function handleProjectSubmit(e) {
         const url = projectId ? `${API_PROJECTS}/${projectId}` : API_PROJECTS;
         const method = projectId ? 'PUT' : 'POST';
 
-        const response = await fetch(url, {
+        const response = await authFetch(url, {
             method,
             headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
             body: JSON.stringify(projectData)
         });
 
@@ -1172,10 +1211,9 @@ async function addMember() {
     addBtn.textContent = 'Adding...';
 
     try {
-        const response = await fetch(`${API_PROJECTS}/${currentProjectForSettings}/members`, {
+        const response = await authFetch(`${API_PROJECTS}/${currentProjectForSettings}/members`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
             body: JSON.stringify({ user_id: userId })
         });
 
@@ -1217,7 +1255,7 @@ async function removeMember(userId) {
     removeBtn.textContent = 'Removing...';
 
     try {
-        const response = await fetch(`${API_PROJECTS}/${currentProjectForSettings}/members/${userId}`, {
+        const response = await authFetch(`${API_PROJECTS}/${currentProjectForSettings}/members/${userId}`, {
             method: 'DELETE',
             credentials: 'include'
         });
@@ -1274,7 +1312,7 @@ async function deleteCurrentProject() {
     deleteBtn.textContent = 'Deleting...';
 
     try {
-        const response = await fetch(`${API_PROJECTS}/${currentProjectForSettings}`, {
+        const response = await authFetch(`${API_PROJECTS}/${currentProjectForSettings}`, {
             method: 'DELETE',
             credentials: 'include'
         });
@@ -1533,9 +1571,8 @@ async function leaveProject(projectId) {
             return;
         }
 
-        const response = await fetch(`/api/projects/${projectId}/members/${currentUser.id}`, {
-            method: 'DELETE',
-            credentials: 'include'
+        const response = await authFetch(`/api/projects/${projectId}/members/${currentUser.id}`, {
+            method: 'DELETE'
         });
 
         if (!response.ok) {
@@ -1590,10 +1627,9 @@ async function addProjectMember() {
     addBtn.textContent = 'Adding...';
 
     try {
-        const response = await fetch(`${API_PROJECTS}/${projectId}/members`, {
+        const response = await authFetch(`${API_PROJECTS}/${projectId}/members`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
             body: JSON.stringify({ user_id: userId })
         });
 
@@ -1636,9 +1672,8 @@ async function removeProjectMember(userId) {
     removeBtn.textContent = 'Removing...';
 
     try {
-        const response = await fetch(`${API_PROJECTS}/${projectId}/members/${userId}`, {
-            method: 'DELETE',
-            credentials: 'include'
+        const response = await authFetch(`${API_PROJECTS}/${projectId}/members/${userId}`, {
+            method: 'DELETE'
         });
 
         if (!response.ok) throw new Error('Failed to remove member');
@@ -1680,9 +1715,8 @@ async function deleteProjectFromEdit() {
     deleteBtn.textContent = 'Deleting...';
 
     try {
-        const response = await fetch(`${API_PROJECTS}/${projectId}`, {
-            method: 'DELETE',
-            credentials: 'include'
+        const response = await authFetch(`${API_PROJECTS}/${projectId}`, {
+            method: 'DELETE'
         });
 
         if (!response.ok) throw new Error('Failed to delete project');

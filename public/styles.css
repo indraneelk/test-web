@@ -43,12 +43,13 @@ body {
     display: flex;
     flex-direction: column;
     height: 100vh;
-    overflow-y: auto;
+    overflow: hidden;
 }
 
 .sidebar-header {
     padding: 1.5rem;
     border-bottom: 1px solid var(--border-color);
+    flex-shrink: 0;
 }
 
 .sidebar-header h2 {
@@ -59,6 +60,37 @@ body {
 
 .sidebar-nav {
     padding: 1rem;
+    flex-shrink: 0;
+}
+
+.projects-list {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    padding: 0 1rem;
+}
+
+.projects-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.75rem 0;
+    flex-shrink: 0;
+}
+
+.projects-header h3 {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+#projectsNav {
+    overflow-y: auto;
+    flex: 1;
+    min-height: 0;
 }
 
 .nav-item {
@@ -95,6 +127,7 @@ body {
     margin-top: auto;
     padding: 1rem;
     border-top: 1px solid var(--border-color);
+    flex-shrink: 0;
 }
 
 .filter-section {
