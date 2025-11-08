@@ -187,7 +187,7 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h2 id="taskModalTitle">Create New Task</h2>
-                <button class="close-btn" onclick="closeTaskModal()">&times;</button>
+                <button class="close-btn" type="button" onclick="closeTaskModal()" aria-label="Close">&times;</button>
             </div>
             <form id="taskForm">
                 <input type="hidden" id="taskId">
@@ -450,5 +450,48 @@
     </div>
 
     <script src="app-auth.js"></script>
+    <script>
+      // Fallback wiring for Create Task modal in case app-auth globals aren't set
+      (function(){
+        if (!window.openTaskModal) {
+          window.openTaskModal = function(){
+            var form = document.getElementById('taskForm');
+            if (form) form.reset();
+            var titleEl = document.getElementById('taskModalTitle');
+            if (titleEl) titleEl.textContent = 'Create New Task';
+            var submitEl = document.getElementById('taskSubmitBtnText');
+            if (submitEl) submitEl.textContent = 'Create Task';
+            var dateEl = document.getElementById('taskDate');
+            if (dateEl) dateEl.value = new Date().toISOString().split('T')[0];
+            var modal = document.getElementById('taskModal');
+            if (modal) modal.classList.add('active');
+          };
+        }
+        if (!window.closeTaskModal) {
+          window.closeTaskModal = function(){
+            var modal = document.getElementById('taskModal');
+            if (modal) modal.classList.remove('active');
+          };
+        }
+        // Ensure close works via click listeners as well
+        document.addEventListener('click', function(e){
+          var btn = e.target.closest('#taskModal .close-btn');
+          if (btn) {
+            e.preventDefault();
+            if (window.closeTaskModal) window.closeTaskModal();
+          }
+          var backdrop = e.target.closest('#taskModal .modal-backdrop');
+          if (backdrop) {
+            if (window.closeTaskModal) window.closeTaskModal();
+          }
+        });
+        // ESC to close
+        document.addEventListener('keydown', function(e){
+          if (e.key === 'Escape') {
+            if (window.closeTaskModal) window.closeTaskModal();
+          }
+        });
+      })();
+    </script>
 </body>
 </html>

@@ -308,8 +308,11 @@ function openTaskModal() {
     // Reset form
     document.getElementById('taskForm').reset();
     document.getElementById('taskId').value = '';
-    document.getElementById('modalTitle').textContent = 'Create New Task';
-    document.getElementById('submitBtnText').textContent = 'Create Task';
+    // Match markup IDs used in index.html
+    const titleEl = document.getElementById('taskModalTitle') || document.getElementById('modalTitle');
+    const submitTextEl = document.getElementById('taskSubmitBtnText') || document.getElementById('submitBtnText');
+    if (titleEl) titleEl.textContent = 'Create New Task';
+    if (submitTextEl) submitTextEl.textContent = 'Create Task';
 
     // Set default date to today
     const today = new Date().toISOString().split('T')[0];

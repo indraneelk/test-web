@@ -75,9 +75,11 @@ async function logout() {
             method: 'POST',
             credentials: 'include'
         });
-        window.location.href = '/login.html';
     } catch (error) {
         console.error('Logout error:', error);
+    } finally {
+        // Always redirect to login, even if API call failed
+        window.location.href = '/login.html';
     }
 }
 
@@ -619,6 +621,10 @@ function openTaskModal() {
 
     document.getElementById('taskModal').classList.add('active');
 }
+
+// Ensure global access for inline handlers used in HTML (e.g., empty-state button, close X)
+window.openTaskModal = window.openTaskModal || openTaskModal;
+window.closeTaskModal = window.closeTaskModal || closeTaskModal;
 
 // Load project members for assignee dropdown
 function loadProjectMembers(projectId) {
@@ -1902,6 +1908,16 @@ window.closeProjectModal = closeProjectModal;
 window.closeProjectDetailsModal = closeProjectDetailsModal;
 window.closeProjectSettingsModal = closeProjectSettingsModal;
 window.closeDeleteModal = closeDeleteModal;
+
+// Expose open functions
+window.openUserSettings = openUserSettings;
+
+// Expose other inline handler functions
+window.switchView = switchView;
+window.editTaskFromDetails = editTaskFromDetails;
+window.deleteTaskFromDetails = deleteTaskFromDetails;
+window.addProjectMember = addProjectMember;
+window.deleteProjectFromEdit = deleteProjectFromEdit;
 
 const originalOpenProjectModal = openProjectModal;
 window.openProjectModal = function() {

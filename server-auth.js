@@ -27,6 +27,7 @@ app.use(helmet({
             defaultSrc: ["'self'"],
             styleSrc: ["'self'", "'unsafe-inline'"],
             scriptSrc: ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net"],
+            scriptSrcAttr: ["'unsafe-inline'"],  // Allow onclick handlers
             imgSrc: ["'self'", "data:", "https:"],
             connectSrc: ["'self'", "https://*.supabase.co"]  // Allow Supabase API calls
         }
@@ -254,13 +255,28 @@ const isProjectOwner = async (userId, projectId) => {
 //   - See /api/auth/supabase-login for the current login endpoint
 
 // Logout
-app.post('/api/auth/logout', requireAuth, (req, res) => {
-    const userId = req.session.userId;
+app.post('/api/auth/logout', (req, res) => {
+    const userId = req.session?.userId;
+
+    // Log activity if we have a userId
+    if (userId) {
+        logActivity(userId, 'user_logout', 'User logged out');
+    }
+
+    // Destroy session
     req.session.destroy((err) => {
         if (err) {
-            return res.status(500).json({ error: 'Logout failed' });
+            console.error('Session destruction error:', err);
         }
-        logActivity(userId, 'user_logout', 'User logged out');
+
+        // Clear session cookie explicitly
+        res.clearCookie('connect.sid', {
+            path: '/',
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'lax'
+        });
+
         res.json({ message: 'Logged out successfully' });
     });
 });
@@ -468,6 +484,21 @@ app.post('/api/auth/profile-setup', authLimiter, async (req, res) => {
 
         await dataService.createUser(newUser);
 
+        // Create personal project for the new user
+        const personalProject = {
+            id: generateId('project'),
+            name: `${newUser.name}'s Personal Tasks`,
+            description: 'Personal tasks and to-dos',
+            color: newUser.color || '#667eea',
+            owner_id: newUser.id,
+            members: [],
+            is_personal: true,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+        };
+        await dataService.createProject(personalProject);
+        await logActivity(newUser.id, 'project_created', `Personal project created`, null, personalProject.id);
+
         // Set session
         req.session.userId = newUser.id;
         req.session.supabaseAccessToken = access_token;
@@ -577,7 +608,7 @@ app.post('/api/auth/supabase', authLimiter, async (req, res) => {
                 color: '#f06a6a',
                 owner_id: newUser.id,
                 members: [],
-                is_personal: 1,
+                is_personal: true,
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString()
             };
