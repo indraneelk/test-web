@@ -11,7 +11,8 @@ let currentFilters = {
     status: '',
     search: '',
     priority: '',
-    sort: '' // none (no sorting)
+    sort: '', // none (no sorting)
+    showArchived: false
 };
 let taskToDelete = null;
 let currentProjectForSettings = null;
@@ -31,6 +32,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     setupEventListeners();
     await loadData();
+
+    // Plan A: Polling for updates (every 60 seconds)
+    setInterval(async () => {
+        await loadData();
+    }, 60000); // 60 seconds
+
+    // Plan A: Refetch when tab becomes visible
+    document.addEventListener('visibilitychange', async () => {
+        if (!document.hidden) {
+            await loadData();
+        }
+    });
 });
 
 // Check authentication
@@ -128,6 +141,14 @@ function setupEventListeners() {
     if (sortSelectEl) {
         sortSelectEl.addEventListener('change', (e) => {
             currentFilters.sort = e.target.value;
+            renderTasks(filterTasks());
+        });
+    }
+
+    const showArchivedToggleEl = document.getElementById('showArchivedToggle');
+    if (showArchivedToggleEl) {
+        showArchivedToggleEl.addEventListener('change', (e) => {
+            currentFilters.showArchived = e.target.checked;
             renderTasks(filterTasks());
         });
     }
@@ -437,6 +458,11 @@ function filterTasks() {
     // Filter by priority
     if (currentFilters.priority) {
         filtered = filtered.filter(t => (t.priority || 'none').toLowerCase() === currentFilters.priority);
+    }
+
+    // Filter archived tasks (exclude by default unless showArchived is true)
+    if (!currentFilters.showArchived) {
+        filtered = filtered.filter(t => !t.archived);
     }
 
     // Filter by search
@@ -1414,9 +1440,6 @@ function editProject(projectId) {
 
     document.getElementById('projectModal').classList.add('active');
 }
-
-// Store current project for details modal
-let currentProjectDetailsId = null;
 
 // View project info (read-only for non-owners)
 function viewProjectInfo(projectId) {

@@ -136,11 +136,55 @@ External Services:
 - **Plan A**: Polling every 30-60s
 - **Plan B**: Supabase Realtime channels
 
+## Plan B: Supabase Realtime Implementation
+
+The `broadcastChange()` function in worker.js is ready to use. To complete Plan B:
+
+### Backend (worker.js)
+Add broadcast calls after each mutation (example):
+
+```javascript
+// After creating a task
+await broadcastChange(env, 'task-created', { task });
+
+// After updating a task
+await broadcastChange(env, 'task-updated', { task: updatedTask });
+
+// After deleting a task
+await broadcastChange(env, 'task-deleted', { taskId });
+
+// After creating/updating/deleting projects
+await broadcastChange(env, 'project-created', { project });
+await broadcastChange(env, 'project-updated', { project });
+await broadcastChange(env, 'project-deleted', { projectId });
+```
+
+### Frontend (app-auth.js)
+Add Supabase Realtime subscription after loadData():
+
+```javascript
+// Initialize Supabase client (add near top of file)
+const supabase = window.supabase.createClient(
+    'SUPABASE_URL',  // From /api/config/public
+    'SUPABASE_ANON_KEY'
+);
+
+// Subscribe to realtime channel (in DOMContentLoaded)
+const channel = supabase.channel('task-updates')
+    .on('broadcast', { event: 'task-created' }, () => loadData())
+    .on('broadcast', { event: 'task-updated' }, () => loadData())
+    .on('broadcast', { event: 'task-deleted' }, () => loadData())
+    .on('broadcast', { event: 'project-created' }, () => loadData())
+    .on('broadcast', { event: 'project-updated' }, () => loadData())
+    .on('broadcast', { event: 'project-deleted' }, () => loadData())
+    .subscribe();
+```
+
 ## Next Steps
 
-1. **Complete worker.js** - Full implementation needed (currently the old version exists)
-2. **Add Plan A polling** - Frontend refetches tasks periodically
-3. **Add Plan B Supabase Realtime** - Worker broadcasts changes
+1. ✅ **worker.js implemented** - Complete with JWT auth and all endpoints
+2. ✅ **Plan A polling** - Frontend refetches tasks every 60s + tab focus
+3. ⏳ **Plan B Supabase Realtime** - Broadcast infrastructure ready, needs integration into endpoints
 4. **Test authentication flow** - Ensure JWT cookies work
 5. **Migrate existing data** - Export from JSON, import to D1
 
