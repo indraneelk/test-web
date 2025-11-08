@@ -6,12 +6,25 @@ compatibility_date = "2024-01-01"
 [[d1_databases]]
 binding = "DB"
 database_name = "task-manager-db"
-database_id = "" # Will be filled after creating D1 database
+database_id = "" # Will be filled after creating D1 database with: wrangler d1 create task-manager-db
 
-# Environment variables
+# Environment variables (non-sensitive)
 [vars]
 ENVIRONMENT = "production"
+SUPABASE_URL = "https://oxbaswpyxryvygamgtsu.supabase.co"
 
-# For Claude API integration (add your API key)
-[env.production.vars]
-CLAUDE_API_KEY = "" # Add your Anthropic API key here
+# Secrets (add these with: wrangler secret put <NAME>)
+# Run these commands after creating the worker:
+# wrangler secret put SUPABASE_ANON_KEY
+# wrangler secret put SUPABASE_SERVICE_ROLE_KEY
+# wrangler secret put SUPABASE_JWT_SECRET
+# wrangler secret put SESSION_SECRET
+# wrangler secret put ANTHROPIC_API_KEY (optional, for Claude AI features)
+
+# Development environment (for local testing)
+[env.dev]
+name = "team-task-manager-dev"
+
+[env.dev.vars]
+ENVIRONMENT = "development"
+SUPABASE_URL = "https://oxbaswpyxryvygamgtsu.supabase.co"
