@@ -956,6 +956,14 @@ function closeProjectSettingsModal() {
     currentProjectForSettings = null;
 }
 
+// Edit project from settings modal
+function editProjectFromSettings() {
+    if (!currentProjectForSettings) return;
+    const projectId = currentProjectForSettings;
+    closeProjectSettingsModal();
+    editProject(projectId);
+}
+
 // Delete current project
 async function deleteCurrentProject() {
     if (!currentProjectForSettings) return;

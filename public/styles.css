@@ -355,12 +355,14 @@ body {
 
 .priority-triangle {
     position: absolute;
-    top: 0;
-    right: 0;
+    top: -1px;
+    right: -1px;
     width: 0;
     height: 0;
     border-style: solid;
-    border-width: 0 20px 20px 0;
+    border-width: 0 26px 26px 0;
+    z-index: 1;
+    pointer-events: none;
     border-top-right-radius: 0.5rem;
 }
 
@@ -368,7 +370,6 @@ body {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding-left: 32px;
 }
 
 .task-due {
