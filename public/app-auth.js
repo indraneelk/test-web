@@ -584,18 +584,12 @@ function createTaskCard(task) {
 
     const project = projects.find(p => p.id === task.project_id);
 
-    // Generate project abbreviation
+    // Generate project abbreviation (max 8 characters)
     let projectAbbr = '';
     let projectColor = '#cccccc';
     if (project) {
-        // Special case for "Personal" projects
-        if (project.name.toLowerCase().includes('personal')) {
-            projectAbbr = 'Personal';
-        } else {
-            // First 2 letters of each word
-            const words = project.name.split(' ');
-            projectAbbr = words.map(w => w.charAt(0).toUpperCase()).slice(0, 2).join('');
-        }
+        // Use project name, truncated to 8 characters
+        projectAbbr = project.name.substring(0, 8);
         projectColor = project.color || '#f06a6a';
     }
 
@@ -643,8 +637,8 @@ function createTaskCard(task) {
                 </div>
                 ${project ? `
                     <div class="task-project-badge">
-                        <span class="project-color-dot" style="background-color: ${projectColor}"></span>
                         <span class="project-abbr">${projectAbbr}</span>
+                        <span class="project-color-dot" style="background-color: ${projectColor}"></span>
                     </div>
                 ` : ''}
             </div>
