@@ -106,7 +106,7 @@ class D1Client {
      */
     async getUsers() {
         const result = await this.query(`
-            SELECT id, username, name, email, is_admin, created_at
+            SELECT id, username, name, email, initials, is_admin, created_at
             FROM users
             ORDER BY name
         `);

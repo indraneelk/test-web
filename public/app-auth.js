@@ -59,6 +59,13 @@ async function checkAuth() {
 // Update user info display
 function updateUserInfo() {
     document.getElementById('userName').textContent = currentUser.name;
+    const avatar = document.getElementById('userAvatar');
+    if (avatar) {
+        const initials = (currentUser.initials && currentUser.initials.trim())
+            ? currentUser.initials.trim().toUpperCase()
+            : currentUser.name.split(/\s+/).map(w => w[0]).slice(0,2).join('').toUpperCase();
+        avatar.textContent = initials;
+    }
 }
 
 // Logout
@@ -79,6 +86,10 @@ function setupEventListeners() {
     document.getElementById('addTaskBtn').addEventListener('click', openTaskModal);
     document.getElementById('taskForm').addEventListener('submit', handleTaskSubmit);
     document.getElementById('projectForm').addEventListener('submit', handleProjectSubmit);
+    const userSettingsForm = document.getElementById('userSettingsForm');
+    if (userSettingsForm) {
+        userSettingsForm.addEventListener('submit', handleUserSettingsSubmit);
+    }
 
     const statusEl = document.getElementById('statusFilter');
     if (statusEl) {
@@ -129,6 +140,57 @@ function setupEventListeners() {
             updateColorPresetSelection(color);
         });
     });
+}
+
+// USER SETTINGS
+function openUserSettings() {
+    if (!currentUser) return;
+    document.getElementById('userId').value = currentUser.id || '';
+    document.getElementById('profileName').value = currentUser.name || '';
+    document.getElementById('profileEmail').value = currentUser.email || '';
+    document.getElementById('profileInitials').value = currentUser.initials || '';
+    document.getElementById('profilePassword').value = '';
+    document.getElementById('userSettingsModal').classList.add('active');
+}
+
+function closeUserSettings() {
+    document.getElementById('userSettingsModal').classList.remove('active');
+}
+
+async function handleUserSettingsSubmit(e) {
+    e.preventDefault();
+    const btn = e.target.querySelector('button[type="submit"]');
+    const original = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Saving...';
+
+    const payload = {
+        name: document.getElementById('profileName').value,
+        email: document.getElementById('profileEmail').value,
+        initials: document.getElementById('profileInitials').value,
+        password: document.getElementById('profilePassword').value
+    };
+    if (!payload.password) delete payload.password;
+
+    try {
+        const resp = await fetch(`${API_AUTH}/me`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify(payload)
+        });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.error || 'Failed to update profile');
+        currentUser = data.user;
+        updateUserInfo();
+        closeUserSettings();
+        showSuccess('Profile updated');
+    } catch (err) {
+        showError(err.message);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = original;
+    }
 }
 
 // Highlight selected color preset with a black border

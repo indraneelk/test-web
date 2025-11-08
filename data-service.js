@@ -98,7 +98,7 @@ class DataService {
     async getUserById(userId) {
         if (this.useD1) {
             const result = await this.d1.query(
-                'SELECT id, username, name, email, is_admin, created_at, updated_at FROM users WHERE id = ?',
+                'SELECT id, username, name, email, initials, is_admin, created_at, updated_at FROM users WHERE id = ?',
                 [userId]
             );
             return result.results?.[0] || null;
@@ -143,6 +143,35 @@ class DataService {
             users.push(userData);
             this.writeJSON(this.USERS_FILE, users);
             return userData;
+        }
+    }
+
+    async updateUser(userId, updates) {
+        if (this.useD1) {
+            // Build dynamic SQL depending on whether password_hash is supplied
+            const fields = ['name = ?', 'email = ?', 'initials = ?', 'updated_at = ?'];
+            const params = [updates.name, updates.email, updates.initials || null, new Date().toISOString()];
+            if (updates.password_hash) {
+                fields.splice(2, 0, 'password_hash = ?'); // insert before updated_at
+                params.splice(3, 0, updates.password_hash);
+            }
+            const sql = `UPDATE users SET ${fields.join(', ')} WHERE id = ?`;
+            params.push(userId);
+            await this.d1.query(sql, params);
+            return await this.getUserById(userId);
+        } else {
+            const users = this.readJSON(this.USERS_FILE);
+            const idx = users.findIndex(u => u.id === userId);
+            if (idx !== -1) {
+                const prev = users[idx];
+                const next = { ...prev, name: updates.name, email: updates.email, initials: updates.initials || null, updated_at: new Date().toISOString() };
+                if (updates.password_hash) next.password_hash = updates.password_hash;
+                users[idx] = next;
+                this.writeJSON(this.USERS_FILE, users);
+                const { password_hash, ...without } = next;
+                return without;
+            }
+            return null;
         }
     }
 

@@ -13,9 +13,12 @@
         <aside class="sidebar">
             <div class="sidebar-header">
                 <div class="user-info" id="userInfo">
-                    <div class="user-avatar"></div>
+                    <div class="user-avatar" id="userAvatar"></div>
                     <div class="user-details">
-                        <span class="user-name" id="userName">Loading...</span>
+                        <div style="display:flex; align-items:center; gap:0.5rem;">
+                            <span class="user-name" id="userName">Loading...</span>
+                            <button class="icon-btn" title="Edit profile" onclick="openUserSettings()">⚙️</button>
+                        </div>
                         <button class="logout-btn" onclick="logout()">Logout</button>
                     </div>
                 </div>
@@ -242,6 +245,39 @@
     </div>
 
     <!-- Project Modal -->
+
+    <!-- User Settings Modal -->
+    <div id="userSettingsModal" class="modal">
+        <div class="modal-backdrop" onclick="closeUserSettings()"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Edit Profile</h2>
+                <button class="close-btn" onclick="closeUserSettings()">&times;</button>
+            </div>
+            <form id="userSettingsForm">
+                <input type="hidden" id="userId">
+                <div class="form-group">
+                    <label for="profileName">Name</label>
+                    <input id="profileName" class="form-input" type="text" required>
+                </div>
+                <div class="form-group">
+                    <label for="profileEmail">Email</label>
+                    <input id="profileEmail" class="form-input" type="email" placeholder="name@example.com">
+                </div>
+                <div class="form-group">
+                    <label for="profileInitials">Initials (1–4 letters)</label>
+                    <input id="profileInitials" class="form-input" type="text" maxlength="4" placeholder="e.g., JD">
+                </div>
+                <div class="form-group">
+                    <label for="profilePassword">New Password (optional)</label>
+                    <input id="profilePassword" class="form-input" type="password" placeholder="Leave blank to keep current">
+                </div>
+                <div class="modal-footer">
+                    <button type="submit" class="btn btn-primary">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
     <div id="projectModal" class="modal">
         <div class="modal-backdrop" onclick="closeProjectModal()"></div>
         <div class="modal-content">

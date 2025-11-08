@@ -332,6 +332,52 @@ app.get('/api/users/:id', requireAuth, async (req, res) => {
     }
 });
 
+// Update current user's profile
+app.put('/api/auth/me', requireAuth, async (req, res) => {
+    try {
+        const { name, email, initials, password } = req.body || {};
+
+        // Validate fields if provided
+        if (name !== undefined && !validateString(name, 1, 100)) {
+            return res.status(400).json({ error: 'Name must be 1-100 characters' });
+        }
+        if (email !== undefined && !validateEmail(email)) {
+            return res.status(400).json({ error: 'Invalid email format' });
+        }
+        if (initials !== undefined) {
+            const str = String(initials).trim();
+            if (str && !/^[A-Za-z]{1,4}$/.test(str)) {
+                return res.status(400).json({ error: 'Initials must be 1-4 letters' });
+            }
+        }
+        if (password !== undefined && password !== null && password !== '') {
+            if (!validatePassword(password)) {
+                return res.status(400).json({ error: 'Password must be at least 6 characters' });
+            }
+        }
+
+        const user = await dataService.getUserById(req.session.userId);
+        if (!user) return res.status(404).json({ error: 'User not found' });
+
+        const bcrypt = require('bcryptjs');
+        const updates = {
+            name: name !== undefined ? sanitizeString(name) : user.name,
+            email: email !== undefined ? sanitizeString(email) : user.email,
+            initials: initials !== undefined ? sanitizeString(initials || '') : (user.initials || null)
+        };
+        if (password) {
+            updates.password_hash = bcrypt.hashSync(password, 10);
+        }
+
+        const updated = await dataService.updateUser(req.session.userId, updates);
+        const { password_hash: _, ...withoutPass } = updated || {};
+        res.json({ user: withoutPass });
+    } catch (error) {
+        console.error('Update profile error:', error);
+        res.status(500).json({ error: 'Failed to update profile' });
+    }
+});
+
 // Delete user (admin only)
 app.delete('/api/users/:id', requireAdmin, async (req, res) => {
     try {
