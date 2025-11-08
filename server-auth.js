@@ -7,6 +7,8 @@ const bcrypt = require('bcryptjs');
 const session = require('express-session');
 const cookieParser = require('cookie-parser');
 const crypto = require('crypto');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 const claudeService = require('./claude-service');
 const dataService = require('./data-service');
 const supabaseService = require('./supabase-service');
@@ -18,6 +20,24 @@ const PORT = process.env.PORT || 3000;
 const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS
     ? process.env.ALLOWED_ORIGINS.split(',')
     : ['http://localhost:3000', 'http://127.0.0.1:3000'];
+
+// Security headers
+app.use(helmet({
+    contentSecurityPolicy: {
+        directives: {
+            defaultSrc: ["'self'"],
+            styleSrc: ["'self'", "'unsafe-inline'"],
+            scriptSrc: ["'self'"],
+            imgSrc: ["'self'", "data:", "https:"],
+            connectSrc: ["'self'"]
+        }
+    },
+    hsts: {
+        maxAge: 31536000,
+        includeSubDomains: true,
+        preload: true
+    }
+}));
 
 app.use(cors({
     origin: function (origin, callback) {
@@ -33,23 +53,31 @@ app.use(cors({
     },
     credentials: true
 }));
-app.use(express.json());
+
+// Request body size limit to prevent DoS
+app.use(express.json({ limit: '1mb' }));
 app.use(cookieParser());
-// Validate session secret
+
+// CRITICAL: Validate session secret
 const SESSION_SECRET = process.env.SESSION_SECRET;
 if (!SESSION_SECRET) {
-    console.warn('⚠️  WARNING: SESSION_SECRET environment variable is not set!');
-    console.warn('⚠️  Using a fallback secret for development only.');
-    console.warn('⚠️  Set SESSION_SECRET in production for security!');
+    if (process.env.NODE_ENV === 'production') {
+        console.error('❌ FATAL: SESSION_SECRET must be set in production');
+        console.error('❌ Refusing to start without a secure session secret');
+        process.exit(1);  // Exit immediately in production
+    }
+    console.warn('⚠️  WARNING: SESSION_SECRET not set - using random development secret');
+    console.warn('⚠️  This secret will change on restart - sessions will be invalidated');
 }
 
 app.use(session({
-    secret: SESSION_SECRET || 'dev-fallback-secret-change-in-production',
+    secret: SESSION_SECRET || crypto.randomBytes(32).toString('hex'), // Random fallback for dev
     resave: false,
     saveUninitialized: false,
     cookie: {
         secure: process.env.NODE_ENV === 'production', // HTTPS only in production
         httpOnly: true,
+        sameSite: 'strict', // CSRF protection
         maxAge: 24 * 60 * 60 * 1000 // 24 hours
     }
 }));
@@ -121,14 +149,44 @@ const validateUsername = (username) => {
 
 const validatePassword = (password) => {
     if (typeof password !== 'string') return false;
-    // Password: at least 6 characters
-    return password.length >= 6;
+    // Password: at least 8 characters with complexity requirements
+    if (password.length < 8) return false;
+
+    // Require at least 3 of: uppercase, lowercase, numbers, special chars
+    const hasUpperCase = /[A-Z]/.test(password);
+    const hasLowerCase = /[a-z]/.test(password);
+    const hasNumbers = /\d/.test(password);
+    const hasSpecialChar = /[!@#$%^&*(),.?":{}|<>]/.test(password);
+
+    const complexityCount = [hasUpperCase, hasLowerCase, hasNumbers, hasSpecialChar].filter(Boolean).length;
+    return complexityCount >= 3;
 };
 
 const sanitizeString = (str) => {
     if (typeof str !== 'string') return '';
     return str.trim().slice(0, 1000); // Limit length and trim
 };
+
+// Security Constants
+const BCRYPT_ROUNDS = 12; // Recommended security level (vs old 10)
+
+// Rate Limiting
+const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 5, // 5 requests per window
+    message: { error: 'Too many login attempts, please try again later' },
+    standardHeaders: true,
+    legacyHeaders: false,
+    skipSuccessfulRequests: false
+});
+
+const magicLinkLimiter = rateLimit({
+    windowMs: 60 * 60 * 1000, // 1 hour
+    max: 3, // 3 magic links per hour
+    message: { error: 'Too many magic link requests, please try again later' },
+    standardHeaders: true,
+    legacyHeaders: false
+});
 
 // Authentication Middleware
 const requireAuth = (req, res, next) => {
@@ -188,7 +246,7 @@ const isProjectOwner = async (userId, projectId) => {
 // ==================== AUTH ROUTES ====================
 
 // Register new user
-app.post('/api/auth/register', async (req, res) => {
+app.post('/api/auth/register', authLimiter, async (req, res) => {
     try {
         const { username, password, name, email } = req.body;
 
@@ -204,7 +262,7 @@ app.post('/api/auth/register', async (req, res) => {
 
         // Validate password strength
         if (!validatePassword(password)) {
-            return res.status(400).json({ error: 'Password must be at least 6 characters' });
+            return res.status(400).json({ error: 'Password must be at least 8 characters with a mix of uppercase, lowercase, numbers, and special characters' });
         }
 
         // Validate name
@@ -217,14 +275,16 @@ app.post('/api/auth/register', async (req, res) => {
             return res.status(400).json({ error: 'Invalid email format' });
         }
 
-        // Check if username exists
+        // Check if username exists - use generic error to prevent user enumeration
         const existingUser = await dataService.getUserByUsername(username.trim());
         if (existingUser) {
-            return res.status(400).json({ error: 'Username already exists' });
+            // Add small delay to prevent timing attacks
+            await new Promise(resolve => setTimeout(resolve, 100));
+            return res.status(400).json({ error: 'Registration failed. Please check your credentials' });
         }
 
-        // Hash password
-        const password_hash = bcrypt.hashSync(password, 10);
+        // Hash password with secure rounds
+        const password_hash = bcrypt.hashSync(password, BCRYPT_ROUNDS);
 
         const newUser = {
             id: generateId('user'),
@@ -265,7 +325,7 @@ app.post('/api/auth/register', async (req, res) => {
 });
 
 // Login
-app.post('/api/auth/login', async (req, res) => {
+app.post('/api/auth/login', authLimiter, async (req, res) => {
     try {
         const { username, password } = req.body;
 
@@ -335,7 +395,7 @@ app.get('/api/auth/me', requireAuth, async (req, res) => {
 // ==================== SUPABASE AUTH ROUTES ====================
 
 // Send magic link
-app.post('/api/auth/magic-link', async (req, res) => {
+app.post('/api/auth/magic-link', magicLinkLimiter, async (req, res) => {
     try {
         if (!supabaseService.isEnabled()) {
             return res.status(501).json({
