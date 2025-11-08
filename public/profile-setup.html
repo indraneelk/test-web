@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Complete Your Profile - Task Manager</title>
     <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
         body {
             background-color: var(--bg-color);
@@ -193,6 +194,45 @@
             opacity: 0.6;
         }
 
+        .password-change-section {
+            margin: 1.5rem 0;
+            padding: 1.25rem;
+            background: var(--bg-color);
+            border: 1px solid var(--border-color);
+            border-radius: 0.5rem;
+            display: none;
+        }
+
+        .password-change-section.visible {
+            display: block;
+        }
+
+        .password-toggle-btn {
+            width: 100%;
+            padding: 0.75rem 1rem;
+            background: transparent;
+            color: var(--primary-color);
+            border: 1px solid var(--primary-color);
+            border-radius: 0.5rem;
+            font-size: 0.9375rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-bottom: 1rem;
+        }
+
+        .password-toggle-btn:hover {
+            background: var(--primary-color);
+            color: white;
+        }
+
+        .password-change-section h3 {
+            font-size: 0.9375rem;
+            margin-bottom: 1rem;
+            color: var(--text-primary);
+            font-weight: 600;
+        }
+
         .error-message {
             padding: 1rem;
             background: #fee2e2;
@@ -275,7 +315,7 @@
                 </div>
             </div>
 
-            <div class="input-row">
+            <div class="input-row" id="passwordRow">
                 <div class="input-group">
                     <label for="password">Password *</label>
                     <input
@@ -301,6 +341,52 @@
                         minlength="8"
                         autocomplete="new-password"
                     >
+                </div>
+            </div>
+
+            <div id="passwordChangeContainer" style="display: none;">
+                <button type="button" class="password-toggle-btn" id="togglePasswordBtn">
+                    Change Password
+                </button>
+
+                <div class="password-change-section" id="passwordChangeSection">
+                    <h3>Change Your Password</h3>
+
+                    <div class="input-group">
+                        <label for="currentPassword">Current Password *</label>
+                        <input
+                            type="password"
+                            id="currentPassword"
+                            name="currentPassword"
+                            placeholder="Enter current password"
+                            autocomplete="current-password"
+                        >
+                    </div>
+
+                    <div class="input-group">
+                        <label for="newPassword">New Password *</label>
+                        <input
+                            type="password"
+                            id="newPassword"
+                            name="newPassword"
+                            placeholder="Min. 8 characters"
+                            minlength="8"
+                            autocomplete="new-password"
+                        >
+                        <small>At least 8 characters</small>
+                    </div>
+
+                    <div class="input-group">
+                        <label for="confirmNewPassword">Confirm New Password *</label>
+                        <input
+                            type="password"
+                            id="confirmNewPassword"
+                            name="confirmNewPassword"
+                            placeholder="Re-enter new password"
+                            minlength="8"
+                            autocomplete="new-password"
+                        >
+                    </div>
                 </div>
             </div>
 
@@ -337,6 +423,8 @@
         let isUpdateMode = false;
         let currentUser = null;
         let supabaseClient = null;
+        let tempToken = null;
+        let userEmail = null;
 
         // --- Auth helpers: Supabase + Bearer attachment ---
         async function ensureSupabase() {
@@ -349,11 +437,10 @@
                     supabaseClient = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey);
                     return supabaseClient;
                 }
-                // Fallback to ESM import if no UMD present (subject to CSP)
-                const mod = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm');
-                supabaseClient = mod.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey);
-                return supabaseClient;
-            } catch (_) {
+                console.error('Supabase UMD library not loaded');
+                return null;
+            } catch (err) {
+                console.error('Failed to initialize Supabase:', err);
                 return null;
             }
         }
@@ -382,21 +469,29 @@
                 const resp = await authFetch('/api/auth/me');
                 if (resp.ok) {
                     const data = await resp.json();
-                    isUpdateMode = true;
                     currentUser = data.user;
-                    emailBadge.textContent = currentUser.email || '';
-                    loadUserDataForUpdate();
+                    userEmail = currentUser.email || '';
+                    emailBadge.textContent = userEmail;
+
+                    // Only set update mode if user has completed profile setup (has name and initials)
+                    if (currentUser.name && currentUser.initials) {
+                        isUpdateMode = true;
+                        loadUserDataForUpdate();
+                        return;
+                    }
+                    // Otherwise, show as new user setup even though they're authenticated
                     return;
                 }
             } catch (_) {}
             // Not authenticated → check magic-link artifacts
-            const tempToken = sessionStorage.getItem('supabase_temp_token');
+            tempToken = sessionStorage.getItem('supabase_temp_token');
             const userData = JSON.parse(sessionStorage.getItem('supabase_user_data') || '{}');
             if (!tempToken || !userData.email) {
                 window.location.href = '/magic-link.html';
                 return;
             }
-            emailBadge.textContent = userData.email;
+            userEmail = userData.email;
+            emailBadge.textContent = userEmail;
         })();
 
         function loadUserDataForUpdate() {
@@ -424,11 +519,22 @@
                 updatePreview();
             }
 
-            // Make password fields optional for update
-            document.getElementById('password').removeAttribute('required');
-            document.getElementById('confirmPassword').removeAttribute('required');
-            document.querySelector('label[for="password"]').innerHTML = 'New Password (optional)';
-            document.querySelector('label[for="confirmPassword"]').innerHTML = 'Confirm New Password';
+            // Hide new user password fields
+            const passwordRow = document.getElementById('passwordRow');
+            const passwordInput = document.getElementById('password');
+            const confirmPasswordInput = document.getElementById('confirmPassword');
+            if (passwordRow && passwordInput && confirmPasswordInput) {
+                passwordRow.style.display = 'none';
+                // Remove required attribute to prevent validation errors on hidden fields
+                passwordInput.removeAttribute('required');
+                confirmPasswordInput.removeAttribute('required');
+            }
+
+            // Show password change section for existing users
+            const passwordChangeContainer = document.getElementById('passwordChangeContainer');
+            if (passwordChangeContainer) {
+                passwordChangeContainer.style.display = 'block';
+            }
         }
 
         // Pre-fill name if available (magic-link flow)
@@ -482,6 +588,26 @@
         nameInput.addEventListener('input', updateInitialsFromName);
         initialsInput.addEventListener('input', updatePreview);
 
+        // Toggle password change section
+        const togglePasswordBtn = document.getElementById('togglePasswordBtn');
+        const passwordChangeSection = document.getElementById('passwordChangeSection');
+        if (togglePasswordBtn && passwordChangeSection) {
+            togglePasswordBtn.addEventListener('click', () => {
+                const isVisible = passwordChangeSection.classList.contains('visible');
+                if (isVisible) {
+                    passwordChangeSection.classList.remove('visible');
+                    togglePasswordBtn.textContent = 'Change Password';
+                    // Clear password fields
+                    document.getElementById('currentPassword').value = '';
+                    document.getElementById('newPassword').value = '';
+                    document.getElementById('confirmNewPassword').value = '';
+                } else {
+                    passwordChangeSection.classList.add('visible');
+                    togglePasswordBtn.textContent = 'Cancel Password Change';
+                }
+            });
+        }
+
         function showError(message) {
             errorMessage.textContent = message;
             errorMessage.style.display = 'block';
@@ -531,33 +657,121 @@
                 : '<span class="loading-spinner"></span> Setting up...';
 
             try {
-                // Update password in Supabase if provided
-                if (password && password.trim() !== '') {
-                    const client = await ensureSupabase();
-                    if (!client) {
-                        showError('Supabase client not available to update password.');
-                        submitBtn.disabled = false;
-                        submitBtn.innerHTML = isUpdateMode ? 'Update Profile' : 'Complete Setup';
-                        return;
-                    }
-                    const { error: pwdError } = await client.auth.updateUser({
-                        password: password
-                    });
+                // Handle password changes
+                let passwordChangeAttempted = false;
 
-                    if (pwdError) {
-                        showError('Failed to update password: ' + pwdError.message);
-                        submitBtn.disabled = false;
-                        submitBtn.innerHTML = isUpdateMode ? 'Update Profile' : 'Complete Setup';
-                        return;
+                // Check if user is trying to change password in update mode
+                if (isUpdateMode) {
+                    const currentPassword = document.getElementById('currentPassword')?.value;
+                    const newPassword = document.getElementById('newPassword')?.value;
+                    const confirmNewPassword = document.getElementById('confirmNewPassword')?.value;
+
+                    if (currentPassword || newPassword || confirmNewPassword) {
+                        passwordChangeAttempted = true;
+
+                        // Validate all password fields are filled
+                        if (!currentPassword || !newPassword || !confirmNewPassword) {
+                            showError('Please fill in all password fields to change your password');
+                            submitBtn.disabled = false;
+                            submitBtn.innerHTML = 'Update Profile';
+                            return;
+                        }
+
+                        // Validate new password length
+                        if (newPassword.length < 8) {
+                            showError('New password must be at least 8 characters');
+                            submitBtn.disabled = false;
+                            submitBtn.innerHTML = 'Update Profile';
+                            return;
+                        }
+
+                        // Validate passwords match
+                        if (newPassword !== confirmNewPassword) {
+                            showError('New passwords do not match');
+                            submitBtn.disabled = false;
+                            submitBtn.innerHTML = 'Update Profile';
+                            return;
+                        }
+
+                        // Verify current password and update to new password
+                        const client = await ensureSupabase();
+                        if (!client) {
+                            showError('Unable to change password - Supabase client not available');
+                            submitBtn.disabled = false;
+                            submitBtn.innerHTML = 'Update Profile';
+                            return;
+                        }
+
+                        // Reauthenticate with current password
+                        const { error: reauthError } = await client.auth.signInWithPassword({
+                            email: currentUser.email,
+                            password: currentPassword
+                        });
+
+                        if (reauthError) {
+                            showError('Current password is incorrect');
+                            submitBtn.disabled = false;
+                            submitBtn.innerHTML = 'Update Profile';
+                            return;
+                        }
+
+                        // Update to new password
+                        const { error: pwdError } = await client.auth.updateUser({
+                            password: newPassword
+                        });
+
+                        if (pwdError) {
+                            console.error('Password update error:', pwdError);
+                            showError('Failed to update password: ' + pwdError.message);
+                            submitBtn.disabled = false;
+                            submitBtn.innerHTML = 'Update Profile';
+                            return;
+                        }
+                    }
+                }
+
+                // Handle initial password setup for new users (optional)
+                if (password && password.trim() !== '' && !isUpdateMode) {
+                    try {
+                        const client = await ensureSupabase();
+                        if (client && tempToken) {
+                            // Establish session using tempToken
+                            try {
+                                await client.auth.setSession({
+                                    access_token: tempToken,
+                                    refresh_token: tempToken
+                                });
+                            } catch (err) {
+                                console.warn('Session setup warning:', err);
+                            }
+
+                            // Try to set password - if it fails, just warn and continue
+                            const { error: pwdError } = await client.auth.updateUser({
+                                password: password
+                            });
+
+                            if (pwdError) {
+                                console.warn('Password not set:', pwdError.message);
+                                // Don't fail - user can still use magic link to sign in
+                                // Just log it for debugging
+                            }
+                        }
+                    } catch (err) {
+                        console.warn('Password setup failed, continuing without password:', err);
+                        // Continue anyway - magic link auth still works
                     }
                 }
 
                 // Update or create profile
                 const endpoint = isUpdateMode ? '/api/auth/me' : '/api/auth/profile-setup';
                 const method = isUpdateMode ? 'PUT' : 'POST';
+
+                // Generate username from email (take part before @, sanitize)
+                const username = userEmail ? userEmail.split('@')[0].replace(/[^a-zA-Z0-9_]/g, '_') : 'user';
+
                 const payload = isUpdateMode
                     ? { name, initials, color: selectedColor }
-                    : { access_token: tempToken, name, initials, color: selectedColor, password };
+                    : { access_token: tempToken, username, name, initials, color: selectedColor };
 
                 const response = await (isUpdateMode
                     ? authFetch(endpoint, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
@@ -572,7 +786,11 @@
                         sessionStorage.removeItem('supabase_user_data');
                     }
 
-                    submitBtn.innerHTML = isUpdateMode ? '✓ Profile Updated!' : '✓ Profile Complete!';
+                    if (isUpdateMode && passwordChangeAttempted) {
+                        submitBtn.innerHTML = '✓ Profile & Password Updated!';
+                    } else {
+                        submitBtn.innerHTML = isUpdateMode ? '✓ Profile Updated!' : '✓ Profile Complete!';
+                    }
 
                     setTimeout(() => {
                         window.location.href = '/';
