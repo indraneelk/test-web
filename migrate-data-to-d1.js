@@ -58,22 +58,31 @@ function generateMigrationSQL() {
   sql.push('-- Generated: ' + new Date().toISOString());
   sql.push('');
 
+  // Track valid IDs for foreign key validation
+  const validUserIds = new Set();
+  const validProjectIds = new Set();
+  const validTaskIds = new Set();
+
   // Migrate users
   console.log('📄 Reading users.json...');
   const users = readJSON('users.json');
   if (users.length > 0) {
     sql.push('-- Migrate Users');
     users.forEach(user => {
+      validUserIds.add(user.id);
       const values = [
         sqlEscape(user.id),
         sqlEscape(user.username),
+        sqlEscape(user.password || user.password_hash), // password_hash column
         sqlEscape(user.name || ''),
         sqlEscape(user.email),
-        sqlEscape(user.password),
         sqlEscape(user.initials || ''),
-        formatTimestamp(user.createdAt)
+        sqlEscape(user.color || '#3b82f6'),
+        user.is_admin ? 1 : 0,
+        formatTimestamp(user.createdAt) || 'datetime(\'now\')',
+        formatTimestamp(user.updatedAt) || 'datetime(\'now\')'
       ];
-      sql.push(`INSERT OR IGNORE INTO users (id, username, name, email, password, initials, created_at) VALUES (${values.join(', ')});`);
+      sql.push(`INSERT OR IGNORE INTO users (id, username, password_hash, name, email, initials, color, is_admin, created_at, updated_at) VALUES (${values.join(', ')});`);
     });
     sql.push('');
     console.log(`✅ Found ${users.length} users`);
@@ -82,28 +91,43 @@ function generateMigrationSQL() {
   // Migrate projects
   console.log('📄 Reading projects.json...');
   const projects = readJSON('projects.json');
+  const projectMembers = [];
   if (projects.length > 0) {
     sql.push('-- Migrate Projects');
     projects.forEach(project => {
+      validProjectIds.add(project.id);
       const values = [
         sqlEscape(project.id),
         sqlEscape(project.name),
         sqlEscape(project.description || ''),
         sqlEscape(project.color || '#3b82f6'),
+        sqlEscape(project.owner_id || project.ownerId),
+        project.members ? sqlEscape(JSON.stringify(project.members)) : 'NULL',
         project.is_personal ? 1 : 0,
-        formatTimestamp(project.createdAt)
+        formatTimestamp(project.created_at || project.createdAt) || 'datetime(\'now\')',
+        formatTimestamp(project.updated_at || project.updatedAt) || 'datetime(\'now\')'
       ];
-      sql.push(`INSERT OR IGNORE INTO projects (id, name, description, color, is_personal, created_at) VALUES (${values.join(', ')});`);
+      sql.push(`INSERT OR IGNORE INTO projects (id, name, description, color, owner_id, members, is_personal, created_at, updated_at) VALUES (${values.join(', ')});`);
 
-      // Migrate project members (if stored as array in JSON)
+      // Collect project members for later (if stored as array in JSON)
       if (Array.isArray(project.members)) {
         project.members.forEach(userId => {
-          sql.push(`INSERT OR IGNORE INTO project_members (project_id, user_id) VALUES (${sqlEscape(project.id)}, ${sqlEscape(userId)});`);
+          projectMembers.push({ projectId: project.id, userId });
         });
       }
     });
     sql.push('');
     console.log(`✅ Found ${projects.length} projects`);
+
+    // Insert project members AFTER all projects
+    if (projectMembers.length > 0) {
+      sql.push('-- Migrate Project Members');
+      projectMembers.forEach(pm => {
+        sql.push(`INSERT OR IGNORE INTO project_members (project_id, user_id) VALUES (${sqlEscape(pm.projectId)}, ${sqlEscape(pm.userId)});`);
+      });
+      sql.push('');
+      console.log(`✅ Found ${projectMembers.length} project member relationships`);
+    }
   }
 
   // Migrate tasks
@@ -112,21 +136,23 @@ function generateMigrationSQL() {
   if (tasks.length > 0) {
     sql.push('-- Migrate Tasks');
     tasks.forEach(task => {
+      validTaskIds.add(task.id);
       const values = [
         sqlEscape(task.id),
-        sqlEscape(task.title),
+        sqlEscape(task.name || task.title || 'Untitled Task'),
         sqlEscape(task.description || ''),
+        sqlEscape(task.date || task.dueDate || task.due_date || formatTimestamp(new Date())),
+        sqlEscape(task.project_id || task.projectId),
+        sqlEscape(task.assigned_to_id || task.assigneeId || task.assignee_id),
+        sqlEscape(task.created_by_id || task.createdById || task.assigned_to_id || task.assigneeId),
         sqlEscape(task.status || 'pending'),
-        sqlEscape(task.priority || 'medium'),
-        task.assigneeId ? sqlEscape(task.assigneeId) : 'NULL',
-        task.projectId ? sqlEscape(task.projectId) : 'NULL',
-        task.dueDate ? formatTimestamp(task.dueDate) : 'NULL',
-        task.completedAt ? formatTimestamp(task.completedAt) : 'NULL',
+        sqlEscape(task.priority || 'none'),
         task.archived ? 1 : 0,
-        formatTimestamp(task.createdAt),
-        formatTimestamp(task.updatedAt)
+        task.completed_at || task.completedAt ? formatTimestamp(task.completed_at || task.completedAt) : 'NULL',
+        formatTimestamp(task.created_at || task.createdAt) || 'datetime(\'now\')',
+        formatTimestamp(task.updated_at || task.updatedAt) || 'datetime(\'now\')'
       ];
-      sql.push(`INSERT OR IGNORE INTO tasks (id, title, description, status, priority, assignee_id, project_id, due_date, completed_at, archived, created_at, updated_at) VALUES (${values.join(', ')});`);
+      sql.push(`INSERT OR IGNORE INTO tasks (id, name, description, date, project_id, assigned_to_id, created_by_id, status, priority, archived, completed_at, created_at, updated_at) VALUES (${values.join(', ')});`);
     });
     sql.push('');
     console.log(`✅ Found ${tasks.length} tasks`);
@@ -137,20 +163,30 @@ function generateMigrationSQL() {
   const activities = readJSON('activity.json');
   if (activities.length > 0) {
     sql.push('-- Migrate Activity Logs');
+    let skippedCount = 0;
     activities.forEach(activity => {
+      // Validate foreign keys - only insert if task_id and project_id exist (or are null)
+      const taskIdValid = !activity.task_id || validTaskIds.has(activity.task_id);
+      const projectIdValid = !activity.project_id || validProjectIds.has(activity.project_id);
+
       const values = [
         sqlEscape(activity.id),
-        sqlEscape(activity.userId),
+        sqlEscape(activity.user_id),
         sqlEscape(activity.action),
-        sqlEscape(activity.entity),
-        activity.entityId ? sqlEscape(activity.entityId) : 'NULL',
-        activity.details ? sqlEscape(JSON.stringify(activity.details)) : 'NULL',
+        activity.details ? sqlEscape(activity.details) : 'NULL',
+        (activity.task_id && taskIdValid) ? sqlEscape(activity.task_id) : 'NULL',
+        (activity.project_id && projectIdValid) ? sqlEscape(activity.project_id) : 'NULL',
         formatTimestamp(activity.timestamp)
       ];
-      sql.push(`INSERT OR IGNORE INTO activity_logs (id, user_id, action, entity, entity_id, details, timestamp) VALUES (${values.join(', ')});`);
+
+      if (!taskIdValid || !projectIdValid) {
+        skippedCount++;
+      }
+
+      sql.push(`INSERT OR IGNORE INTO activity_logs (id, user_id, action, details, task_id, project_id, created_at) VALUES (${values.join(', ')});`);
     });
     sql.push('');
-    console.log(`✅ Found ${activities.length} activity logs`);
+    console.log(`✅ Found ${activities.length} activity logs${skippedCount > 0 ? ` (${skippedCount} with missing references)` : ''}`);
   }
 
   return sql.join('\n');
