@@ -469,6 +469,7 @@ async function handleCreateProject(request, env) {
         await logActivity(env.DB, user.id, 'project_created', `Project "${name}" created`, null, projectId);
 
         const project = await getProjectById(env.DB, projectId);
+        await broadcastChange(env, 'project-created', { project });
 
         return jsonResponse(project, 201);
     } catch (error) {
@@ -523,6 +524,7 @@ async function handleUpdateProject(request, env, projectId) {
         await logActivity(env.DB, user.id, 'project_updated', `Project updated`, null, projectId);
 
         const project = await getProjectById(env.DB, projectId);
+        await broadcastChange(env, 'project-updated', { project });
         return jsonResponse(project);
     } catch (error) {
         console.error('Update project error:', error);
@@ -551,6 +553,7 @@ async function handleDeleteProject(request, env, projectId) {
         await env.DB.prepare('DELETE FROM projects WHERE id = ?').bind(projectId).run();
 
         await logActivity(env.DB, user.id, 'project_deleted', `Project "${project.name}" deleted`, null, projectId);
+        await broadcastChange(env, 'project-deleted', { projectId });
 
         return jsonResponse({ message: 'Project deleted successfully' });
     } catch (error) {
@@ -592,6 +595,7 @@ async function handleAddProjectMember(request, env, projectId) {
             .bind(projectId, newMemberId, getCurrentTimestamp()).run();
 
         await logActivity(env.DB, user.id, 'project_member_added', `Added ${newMember.name} to project`, null, projectId);
+        await broadcastChange(env, 'project-updated', { projectId });
         return jsonResponse({ message: 'Member added successfully' });
     } catch (error) {
         console.error('Add member error:', error);
@@ -616,6 +620,7 @@ async function handleRemoveProjectMember(request, env, projectId, memberId) {
 
         const removedUser = await getUserById(env.DB, memberId);
         await logActivity(env.DB, user.id, 'project_member_removed', `Removed ${removedUser?.name || memberId} from project`, null, projectId);
+        await broadcastChange(env, 'project-updated', { projectId });
         return jsonResponse({ message: 'Member removed successfully' });
     } catch (error) {
         console.error('Remove member error:', error);
