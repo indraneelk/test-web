@@ -857,6 +857,31 @@ function openProjectSettings(projectId) {
 
     document.getElementById('settingsProjectName').textContent = project.name;
     document.getElementById('settingsProjectOwner').textContent = owner?.name || 'Unknown';
+    // Show project color in Project Information
+    const colorRowId = 'settingsProjectColor';
+    let colorRowEl = document.getElementById(colorRowId);
+    if (!colorRowEl) {
+        // If the row doesn't exist, create it under the existing info rows
+        const infoContainer = document.querySelector('#projectSettingsModal .settings-section');
+        if (infoContainer) {
+            const row = document.createElement('div');
+            row.className = 'info-row';
+            const label = document.createElement('span');
+            label.className = 'info-label';
+            label.textContent = 'Color:';
+            const value = document.createElement('span');
+            value.className = 'info-value';
+            value.id = colorRowId;
+            row.appendChild(label);
+            row.appendChild(value);
+            infoContainer.appendChild(row);
+            colorRowEl = value;
+        }
+    }
+    if (colorRowEl) {
+        const color = project.color || '#f06a6a';
+        colorRowEl.innerHTML = `<span class="project-color-dot" style="background-color:${color}; margin-right: 6px;"></span> ${color}`;
+    }
 
     // Render members
     renderMembersList(project);
@@ -1059,6 +1084,9 @@ function viewProjectDetails(projectId) {
     document.getElementById('detailsProjectDescription').textContent = project.description || 'No description';
     document.getElementById('detailsProjectOwner').textContent = owner ? owner.name : 'Unknown';
     document.getElementById('detailsProjectTasks').textContent = `${projectTasks.length} tasks`;
+    // Show project color
+    const color = project.color || '#f06a6a';
+    document.getElementById('detailsProjectColor').innerHTML = `<span class="project-color-dot" style="background-color:${color}; margin-right: 6px;"></span> ${color}`;
 
     // Render members
     const membersContainer = document.getElementById('detailsProjectMembers');

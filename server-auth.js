@@ -216,6 +216,7 @@ app.post('/api/auth/register', async (req, res) => {
             id: generateId('project'),
             name: `${newUser.name}'s Personal Tasks`,
             description: 'Personal tasks and to-dos',
+            color: '#f06a6a',
             owner_id: newUser.id,
             members: [],
             is_personal: true,
@@ -398,7 +399,7 @@ app.get('/api/projects/:id', requireAuth, async (req, res) => {
 // Create new project
 app.post('/api/projects', requireAuth, async (req, res) => {
     try {
-        const { name, description } = req.body;
+        const { name, description, color } = req.body;
 
         // Validate required fields
         if (!name) {
@@ -415,6 +416,17 @@ app.post('/api/projects', requireAuth, async (req, res) => {
             return res.status(400).json({ error: 'Description must be less than 1000 characters' });
         }
 
+        // Validate color if provided
+        let projectColor = '#f06a6a';
+        if (typeof color === 'string' && color.trim() !== '') {
+            const hex = color.trim();
+            const isValidHex = /^#([0-9A-Fa-f]{6})$/.test(hex);
+            if (!isValidHex) {
+                return res.status(400).json({ error: 'Invalid color. Use 6-digit hex like #f06a6a' });
+            }
+            projectColor = hex.toLowerCase();
+        }
+
         const projects = await dataService.getProjects();
 
         // Check for duplicate name
@@ -426,6 +438,7 @@ app.post('/api/projects', requireAuth, async (req, res) => {
             id: generateId('project'),
             name: sanitizeString(name),
             description: description ? sanitizeString(description) : '',
+            color: projectColor,
             owner_id: req.session.userId,
             members: [],
             created_at: new Date().toISOString(),
@@ -456,7 +469,7 @@ app.put('/api/projects/:id', requireAuth, async (req, res) => {
             return res.status(403).json({ error: 'Only project owner can update project' });
         }
 
-        const { name, description } = req.body;
+        const { name, description, color } = req.body;
 
         // Validate name if provided
         if (name !== undefined && !validateString(name, 1, 100)) {
@@ -468,9 +481,21 @@ app.put('/api/projects/:id', requireAuth, async (req, res) => {
             return res.status(400).json({ error: 'Description must be less than 1000 characters' });
         }
 
+        // Validate color if provided
+        let updateColor = project.color || '#f06a6a';
+        if (color !== undefined && color !== null) {
+            const hex = String(color).trim();
+            const isValidHex = /^#([0-9A-Fa-f]{6})$/.test(hex);
+            if (!isValidHex) {
+                return res.status(400).json({ error: 'Invalid color. Use 6-digit hex like #f06a6a' });
+            }
+            updateColor = hex.toLowerCase();
+        }
+
         const updates = {
             name: name ? sanitizeString(name) : project.name,
-            description: description !== undefined ? sanitizeString(description || '') : project.description
+            description: description !== undefined ? sanitizeString(description || '') : project.description,
+            color: updateColor
         };
 
         const updatedProject = await dataService.updateProject(req.params.id, updates);

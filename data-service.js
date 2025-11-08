@@ -56,6 +56,7 @@ class DataService {
                 name: 'Admin User\'s Personal Tasks',
                 description: 'Personal tasks and to-dos',
                 owner_id: 'user-admin',
+                color: '#f06a6a',
                 members: [],
                 is_personal: true,
                 created_at: new Date().toISOString(),
@@ -171,12 +172,13 @@ class DataService {
     async createProject(projectData) {
         if (this.useD1) {
             await this.d1.query(
-                `INSERT INTO projects (id, name, description, owner_id, created_at, updated_at)
-                 VALUES (?, ?, ?, ?, ?, ?)`,
+                `INSERT INTO projects (id, name, description, color, owner_id, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?)`,
                 [
                     projectData.id,
                     projectData.name,
                     projectData.description,
+                    projectData.color || '#f06a6a',
                     projectData.owner_id,
                     projectData.created_at,
                     projectData.updated_at
@@ -194,8 +196,14 @@ class DataService {
     async updateProject(projectId, updates) {
         if (this.useD1) {
             await this.d1.query(
-                `UPDATE projects SET name = ?, description = ?, updated_at = ? WHERE id = ?`,
-                [updates.name, updates.description, new Date().toISOString(), projectId]
+                `UPDATE projects SET name = ?, description = ?, color = ?, updated_at = ? WHERE id = ?`,
+                [
+                    updates.name,
+                    updates.description,
+                    updates.color || '#f06a6a',
+                    new Date().toISOString(),
+                    projectId
+                ]
             );
             return await this.getProjectById(projectId);
         } else {
