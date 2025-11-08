@@ -11,18 +11,24 @@
     "discord": "node discord-bot.js",
     "dev-all": "npm run server & npm run discord"
   },
-  "keywords": ["task-manager", "asana", "project-management", "collaboration"],
+  "keywords": [
+    "task-manager",
+    "asana",
+    "project-management",
+    "collaboration"
+  ],
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "express": "^4.18.2",
-    "cors": "^2.8.5",
-    "bcryptjs": "^2.4.3",
-    "express-session": "^1.17.3",
-    "cookie-parser": "^1.4.6",
     "@anthropic-ai/sdk": "^0.30.0",
-    "discord.js": "^14.14.1",
+    "@supabase/supabase-js": "^2.80.0",
     "axios": "^1.6.7",
-    "dotenv": "^16.4.1"
+    "bcryptjs": "^2.4.3",
+    "cookie-parser": "^1.4.6",
+    "cors": "^2.8.5",
+    "discord.js": "^14.14.1",
+    "dotenv": "^16.4.1",
+    "express": "^4.18.2",
+    "express-session": "^1.17.3"
   }
 }

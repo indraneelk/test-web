@@ -121,21 +121,67 @@ class DataService {
         }
     }
 
+    async getUserBySupabaseId(supabaseId) {
+        if (this.useD1) {
+            const result = await this.d1.query(
+                'SELECT * FROM users WHERE supabase_id = ?',
+                [supabaseId]
+            );
+            return result.results?.[0] || null;
+        } else {
+            const users = this.readJSON(this.USERS_FILE);
+            return users.find(u => u.supabase_id === supabaseId) || null;
+        }
+    }
+
+    async getUserByEmail(email) {
+        if (this.useD1) {
+            const result = await this.d1.query(
+                'SELECT * FROM users WHERE email = ?',
+                [email]
+            );
+            return result.results?.[0] || null;
+        } else {
+            const users = this.readJSON(this.USERS_FILE);
+            return users.find(u => u.email === email) || null;
+        }
+    }
+
     async createUser(userData) {
         if (this.useD1) {
+            const columns = ['id', 'username', 'name', 'email', 'is_admin', 'created_at', 'updated_at'];
+            const values = [
+                userData.id,
+                userData.username,
+                userData.name,
+                userData.email,
+                userData.is_admin ? 1 : 0,
+                userData.created_at,
+                userData.updated_at
+            ];
+
+            // Add optional fields
+            if (userData.password_hash) {
+                columns.push('password_hash');
+                values.push(userData.password_hash);
+            }
+            if (userData.supabase_id) {
+                columns.push('supabase_id');
+                values.push(userData.supabase_id);
+            }
+            if (userData.initials) {
+                columns.push('initials');
+                values.push(userData.initials);
+            }
+            if (userData.color) {
+                columns.push('color');
+                values.push(userData.color);
+            }
+
+            const placeholders = columns.map(() => '?').join(', ');
             await this.d1.query(
-                `INSERT INTO users (id, username, password_hash, name, email, is_admin, created_at, updated_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-                [
-                    userData.id,
-                    userData.username,
-                    userData.password_hash,
-                    userData.name,
-                    userData.email,
-                    userData.is_admin ? 1 : 0,
-                    userData.created_at,
-                    userData.updated_at
-                ]
+                `INSERT INTO users (${columns.join(', ')}) VALUES (${placeholders})`,
+                values
             );
             return userData;
         } else {
@@ -148,28 +194,50 @@ class DataService {
 
     async updateUser(userId, updates) {
         if (this.useD1) {
-            // Build dynamic SQL depending on whether password_hash is supplied
-            const fields = ['name = ?', 'email = ?', 'initials = ?', 'updated_at = ?'];
-            const params = [updates.name, updates.email, updates.initials || null, new Date().toISOString()];
-            if (updates.password_hash) {
-                fields.splice(2, 0, 'password_hash = ?'); // insert before updated_at
-                params.splice(3, 0, updates.password_hash);
+            const setClauses = [];
+            const values = [];
+
+            if (updates.name !== undefined) {
+                setClauses.push('name = ?');
+                values.push(updates.name);
             }
-            const sql = `UPDATE users SET ${fields.join(', ')} WHERE id = ?`;
-            params.push(userId);
-            await this.d1.query(sql, params);
+            if (updates.email !== undefined) {
+                setClauses.push('email = ?');
+                values.push(updates.email);
+            }
+            if (updates.initials !== undefined) {
+                setClauses.push('initials = ?');
+                values.push(updates.initials);
+            }
+            if (updates.color !== undefined) {
+                setClauses.push('color = ?');
+                values.push(updates.color);
+            }
+            if (updates.username !== undefined) {
+                setClauses.push('username = ?');
+                values.push(updates.username);
+            }
+
+            setClauses.push('updated_at = ?');
+            values.push(new Date().toISOString());
+            values.push(userId);
+
+            await this.d1.query(
+                `UPDATE users SET ${setClauses.join(', ')} WHERE id = ?`,
+                values
+            );
             return await this.getUserById(userId);
         } else {
             const users = this.readJSON(this.USERS_FILE);
-            const idx = users.findIndex(u => u.id === userId);
-            if (idx !== -1) {
-                const prev = users[idx];
-                const next = { ...prev, name: updates.name, email: updates.email, initials: updates.initials || null, updated_at: new Date().toISOString() };
-                if (updates.password_hash) next.password_hash = updates.password_hash;
-                users[idx] = next;
+            const index = users.findIndex(u => u.id === userId);
+            if (index !== -1) {
+                users[index] = {
+                    ...users[index],
+                    ...updates,
+                    updated_at: new Date().toISOString()
+                };
                 this.writeJSON(this.USERS_FILE, users);
-                const { password_hash, ...without } = next;
-                return without;
+                return users[index];
             }
             return null;
         }

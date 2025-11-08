@@ -9,6 +9,7 @@ const cookieParser = require('cookie-parser');
 const crypto = require('crypto');
 const claudeService = require('./claude-service');
 const dataService = require('./data-service');
+const supabaseService = require('./supabase-service');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -328,6 +329,194 @@ app.get('/api/auth/me', requireAuth, async (req, res) => {
         res.json({ user: userWithoutPassword });
     } catch (error) {
         res.status(500).json({ error: 'Failed to fetch user' });
+    }
+});
+
+// ==================== SUPABASE AUTH ROUTES ====================
+
+// Send magic link
+app.post('/api/auth/magic-link', async (req, res) => {
+    try {
+        if (!supabaseService.isEnabled()) {
+            return res.status(501).json({
+                error: 'Supabase authentication is not configured',
+                hint: 'Add SUPABASE_URL and SUPABASE_ANON_KEY to your .env file'
+            });
+        }
+
+        const { email } = req.body;
+
+        if (!email) {
+            return res.status(400).json({ error: 'Email is required' });
+        }
+
+        // Validate email format
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(email)) {
+            return res.status(400).json({ error: 'Invalid email format' });
+        }
+
+        const redirectTo = req.body.redirectTo || `${req.protocol}://${req.get('host')}/auth/callback`;
+
+        await supabaseService.sendMagicLink(email, redirectTo);
+
+        res.json({
+            success: true,
+            message: 'Magic link sent! Check your email.',
+            email: email
+        });
+    } catch (error) {
+        console.error('Magic link error:', error);
+        res.status(500).json({
+            error: 'Failed to send magic link',
+            details: error.message
+        });
+    }
+});
+
+// Handle Supabase auth callback (verify and create/update user)
+app.post('/api/auth/supabase-callback', async (req, res) => {
+    try {
+        if (!supabaseService.isEnabled()) {
+            return res.status(501).json({ error: 'Supabase authentication is not configured' });
+        }
+
+        const { access_token, refresh_token } = req.body;
+
+        if (!access_token) {
+            return res.status(400).json({ error: 'Access token is required' });
+        }
+
+        // Verify token and get Supabase user
+        const supabaseUser = await supabaseService.getUserFromToken(access_token);
+
+        if (!supabaseUser) {
+            return res.status(401).json({ error: 'Invalid access token' });
+        }
+
+        // Check if user already exists in our system
+        let user = await dataService.getUserBySupabaseId(supabaseUser.id);
+
+        if (!user) {
+            // Check if user exists by email (for migration)
+            user = await dataService.getUserByEmail(supabaseUser.email);
+
+            if (user && !user.supabase_id) {
+                // Link existing account to Supabase
+                await dataService.updateUser(user.id, {
+                    supabase_id: supabaseUser.id
+                });
+                user = await dataService.getUserById(user.id);
+            }
+        }
+
+        // Return user info and whether profile setup is needed
+        const needsProfileSetup = !user;
+
+        if (user) {
+            // Set session
+            req.session.userId = user.id;
+            req.session.supabaseAccessToken = access_token;
+            if (refresh_token) {
+                req.session.supabaseRefreshToken = refresh_token;
+            }
+
+            await logActivity(user.id, 'user_login', `User ${user.name} logged in via Supabase`);
+
+            const { password_hash: _, ...userWithoutPassword } = user;
+            res.json({
+                success: true,
+                user: userWithoutPassword,
+                needsProfileSetup: false
+            });
+        } else {
+            // New user - needs to complete profile setup
+            res.json({
+                success: true,
+                needsProfileSetup: true,
+                supabaseUser: {
+                    id: supabaseUser.id,
+                    email: supabaseUser.email,
+                    name: supabaseUser.user_metadata?.name || supabaseUser.email?.split('@')[0]
+                },
+                tempToken: access_token
+            });
+        }
+    } catch (error) {
+        console.error('Supabase callback error:', error);
+        res.status(500).json({
+            error: 'Authentication failed',
+            details: error.message
+        });
+    }
+});
+
+// Complete profile setup for Supabase user
+app.post('/api/auth/profile-setup', async (req, res) => {
+    try {
+        if (!supabaseService.isEnabled()) {
+            return res.status(501).json({ error: 'Supabase authentication is not configured' });
+        }
+
+        const { access_token, name, initials, color } = req.body;
+
+        if (!access_token) {
+            return res.status(400).json({ error: 'Access token is required' });
+        }
+
+        if (!name || !initials) {
+            return res.status(400).json({ error: 'Name and initials are required' });
+        }
+
+        // Verify token
+        const supabaseUser = await supabaseService.getUserFromToken(access_token);
+
+        if (!supabaseUser) {
+            return res.status(401).json({ error: 'Invalid access token' });
+        }
+
+        // Check if user already exists
+        let user = await dataService.getUserBySupabaseId(supabaseUser.id);
+
+        if (user) {
+            return res.status(400).json({ error: 'User already exists' });
+        }
+
+        // Create profile data
+        const profileData = await supabaseService.syncUserProfile(supabaseUser, {
+            name: name.trim(),
+            initials: initials.trim().toUpperCase(),
+            color: color || supabaseService.generateUserColor(supabaseUser.email, name)
+        });
+
+        // Create user in our database
+        const newUser = {
+            id: generateId('user'),
+            ...profileData,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+        };
+
+        await dataService.createUser(newUser);
+
+        // Set session
+        req.session.userId = newUser.id;
+        req.session.supabaseAccessToken = access_token;
+
+        await logActivity(newUser.id, 'user_registered', `User ${newUser.name} registered via Supabase`);
+
+        // Return user without sensitive info
+        const { password_hash: _, ...userWithoutPassword } = newUser;
+        res.status(201).json({
+            success: true,
+            user: userWithoutPassword
+        });
+    } catch (error) {
+        console.error('Profile setup error:', error);
+        res.status(500).json({
+            error: 'Profile setup failed',
+            details: error.message
+        });
     }
 });
 

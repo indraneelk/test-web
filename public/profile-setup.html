@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Complete Your Profile - Task Manager</title>
+    <link rel="stylesheet" href="styles-auth.css">
+    <style>
+        .profile-container {
+            max-width: 550px;
+            margin: 60px auto;
+            padding: 40px;
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 4px 30px rgba(0,0,0,0.12);
+        }
+
+        .profile-header {
+            text-align: center;
+            margin-bottom: 35px;
+        }
+
+        .profile-header h1 {
+            font-size: 28px;
+            margin-bottom: 8px;
+            color: #1a1a1a;
+        }
+
+        .profile-header p {
+            color: #666;
+            font-size: 15px;
+        }
+
+        .profile-header .email-badge {
+            display: inline-block;
+            margin-top: 12px;
+            padding: 8px 16px;
+            background: #f3f4f6;
+            border-radius: 20px;
+            font-size: 14px;
+            color: #4b5563;
+        }
+
+        .color-picker-section {
+            margin-bottom: 25px;
+        }
+
+        .color-picker-section label {
+            display: block;
+            margin-bottom: 12px;
+            color: #333;
+            font-weight: 500;
+        }
+
+        .color-options {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(50px, 1fr));
+            gap: 12px;
+        }
+
+        .color-option {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            border: 3px solid transparent;
+            cursor: pointer;
+            transition: all 0.2s;
+            position: relative;
+        }
+
+        .color-option:hover {
+            transform: scale(1.1);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+
+        .color-option.selected {
+            border-color: #1a1a1a;
+            transform: scale(1.15);
+        }
+
+        .color-option.selected::after {
+            content: '✓';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: 20px;
+            font-weight: bold;
+            text-shadow: 0 1px 3px rgba(0,0,0,0.3);
+        }
+
+        .initials-preview {
+            text-align: center;
+            margin: 25px 0;
+        }
+
+        .initials-circle {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 32px;
+            font-weight: 600;
+            color: white;
+            text-transform: uppercase;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            transition: all 0.3s;
+        }
+
+        .input-group {
+            margin-bottom: 20px;
+        }
+
+        .input-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 500;
+        }
+
+        .input-group input {
+            width: 100%;
+            padding: 12px 16px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+            box-sizing: border-box;
+        }
+
+        .input-group input:focus {
+            outline: none;
+            border-color: #4f46e5;
+        }
+
+        .input-group small {
+            display: block;
+            margin-top: 6px;
+            color: #666;
+            font-size: 13px;
+        }
+
+        .input-row {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 15px;
+        }
+
+        .btn-complete {
+            width: 100%;
+            padding: 14px;
+            background: #4f46e5;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.3s;
+            margin-top: 10px;
+        }
+
+        .btn-complete:hover {
+            background: #4338ca;
+        }
+
+        .btn-complete:disabled {
+            background: #9ca3af;
+            cursor: not-allowed;
+        }
+
+        .error-message {
+            padding: 16px;
+            background: #fee2e2;
+            border: 1px solid #fca5a5;
+            border-radius: 8px;
+            color: #991b1b;
+            margin-bottom: 20px;
+            display: none;
+        }
+
+        .loading-spinner {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 3px solid rgba(255,255,255,.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 1s ease-in-out infinite;
+            margin-right: 8px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="profile-container">
+        <div class="profile-header">
+            <h1>👋 Welcome!</h1>
+            <p>Let's set up your profile</p>
+            <div class="email-badge" id="emailBadge"></div>
+        </div>
+
+        <div class="error-message" id="errorMessage"></div>
+
+        <form id="profileForm">
+            <div class="initials-preview">
+                <div class="initials-circle" id="initialsPreview" style="background-color: #4ECDC4;">
+                    ?
+                </div>
+            </div>
+
+            <div class="input-row">
+                <div class="input-group">
+                    <label for="name">Full Name *</label>
+                    <input
+                        type="text"
+                        id="name"
+                        name="name"
+                        placeholder="John Doe"
+                        required
+                        autocomplete="name"
+                    >
+                </div>
+
+                <div class="input-group">
+                    <label for="initials">Initials *</label>
+                    <input
+                        type="text"
+                        id="initials"
+                        name="initials"
+                        placeholder="JD"
+                        required
+                        maxlength="3"
+                        style="text-transform: uppercase"
+                    >
+                    <small>2-3 letters</small>
+                </div>
+            </div>
+
+            <div class="color-picker-section">
+                <label>Choose Your Color</label>
+                <div class="color-options" id="colorOptions"></div>
+            </div>
+
+            <button type="submit" class="btn-complete" id="submitBtn">
+                Complete Setup
+            </button>
+        </form>
+    </div>
+
+    <script>
+        const predefinedColors = [
+            '#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', '#98D8C8',
+            '#F7DC6F', '#BB8FCE', '#85C1E2', '#F8B195', '#F67280',
+            '#C06C84', '#6C5B7B', '#355C7D', '#99B898', '#FECEAB'
+        ];
+
+        let selectedColor = predefinedColors[1]; // Default color
+
+        const form = document.getElementById('profileForm');
+        const nameInput = document.getElementById('name');
+        const initialsInput = document.getElementById('initials');
+        const colorOptions = document.getElementById('colorOptions');
+        const initialsPreview = document.getElementById('initialsPreview');
+        const emailBadge = document.getElementById('emailBadge');
+        const submitBtn = document.getElementById('submitBtn');
+        const errorMessage = document.getElementById('errorMessage');
+
+        // Load user data from session storage
+        const tempToken = sessionStorage.getItem('supabase_temp_token');
+        const userData = JSON.parse(sessionStorage.getItem('supabase_user_data') || '{}');
+
+        if (!tempToken || !userData.email) {
+            window.location.href = '/magic-link.html';
+        }
+
+        // Display email
+        emailBadge.textContent = userData.email;
+
+        // Pre-fill name if available
+        if (userData.name) {
+            nameInput.value = userData.name;
+            updateInitialsFromName();
+        }
+
+        // Render color options
+        predefinedColors.forEach((color, index) => {
+            const option = document.createElement('div');
+            option.className = 'color-option' + (index === 1 ? ' selected' : '');
+            option.style.backgroundColor = color;
+            option.addEventListener('click', () => selectColor(color, option));
+            colorOptions.appendChild(option);
+        });
+
+        function selectColor(color, element) {
+            selectedColor = color;
+            document.querySelectorAll('.color-option').forEach(opt => opt.classList.remove('selected'));
+            element.classList.add('selected');
+            updatePreview();
+        }
+
+        function updateInitialsFromName() {
+            const name = nameInput.value.trim();
+            if (!name) return;
+
+            const parts = name.split(/\s+/);
+            let initials = '';
+
+            if (parts.length === 1) {
+                initials = parts[0].substring(0, 2);
+            } else {
+                initials = parts[0][0] + parts[parts.length - 1][0];
+            }
+
+            initialsInput.value = initials.toUpperCase();
+            updatePreview();
+        }
+
+        function updatePreview() {
+            const initials = initialsInput.value.toUpperCase() || '?';
+            initialsPreview.textContent = initials;
+            initialsPreview.style.backgroundColor = selectedColor;
+        }
+
+        nameInput.addEventListener('input', updateInitialsFromName);
+        initialsInput.addEventListener('input', updatePreview);
+
+        function showError(message) {
+            errorMessage.textContent = message;
+            errorMessage.style.display = 'block';
+        }
+
+        function hideError() {
+            errorMessage.style.display = 'none';
+        }
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            hideError();
+
+            const name = nameInput.value.trim();
+            const initials = initialsInput.value.trim().toUpperCase();
+
+            if (!name || !initials) {
+                showError('Please fill in all required fields');
+                return;
+            }
+
+            if (initials.length < 2 || initials.length > 3) {
+                showError('Initials must be 2-3 letters');
+                return;
+            }
+
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<span class="loading-spinner"></span> Setting up...';
+
+            try {
+                const response = await fetch('/api/auth/profile-setup', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        access_token: tempToken,
+                        name,
+                        initials,
+                        color: selectedColor
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    // Clear session storage
+                    sessionStorage.removeItem('supabase_temp_token');
+                    sessionStorage.removeItem('supabase_user_data');
+
+                    submitBtn.innerHTML = '✓ Profile Complete!';
+
+                    // Redirect to app
+                    setTimeout(() => {
+                        window.location.href = '/';
+                    }, 1000);
+                } else {
+                    showError(data.error || 'Failed to complete profile setup');
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = 'Complete Setup';
+                }
+            } catch (error) {
+                console.error('Profile setup error:', error);
+                showError('Network error. Please try again.');
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = 'Complete Setup';
+            }
+        });
+
+        // Auto-focus name input
+        nameInput.focus();
+    </script>
+</body>
+</html>

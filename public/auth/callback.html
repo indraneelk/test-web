@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Signing you in...</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .callback-container {
+            max-width: 500px;
+            padding: 40px;
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 8px 40px rgba(0,0,0,0.2);
+            text-align: center;
+        }
+
+        .spinner {
+            width: 60px;
+            height: 60px;
+            margin: 0 auto 30px;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #4f46e5;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        h1 {
+            font-size: 24px;
+            margin-bottom: 12px;
+            color: #1a1a1a;
+        }
+
+        p {
+            color: #666;
+            font-size: 16px;
+            line-height: 1.6;
+        }
+
+        .error {
+            padding: 16px;
+            background: #fee2e2;
+            border: 1px solid #fca5a5;
+            border-radius: 8px;
+            color: #991b1b;
+            margin-top: 20px;
+            display: none;
+        }
+
+        .status {
+            margin-top: 20px;
+            font-size: 14px;
+            color: #4f46e5;
+            font-weight: 500;
+        }
+    </style>
+</head>
+<body>
+    <div class="callback-container">
+        <div class="spinner"></div>
+        <h1 id="statusTitle">Signing you in...</h1>
+        <p id="statusMessage">Please wait while we verify your authentication.</p>
+        <div class="status" id="statusDetails"></div>
+        <div class="error" id="errorMessage"></div>
+    </div>
+
+    <script>
+        const statusTitle = document.getElementById('statusTitle');
+        const statusMessage = document.getElementById('statusMessage');
+        const statusDetails = document.getElementById('statusDetails');
+        const errorMessage = document.getElementById('errorMessage');
+
+        function showError(message) {
+            errorMessage.textContent = message;
+            errorMessage.style.display = 'block';
+            statusTitle.textContent = 'Authentication Error';
+            statusMessage.textContent = 'Something went wrong during sign in.';
+            document.querySelector('.spinner').style.display = 'none';
+        }
+
+        function updateStatus(details) {
+            statusDetails.textContent = details;
+        }
+
+        async function handleAuthCallback() {
+            try {
+                updateStatus('Extracting authentication data...');
+
+                // Get hash parameters from URL (Supabase sends tokens in URL fragment)
+                const hashParams = new URLSearchParams(window.location.hash.substring(1));
+                const access_token = hashParams.get('access_token');
+                const refresh_token = hashParams.get('refresh_token');
+                const error = hashParams.get('error');
+                const error_description = hashParams.get('error_description');
+
+                if (error) {
+                    throw new Error(error_description || error);
+                }
+
+                if (!access_token) {
+                    throw new Error('No access token received from Supabase');
+                }
+
+                updateStatus('Verifying with server...');
+
+                // Send tokens to our backend
+                const response = await fetch('/api/auth/supabase-callback', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        access_token,
+                        refresh_token
+                    })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || 'Authentication failed');
+                }
+
+                if (data.needsProfileSetup) {
+                    // New user - redirect to profile setup
+                    updateStatus('Setting up your profile...');
+
+                    // Store temp data for profile setup
+                    sessionStorage.setItem('supabase_temp_token', data.tempToken);
+                    sessionStorage.setItem('supabase_user_data', JSON.stringify(data.supabaseUser));
+
+                    setTimeout(() => {
+                        window.location.href = '/profile-setup.html';
+                    }, 1000);
+                } else {
+                    // Existing user - redirect to app
+                    updateStatus('Success! Redirecting...');
+                    statusTitle.textContent = `Welcome back, ${data.user.name}!`;
+
+                    setTimeout(() => {
+                        window.location.href = '/';
+                    }, 1000);
+                }
+            } catch (error) {
+                console.error('Auth callback error:', error);
+                showError(error.message || 'Failed to complete authentication');
+
+                // Redirect to login after 5 seconds
+                setTimeout(() => {
+                    window.location.href = '/magic-link.html';
+                }, 5000);
+            }
+        }
+
+        // Run callback handler when page loads
+        handleAuthCallback();
+    </script>
+</body>
+</html>
