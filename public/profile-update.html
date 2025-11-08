@@ -26,10 +26,23 @@
     .success { padding: 0.75rem 1rem; background: #dcfce7; border:1px solid #86efac; color:#166534; border-radius:0.5rem; margin-bottom:1rem; display:none; }
     @media (max-width: 640px) { .input-row { grid-template-columns: 1fr; } }
   </style>
+  <script src="/vendor/supabase.js"></script>
   <script>
-    // Small Bearer helper (no supabase-js needed here)
+    async function ensureSupabase() {
+      try {
+        const cfgResp = await fetch('/api/config/public');
+        if (!cfgResp.ok) return null;
+        const cfg = await cfgResp.json();
+        if (window.supabase) return window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey);
+      } catch (_) {}
+      return null;
+    }
+    async function getAccessToken() {
+      try { const c = await ensureSupabase(); if (c) { const { data } = await c.auth.getSession(); if (data?.session?.access_token) return data.session.access_token; } } catch(_) {}
+      return sessionStorage.getItem('sb_at') || null;
+    }
     async function authFetch(url, options = {}) {
-      const token = sessionStorage.getItem('sb_at');
+      const token = await getAccessToken();
       const headers = new Headers(options.headers || {});
       if (token) headers.set('Authorization', `Bearer ${token}`);
       return fetch(url, { ...options, headers, credentials: token ? undefined : 'include' });
@@ -142,4 +155,3 @@
   </script>
 </body>
 </html>
-

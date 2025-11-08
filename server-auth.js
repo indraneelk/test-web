@@ -41,13 +41,12 @@ app.use(helmet({
 
 app.use(cors({
     origin: function (origin, callback) {
-        // Allow requests with no origin (mobile apps, curl, etc.)
-        if (!origin) return callback(null, true);
-
-        if (ALLOWED_ORIGINS.includes(origin)) {
+        // Disallow null origin; only allow explicit origins
+        if (origin && ALLOWED_ORIGINS.includes(origin)) {
             callback(null, true);
         } else {
-            console.warn(`⚠️  Blocked CORS request from origin: ${origin}`);
+            const o = origin || 'null';
+            console.warn(`⚠️  Blocked CORS request from origin: ${o}`);
             callback(new Error('Not allowed by CORS'));
         }
     },
@@ -204,12 +203,34 @@ const magicLinkLimiter = rateLimit({
     }
 });
 
-// Authentication Middleware
-const requireAuth = (req, res, next) => {
-    if (!req.session || !req.session.userId) {
-        return res.status(401).json({ error: 'Authentication required' });
+// Authentication Middleware - supports both Bearer tokens and sessions
+const requireAuth = async (req, res, next) => {
+    // Try Bearer token first
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+        const token = authHeader.substring(7);
+        try {
+            const payload = await verifySupabaseJWT(token);
+            // Look up user by ID (user.id = Supabase sub)
+            const user = await dataService.getUserById(payload.sub);
+            if (user) {
+                req.user = user;
+                req.userId = user.id;
+                return next();
+            }
+        } catch (err) {
+            // Invalid token - return 401 immediately for Bearer auth failures
+            return res.status(401).json({ error: 'Invalid or expired token' });
+        }
     }
-    next();
+
+    // Fallback to session-based auth
+    if (req.session && req.session.userId) {
+        req.userId = req.session.userId;
+        return next();
+    }
+
+    return res.status(401).json({ error: 'Authentication required' });
 };
 
 const requireAdmin = async (req, res, next) => {
@@ -499,10 +520,9 @@ app.post('/api/auth/profile-setup', authLimiter, async (req, res) => {
             user: userWithoutPassword
         });
     } catch (error) {
-        console.error('Profile setup error:', error);
+        console.error('Profile setup error');
         res.status(500).json({
-            error: 'Profile setup failed',
-            details: error.message
+            error: 'Profile setup failed'
         });
     }
 });
@@ -648,13 +668,13 @@ app.put('/api/auth/me', requireAuth, async (req, res) => {
                 return res.status(400).json({ error: 'Username must be 3-30 chars, letters/numbers/underscore only' });
             }
             const allUsers = await dataService.getUsers();
-            const exists = allUsers.find(u => u.username === username && u.id !== req.session.userId);
+            const exists = allUsers.find(u => u.username === username && u.id !== req.userId);
             if (exists) {
                 return res.status(400).json({ error: 'Username already taken' });
             }
         }
 
-        const user = await dataService.getUserById(req.session.userId);
+        const user = await dataService.getUserById(req.userId);
         if (!user) return res.status(404).json({ error: 'User not found' });
 
         // Update local user profile (password is handled client-side via Supabase)
@@ -666,7 +686,7 @@ app.put('/api/auth/me', requireAuth, async (req, res) => {
             color: color !== undefined ? sanitizeString(color) : user.color
         };
 
-        const updated = await dataService.updateUser(req.session.userId, updates);
+        const updated = await dataService.updateUser(req.userId, updates);
         const { password_hash: _, ...withoutPass } = updated || {};
         res.json({ user: withoutPass });
     } catch (error) {
@@ -703,7 +723,7 @@ app.delete('/api/users/:id', requireAdmin, async (req, res) => {
 app.get('/api/projects', requireAuth, async (req, res) => {
     try {
         const projects = await dataService.getProjects();
-        const userId = req.session.userId;
+        const userId = req.userId;
 
         // Return projects where user is owner or member
         const userProjects = [];
@@ -729,7 +749,7 @@ app.get('/api/projects/:id', requireAuth, async (req, res) => {
         }
 
         // Check if user has access
-        if (!(await isProjectMember(req.session.userId, project.id))) {
+        if (!(await isProjectMember(req.userId, project.id))) {
             return res.status(403).json({ error: 'Access denied' });
         }
 
@@ -802,7 +822,7 @@ app.post('/api/projects', requireAuth, async (req, res) => {
             description: description ? sanitizeString(description) : '',
             color: projectColor,
             is_personal: 0,
-            owner_id: req.session.userId,
+            owner_id: req.userId,
             members: projectMembers,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString()
@@ -810,7 +830,7 @@ app.post('/api/projects', requireAuth, async (req, res) => {
 
         await dataService.createProject(newProject);
 
-        await logActivity(req.session.userId, 'project_created', `Project "${newProject.name}" created`, null, newProject.id);
+        await logActivity(req.userId, 'project_created', `Project "${newProject.name}" created`, null, newProject.id);
 
         res.status(201).json(newProject);
     } catch (error) {
@@ -828,8 +848,8 @@ app.put('/api/projects/:id', requireAuth, async (req, res) => {
         }
 
         // Check if user is owner or admin
-        const user = await dataService.getUserById(req.session.userId);
-        const isOwner = await isProjectOwner(req.session.userId, req.params.id);
+        const user = await dataService.getUserById(req.userId);
+        const isOwner = await isProjectOwner(req.userId, req.params.id);
         if (!isOwner && !user?.is_admin) {
             return res.status(403).json({ error: 'Only project owner or admin can update project' });
         }
@@ -840,7 +860,7 @@ app.put('/api/projects/:id', requireAuth, async (req, res) => {
         if (project.is_personal) {
             return res.status(403).json({ error: 'Personal projects cannot be edited' });
         }
-        
+
         // Validate name if provided
         if (name !== undefined && !validateString(name, 1, 100)) {
             return res.status(400).json({ error: 'Project name must be 1-100 characters' });
@@ -870,7 +890,7 @@ app.put('/api/projects/:id', requireAuth, async (req, res) => {
 
         const updatedProject = await dataService.updateProject(req.params.id, updates);
 
-        await logActivity(req.session.userId, 'project_updated', `Project "${updatedProject.name}" updated`, null, req.params.id);
+        await logActivity(req.userId, 'project_updated', `Project "${updatedProject.name}" updated`, null, req.params.id);
 
         res.json(updatedProject);
     } catch (error) {
@@ -888,20 +908,20 @@ app.delete('/api/projects/:id', requireAuth, async (req, res) => {
         }
 
         // Check if user is owner or admin
-        const user = await dataService.getUserById(req.session.userId);
-        const isOwner = await isProjectOwner(req.session.userId, req.params.id);
+        const user = await dataService.getUserById(req.userId);
+        const isOwner = await isProjectOwner(req.userId, req.params.id);
         if (!isOwner && !user?.is_admin) {
             return res.status(403).json({ error: 'Only project owner or admin can delete project' });
         }
 
-        // Prevent deletion of personal projects
-        if (project.is_personal) {
+        // Prevent deletion of personal projects (except by admin)
+        if (project.is_personal && !user?.is_admin) {
             return res.status(403).json({ error: 'Cannot delete personal project' });
         }
 
         await dataService.deleteProject(req.params.id);
 
-        await logActivity(req.session.userId, 'project_deleted', `Project "${project.name}" deleted`, null, req.params.id);
+        await logActivity(req.userId, 'project_deleted', `Project "${project.name}" deleted`, null, req.params.id);
 
         res.json({ message: 'Project deleted successfully', project: project });
     } catch (error) {
@@ -925,7 +945,7 @@ app.post('/api/projects/:id/members', requireAuth, async (req, res) => {
         }
 
         // Check if current user is owner
-        if (!(await isProjectOwner(req.session.userId, req.params.id))) {
+        if (!(await isProjectOwner(req.userId, req.params.id))) {
             return res.status(403).json({ error: 'Only project owner can add members' });
         }
 
@@ -952,7 +972,7 @@ app.post('/api/projects/:id/members', requireAuth, async (req, res) => {
 
         await dataService.addProjectMember(req.params.id, user_id);
 
-        await logActivity(req.session.userId, 'member_added', `${userToAdd.name} added to project "${project.name}"`, null, req.params.id);
+        await logActivity(req.userId, 'member_added', `${userToAdd.name} added to project "${project.name}"`, null, req.params.id);
 
         const updatedProject = await dataService.getProjectById(req.params.id);
         res.json(updatedProject);
@@ -971,7 +991,7 @@ app.delete('/api/projects/:id/members/:userId', requireAuth, async (req, res) =>
         }
 
         // Check if current user is owner
-        if (!(await isProjectOwner(req.session.userId, req.params.id))) {
+        if (!(await isProjectOwner(req.userId, req.params.id))) {
             return res.status(403).json({ error: 'Only project owner can remove members' });
         }
 
@@ -996,7 +1016,7 @@ app.delete('/api/projects/:id/members/:userId', requireAuth, async (req, res) =>
 
         const removedUser = await dataService.getUserById(req.params.userId);
 
-        await logActivity(req.session.userId, 'member_removed', `${removedUser?.name || 'User'} removed from project "${project.name}"`, null, req.params.id);
+        await logActivity(req.userId, 'member_removed', `${removedUser?.name || 'User'} removed from project "${project.name}"`, null, req.params.id);
 
         const updatedProject = await dataService.getProjectById(req.params.id);
         res.json(updatedProject);
@@ -1012,7 +1032,7 @@ app.get('/api/tasks', requireAuth, async (req, res) => {
     try {
         const tasks = await dataService.getTasks();
         const projects = await dataService.getProjects();
-        const userId = req.session.userId;
+        const userId = req.userId;
 
         // Auto-archive tasks that have been completed for 7+ days
         const now = new Date();
@@ -1057,7 +1077,7 @@ app.get('/api/tasks/:id', requireAuth, async (req, res) => {
         }
 
         // Check if user has access to the project
-        if (!(await isProjectMember(req.session.userId, task.project_id))) {
+        if (!(await isProjectMember(req.userId, task.project_id))) {
             return res.status(403).json({ error: 'Access denied' });
         }
 
@@ -1102,7 +1122,7 @@ app.post('/api/tasks', requireAuth, async (req, res) => {
         }
 
         // Check if user is member of the project
-        if (!(await isProjectMember(req.session.userId, project_id))) {
+        if (!(await isProjectMember(req.userId, project_id))) {
             return res.status(403).json({ error: 'You are not a member of this project' });
         }
 
@@ -1118,7 +1138,7 @@ app.post('/api/tasks', requireAuth, async (req, res) => {
             date: date,
             project_id: project_id,
             assigned_to_id: (assigned_to_id && assigned_to_id.trim() !== '') ? assigned_to_id : null,
-            created_by_id: req.session.userId,
+            created_by_id: req.userId,
             status: 'pending',
             priority: priority || 'none',
             archived: false,
@@ -1129,7 +1149,7 @@ app.post('/api/tasks', requireAuth, async (req, res) => {
 
         await dataService.createTask(newTask);
 
-        await logActivity(req.session.userId, 'task_created', `Task "${newTask.name}" created`, newTask.id, project_id);
+        await logActivity(req.userId, 'task_created', `Task "${newTask.name}" created`, newTask.id, project_id);
 
         res.status(201).json(newTask);
     } catch (error) {
@@ -1147,7 +1167,7 @@ app.put('/api/tasks/:id', requireAuth, async (req, res) => {
         }
 
         // Check if user is member of the project
-        if (!(await isProjectMember(req.session.userId, task.project_id))) {
+        if (!(await isProjectMember(req.userId, task.project_id))) {
             return res.status(403).json({ error: 'Access denied' });
         }
 
@@ -1204,7 +1224,7 @@ app.put('/api/tasks/:id', requireAuth, async (req, res) => {
 
         const updatedTask = await dataService.updateTask(req.params.id, updates);
 
-        await logActivity(req.session.userId, 'task_updated', `Task "${updatedTask.name}" updated`, req.params.id, updatedTask.project_id);
+        await logActivity(req.userId, 'task_updated', `Task "${updatedTask.name}" updated`, req.params.id, updatedTask.project_id);
 
         // Return status change info for celebration
         res.json({
@@ -1227,13 +1247,13 @@ app.delete('/api/tasks/:id', requireAuth, async (req, res) => {
         }
 
         // Check if user is member of the project
-        if (!(await isProjectMember(req.session.userId, task.project_id))) {
+        if (!(await isProjectMember(req.userId, task.project_id))) {
             return res.status(403).json({ error: 'Access denied' });
         }
 
         await dataService.deleteTask(req.params.id);
 
-        await logActivity(req.session.userId, 'task_deleted', `Task "${task.name}" deleted`, req.params.id, task.project_id);
+        await logActivity(req.userId, 'task_deleted', `Task "${task.name}" deleted`, req.params.id, task.project_id);
 
         res.json({ message: 'Task deleted successfully', task: task });
     } catch (error) {
@@ -1248,7 +1268,7 @@ app.get('/api/activity', requireAuth, async (req, res) => {
     try {
         const activities = await dataService.getActivityLog();
         const projects = await dataService.getProjects();
-        const userId = req.session.userId;
+        const userId = req.userId;
 
         // Get user's project IDs
         const userProjectIds = [];
@@ -1286,7 +1306,7 @@ app.post('/api/claude/ask', requireAuth, async (req, res) => {
             return res.status(400).json({ error: 'Question must be 1-500 characters' });
         }
 
-        const userId = req.session.userId;
+        const userId = req.userId;
 
         // Get user's data
         const tasks = await dataService.getTasks();
@@ -1324,7 +1344,7 @@ app.post('/api/claude/ask', requireAuth, async (req, res) => {
 // Get task summary from Claude
 app.get('/api/claude/summary', requireAuth, async (req, res) => {
     try {
-        const userId = req.session.userId;
+        const userId = req.userId;
 
         const tasks = await dataService.getTasks();
         const projects = await dataService.getProjects();
@@ -1359,7 +1379,7 @@ app.get('/api/claude/summary', requireAuth, async (req, res) => {
 // Get task priorities from Claude
 app.get('/api/claude/priorities', requireAuth, async (req, res) => {
     try {
-        const userId = req.session.userId;
+        const userId = req.userId;
 
         const tasks = await dataService.getTasks();
         const projects = await dataService.getProjects();

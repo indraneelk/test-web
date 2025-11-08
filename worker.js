@@ -13,6 +13,62 @@ function getCurrentTimestamp() {
     return new Date().toISOString();
 }
 
+// Input validation and sanitization
+function sanitizeString(str, maxLen = 1000) {
+    if (typeof str !== 'string') return '';
+    const s = str.trim();
+    return s.length > maxLen ? s.slice(0, maxLen) : s;
+}
+
+function isHexColor(str) {
+    return typeof str === 'string' && /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(str.trim());
+}
+
+function validatePriority(v) {
+    if (v == null) return true;
+    const s = String(v).toLowerCase().trim();
+    return ['none', 'low', 'medium', 'high'].includes(s);
+}
+
+function validateStatus(v) {
+    if (v == null) return true;
+    const s = String(v).toLowerCase().trim();
+    return ['pending', 'in-progress', 'completed'].includes(s);
+}
+
+// Basic rate limiting (KV optional; in-memory fallback)
+const memoryBuckets = new Map();
+async function rateLimit(request, env, key, windowSec = 900, max = 5) {
+    try {
+        const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
+        const bucketKey = `rl:${key}:${ip}`;
+        const now = Math.floor(Date.now() / 1000);
+        const windowStart = now - (now % windowSec);
+        const storageKey = `${bucketKey}:${windowStart}`;
+
+        // KV if available
+        if (env.RL_KV && typeof env.RL_KV.get === 'function') {
+            const current = parseInt((await env.RL_KV.get(storageKey)) || '0', 10);
+            if (current >= max) return false;
+            await env.RL_KV.put(storageKey, String(current + 1), { expirationTtl: windowSec + 5 });
+            return true;
+        }
+
+        // In-memory fallback (best-effort)
+        const entry = memoryBuckets.get(storageKey) || { count: 0, exp: windowStart + windowSec };
+        if (entry.count >= max) return false;
+        entry.count += 1;
+        memoryBuckets.set(storageKey, entry);
+        // Cleanup old buckets opportunistically
+        for (const [k, v] of memoryBuckets) {
+            if (v.exp < now) memoryBuckets.delete(k);
+        }
+        return true;
+    } catch {
+        return true; // fail-open to avoid blocking legit traffic on errors
+    }
+}
+
 // JWT Helper Functions
 async function createJWT(payload, secret, expiresIn = '24h') {
     const secretKey = new TextEncoder().encode(secret);
@@ -134,6 +190,10 @@ async function logActivity(db, userId, action, details, taskId = null, projectId
             details,
             getCurrentTimestamp()
         ).run();
+        // Simple retention: occasionally prune entries older than 90 days
+        if (Math.random() < 0.05) {
+            await db.prepare("DELETE FROM activity_logs WHERE created_at < datetime('now','-90 days')").run();
+        }
     } catch (error) {
         console.error('Failed to log activity:', error);
     }
@@ -217,6 +277,9 @@ function errorResponse(error, status = 400) {
 // Auth Handlers
 async function handleSupabaseLogin(request, env) {
     try {
+        // Rate limit: 5 per 15m per IP
+        const allowed = await rateLimit(request, env, 'supabase-login', 900, 5);
+        if (!allowed) return errorResponse('Too many login attempts. Please try again later.', 429);
         const body = await request.json();
         const { access_token } = body;
 
@@ -247,13 +310,16 @@ async function handleSupabaseLogin(request, env) {
         const { password_hash, ...userWithoutPassword } = user;
         return jsonResponse({ user: userWithoutPassword });
     } catch (error) {
-        console.error('Supabase login error:', error);
-        return errorResponse('Login failed: ' + error.message, 500);
+        console.error('Supabase login error');
+        return errorResponse('Login failed', 500);
     }
 }
 
 async function handleSupabaseCallback(request, env) {
     try {
+        // Rate limit: 10 per 15m per IP
+        const allowed = await rateLimit(request, env, 'supabase-callback', 900, 10);
+        if (!allowed) return errorResponse('Too many authentication attempts. Please try again later.', 429);
         const body = await request.json();
         const { access_token } = body;
 
@@ -282,8 +348,8 @@ async function handleSupabaseCallback(request, env) {
         const { password_hash, ...userWithoutPassword } = user;
         return jsonResponse({ user: userWithoutPassword });
     } catch (error) {
-        console.error('Supabase callback error:', error);
-        return errorResponse('Authentication failed: ' + error.message, 500);
+        console.error('Supabase callback error');
+        return errorResponse('Authentication failed', 500);
     }
 }
 
@@ -471,13 +537,16 @@ async function handleCreateProject(request, env) {
         if (!name || !name.trim()) {
             return errorResponse('Project name is required', 400);
         }
+        const cleanName = sanitizeString(name, 200);
+        const cleanDesc = sanitizeString(description || '', 2000);
+        const cleanColor = isHexColor(color) ? color : '#f06a6a';
 
         const projectId = generateId('project');
         const now = getCurrentTimestamp();
 
         await env.DB.prepare(
             'INSERT INTO projects (id, name, description, color, owner_id, is_personal, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-        ).bind(projectId, name.trim(), description?.trim() || '', color, user.id, is_personal ? 1 : 0, now, now).run();
+        ).bind(projectId, cleanName, cleanDesc, cleanColor, user.id, is_personal ? 1 : 0, now, now).run();
 
         await logActivity(env.DB, user.id, 'project_created', `Project "${name}" created`, null, projectId);
 
@@ -509,18 +578,9 @@ async function handleUpdateProject(request, env, projectId) {
         const updates = [];
         const values = [];
 
-        if (name) {
-            updates.push('name = ?');
-            values.push(name.trim());
-        }
-        if (description !== undefined) {
-            updates.push('description = ?');
-            values.push(description.trim());
-        }
-        if (color) {
-            updates.push('color = ?');
-            values.push(color);
-        }
+        if (name) { updates.push('name = ?'); values.push(sanitizeString(name, 200)); }
+        if (description !== undefined) { updates.push('description = ?'); values.push(sanitizeString(description || '', 2000)); }
+        if (color) { if (!isHexColor(color)) return errorResponse('Invalid color', 400); updates.push('color = ?'); values.push(color.trim()); }
 
         if (updates.length === 0) {
             return errorResponse('No valid fields to update', 400);
@@ -540,7 +600,7 @@ async function handleUpdateProject(request, env, projectId) {
         await broadcastChange(env, 'project-updated', { project });
         return jsonResponse(project);
     } catch (error) {
-        console.error('Update project error:', error);
+        console.error('Update project error');
         return errorResponse('Failed to update project', 500);
     }
 }
@@ -558,6 +618,9 @@ async function handleDeleteProject(request, env, projectId) {
 
     try {
         const project = await getProjectById(env.DB, projectId);
+        if (project?.is_personal) {
+            return errorResponse('Cannot delete personal project', 403);
+        }
 
         // Delete associated tasks
         await env.DB.prepare('DELETE FROM tasks WHERE project_id = ?').bind(projectId).run();
@@ -570,7 +633,7 @@ async function handleDeleteProject(request, env, projectId) {
 
         return jsonResponse({ message: 'Project deleted successfully' });
     } catch (error) {
-        console.error('Delete project error:', error);
+        console.error('Delete project error');
         return errorResponse('Failed to delete project', 500);
     }
 }
@@ -587,31 +650,36 @@ async function handleAddProjectMember(request, env, projectId) {
     }
 
     try {
+        const project = await getProjectById(env.DB, projectId);
+        if (project?.is_personal) {
+            return errorResponse('Cannot modify members of a personal project', 403);
+        }
         const body = await request.json();
-        const { userId: newMemberId } = body;
+        const { userId: newMemberId, user_id } = body;
+        const targetId = newMemberId || user_id;
 
-        if (!newMemberId) {
+        if (!targetId) {
             return errorResponse('User ID required', 400);
         }
 
-        const newMember = await getUserById(env.DB, newMemberId);
+        const newMember = await getUserById(env.DB, targetId);
         if (!newMember) {
             return errorResponse('User not found', 404);
         }
 
         // Check if already a member
         const exists = await env.DB.prepare('SELECT 1 FROM project_members WHERE project_id = ? AND user_id = ?')
-            .bind(projectId, newMemberId).first();
+            .bind(projectId, targetId).first();
         if (exists) return errorResponse('User is already a member', 400);
 
         await env.DB.prepare('INSERT INTO project_members (project_id, user_id, added_at) VALUES (?, ?, ?)')
-            .bind(projectId, newMemberId, getCurrentTimestamp()).run();
+            .bind(projectId, targetId, getCurrentTimestamp()).run();
 
         await logActivity(env.DB, user.id, 'project_member_added', `Added ${newMember.name} to project`, null, projectId);
         await broadcastChange(env, 'project-updated', { projectId });
         return jsonResponse({ message: 'Member added successfully' });
     } catch (error) {
-        console.error('Add member error:', error);
+        console.error('Add member error');
         return errorResponse('Failed to add member', 500);
     }
 }
@@ -628,6 +696,10 @@ async function handleRemoveProjectMember(request, env, projectId, memberId) {
     }
 
     try {
+        const project = await getProjectById(env.DB, projectId);
+        if (project?.is_personal) {
+            return errorResponse('Cannot modify members of a personal project', 403);
+        }
         await env.DB.prepare('DELETE FROM project_members WHERE project_id = ? AND user_id = ?')
             .bind(projectId, memberId).run();
 
@@ -636,7 +708,7 @@ async function handleRemoveProjectMember(request, env, projectId, memberId) {
         await broadcastChange(env, 'project-updated', { projectId });
         return jsonResponse({ message: 'Member removed successfully' });
     } catch (error) {
-        console.error('Remove member error:', error);
+        console.error('Remove member error');
         return errorResponse('Failed to remove member', 500);
     }
 }
@@ -690,15 +762,26 @@ async function handleCreateTask(request, env) {
 
     try {
         const body = await request.json();
-        const { name, description, date, project_id, assigned_to_id, priority = 'none' } = body;
+        let { name, description, date, project_id, assigned_to_id, priority = 'none' } = body;
 
         if (!name || !date || !project_id || !assigned_to_id) {
             return errorResponse('Missing required fields: name, date, project_id, assigned_to_id', 400);
         }
 
+        name = sanitizeString(name, 200);
+        description = sanitizeString(description || '', 4000);
+        priority = String(priority || 'none').toLowerCase().trim();
+        if (!validatePriority(priority)) return errorResponse('Invalid priority', 400);
+
         const isMember = await isProjectMember(env.DB, user.id, project_id);
         if (!isMember) {
             return errorResponse('Access denied to this project', 403);
+        }
+
+        // Assignee must be project owner or member
+        const assigneeAllowed = await isProjectMember(env.DB, assigned_to_id, project_id);
+        if (!assigneeAllowed) {
+            return errorResponse('Assignee must be a project member', 400);
         }
 
         const taskId = generateId('task');
@@ -708,8 +791,8 @@ async function handleCreateTask(request, env) {
             'INSERT INTO tasks (id, name, description, date, project_id, assigned_to_id, created_by_id, status, priority, archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
         ).bind(
             taskId,
-            name.trim(),
-            description?.trim() || '',
+            name,
+            description,
             date,
             project_id,
             assigned_to_id,
@@ -728,7 +811,7 @@ async function handleCreateTask(request, env) {
 
         return jsonResponse(task, 201);
     } catch (error) {
-        console.error('Create task error:', error);
+        console.error('Create task error');
         return errorResponse('Failed to create task', 500);
     }
 }
@@ -756,19 +839,14 @@ async function handleUpdateTask(request, env, taskId) {
         const updates = [];
         const values = [];
 
-        if (name !== undefined) {
-            updates.push('name = ?');
-            values.push(name.trim());
-        }
-        if (description !== undefined) {
-            updates.push('description = ?');
-            values.push(description.trim());
-        }
+        if (name !== undefined) { updates.push('name = ?'); values.push(sanitizeString(name, 200)); }
+        if (description !== undefined) { updates.push('description = ?'); values.push(sanitizeString(description || '', 4000)); }
         if (date !== undefined) {
             updates.push('date = ?');
             values.push(date);
         }
         if (status !== undefined) {
+            if (!validateStatus(status)) return errorResponse('Invalid status', 400);
             updates.push('status = ?');
             values.push(status);
 
@@ -779,6 +857,7 @@ async function handleUpdateTask(request, env, taskId) {
             }
         }
         if (priority !== undefined) {
+            if (!validatePriority(priority)) return errorResponse('Invalid priority', 400);
             updates.push('priority = ?');
             values.push(priority);
         }
@@ -787,6 +866,8 @@ async function handleUpdateTask(request, env, taskId) {
             values.push(archived ? 1 : 0);
         }
         if (assigned_to_id !== undefined) {
+            const allowed = await isProjectMember(env.DB, assigned_to_id, task.project_id);
+            if (!allowed) return errorResponse('Assignee must be a project member', 400);
             updates.push('assigned_to_id = ?');
             values.push(assigned_to_id);
         }
@@ -810,7 +891,7 @@ async function handleUpdateTask(request, env, taskId) {
 
         return jsonResponse(updatedTask);
     } catch (error) {
-        console.error('Update task error:', error);
+        console.error('Update task error');
         return errorResponse('Failed to update task', 500);
     }
 }
@@ -839,7 +920,7 @@ async function handleDeleteTask(request, env, taskId) {
 
         return jsonResponse({ message: 'Task deleted successfully' });
     } catch (error) {
-        console.error('Delete task error:', error);
+        console.error('Delete task error');
         return errorResponse('Failed to delete task', 500);
     }
 }
@@ -962,8 +1043,8 @@ export default {
             return errorResponse('Not found', 404);
 
         } catch (error) {
-            console.error('Worker error:', error);
-            return errorResponse('Internal server error: ' + error.message, 500);
+            console.error('Worker error');
+            return errorResponse('Internal server error', 500);
         }
     }
 };
