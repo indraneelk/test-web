@@ -13,6 +13,7 @@ let currentFilters = {
 };
 let taskToDelete = null;
 let currentProjectForSettings = null;
+let currentProjectDetailsId = null;
 
 // API URLs
 const API_AUTH = '/api/auth';
@@ -93,6 +94,7 @@ function setupEventListeners() {
             closeTaskDetailsModal();
             closeTaskModal();
             closeProjectModal();
+            closeProjectDetailsModal();
             closeProjectSettingsModal();
             closeDeleteModal();
         }
@@ -233,10 +235,11 @@ function renderProjectsNav() {
 
     nav.innerHTML = projects.map(project => {
         const taskCount = tasks.filter(t => t.project_id === project.id).length;
+        const projectColor = project.color || '#f06a6a';
         return `
             <button class="project-nav-item" data-project-id="${project.id}" onclick="switchToProject('${project.id}')">
-                <span>
-                    <span class="project-icon">📁</span>
+                <span style="display: flex; align-items: center; gap: 0.5rem;">
+                    <span class="project-color-indicator" style="background-color: ${projectColor}"></span>
                     ${escapeHtml(project.name)}
                 </span>
                 <span class="project-badge">${taskCount}</span>
@@ -264,7 +267,7 @@ function renderProjectsGrid() {
         const memberCount = (project.members?.length || 0) + 1; // +1 for owner
 
         return `
-            <div class="project-card" onclick="switchToProject('${project.id}')">
+            <div class="project-card" onclick="viewProjectDetails('${project.id}')">
                 <div class="project-card-header">
                     <div>
                         <h3 class="project-card-title">${escapeHtml(project.name)}</h3>
@@ -365,17 +368,35 @@ function createTaskCard(task) {
     }
 
     // Priority indicator colors
-    const priority = task.priority || 'medium';
+    const priority = task.priority || 'none';
     const priorityColors = {
         'high': '#ef4444',      // red
         'medium': '#f59e0b',    // orange/yellow
         'low': '#10b981'        // green
     };
     const priorityColor = priorityColors[priority];
+    const showPriorityTriangle = priority !== 'none' && priorityColor;
+
+    // Get assignee and generate initials
+    const assignee = users.find(u => u.id === task.assigned_to_id);
+    let assigneeInitials = '';
+    let assigneeColor = '#667eea';
+    if (assignee) {
+        // Generate initials from name (first letter of first two words)
+        const nameParts = assignee.name.trim().split(/\s+/);
+        assigneeInitials = nameParts.length >= 2
+            ? nameParts[0][0].toUpperCase() + nameParts[1][0].toUpperCase()
+            : nameParts[0].substring(0, 2).toUpperCase();
+
+        // Generate consistent color from user ID
+        const hash = assignee.id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+        const colors = ['#667eea', '#f093fb', '#4facfe', '#43e97b', '#f06a6a', '#ffc82c', '#13ce66', '#764ba2'];
+        assigneeColor = colors[hash % colors.length];
+    }
 
     return `
         <div class="task-card-compact ${task.status}" onclick="viewTaskDetails('${task.id}')">
-            <div class="priority-triangle" style="border-top-color: ${priorityColor};" title="Priority: ${priority}"></div>
+            ${showPriorityTriangle ? `<div class="priority-triangle" style="border-color: transparent ${priorityColor} transparent transparent;" title="Priority: ${priority}"></div>` : ''}
             <div class="task-card-main">
                 <button class="task-checkbox ${isCompleted ? 'checked' : ''}"
                         onclick="event.stopPropagation(); quickCompleteTask('${task.id}', ${!isCompleted})"
@@ -385,7 +406,14 @@ function createTaskCard(task) {
                 <h3 class="task-title-compact">${escapeHtml(task.name)}</h3>
             </div>
             <div class="task-card-footer">
-                <span class="task-due ${isOverdue ? 'overdue' : ''}">${formattedDate}</span>
+                <div class="task-footer-left">
+                    ${assignee ? `
+                        <div class="assignee-circle" style="background-color: ${assigneeColor}" title="${escapeHtml(assignee.name)}">
+                            ${assigneeInitials}
+                        </div>
+                    ` : ''}
+                    <span class="task-due ${isOverdue ? 'overdue' : ''}">${formattedDate}</span>
+                </div>
                 ${project ? `
                     <div class="task-project-badge">
                         <span class="project-color-dot" style="background-color: ${projectColor}"></span>
@@ -723,6 +751,11 @@ function openProjectModal() {
     document.getElementById('projectColor').value = '#f06a6a';
     document.getElementById('projectModalTitle').textContent = 'Create New Project';
     document.getElementById('projectSubmitBtnText').textContent = 'Create Project';
+
+    // Hide delete button and members section when creating new project
+    document.getElementById('projectDeleteBtn').style.display = 'none';
+    document.getElementById('projectMembersSection').style.display = 'none';
+
     document.getElementById('projectModal').classList.add('active');
 }
 
@@ -951,6 +984,270 @@ async function deleteCurrentProject() {
 
         // Switch to all tasks view if we're viewing the deleted project
         if (currentProjectId === currentProjectForSettings) {
+            switchView('all');
+        } else {
+            updateUI();
+        }
+
+        showSuccess('Project deleted successfully');
+    } catch (error) {
+        showError('Failed to delete project');
+        // Re-enable button on error
+        deleteBtn.disabled = false;
+        deleteBtn.textContent = originalText;
+    }
+}
+
+// VIEW PROJECT DETAILS
+function viewProjectDetails(projectId) {
+    const project = projects.find(p => p.id === projectId);
+    if (!project) {
+        return;
+    }
+
+    currentProjectDetailsId = projectId;
+
+    const owner = users.find(u => u.id === project.owner_id);
+    const projectTasks = tasks.filter(t => t.project_id === projectId);
+    const memberIds = project.members || [];
+    const members = users.filter(u => memberIds.includes(u.id));
+
+    document.getElementById('detailsProjectName').textContent = project.name;
+    document.getElementById('detailsProjectDescription').textContent = project.description || 'No description';
+    document.getElementById('detailsProjectOwner').textContent = owner ? owner.name : 'Unknown';
+    document.getElementById('detailsProjectTasks').textContent = `${projectTasks.length} tasks`;
+
+    // Render members
+    const membersContainer = document.getElementById('detailsProjectMembers');
+    if (members.length === 0) {
+        membersContainer.innerHTML = '<p style="color: var(--text-secondary); font-size: 0.875rem;">No team members yet</p>';
+    } else {
+        membersContainer.innerHTML = members.map(member => `
+            <div class="member-tag">${escapeHtml(member.name)}</div>
+        `).join('');
+    }
+
+    document.getElementById('projectDetailsModal').classList.add('active');
+}
+
+// Close project details modal
+function closeProjectDetailsModal() {
+    document.getElementById('projectDetailsModal').classList.remove('active');
+    currentProjectDetailsId = null;
+}
+
+// Edit project from details modal
+function editProjectFromDetails() {
+    if (!currentProjectDetailsId) return;
+    const projectId = currentProjectDetailsId;
+    closeProjectDetailsModal();
+    editProject(projectId);
+}
+
+// Delete project from details modal
+async function deleteProjectFromDetails() {
+    if (!currentProjectDetailsId) return;
+
+    if (!confirm('Are you sure you want to delete this project? All tasks will be deleted. This cannot be undone.')) {
+        return;
+    }
+
+    const projectId = currentProjectDetailsId;
+    closeProjectDetailsModal();
+
+    try {
+        const response = await fetch(`${API_PROJECTS}/${projectId}`, {
+            method: 'DELETE',
+            credentials: 'include'
+        });
+
+        if (!response.ok) throw new Error('Failed to delete project');
+
+        await Promise.all([loadProjects(), loadTasks()]);
+
+        // Switch to all tasks view if we're viewing the deleted project
+        if (currentProjectId === projectId) {
+            switchView('all');
+        } else {
+            updateUI();
+        }
+
+        showSuccess('Project deleted successfully');
+    } catch (error) {
+        showError('Failed to delete project');
+    }
+}
+
+// Edit project
+function editProject(projectId) {
+    const project = projects.find(p => p.id === projectId);
+    if (!project) {
+        showError('Project not found');
+        return;
+    }
+
+    document.getElementById('projectId').value = project.id;
+    document.getElementById('projectName').value = project.name || '';
+    document.getElementById('projectDescription').value = project.description || '';
+    document.getElementById('projectColor').value = project.color || '#f06a6a';
+    document.getElementById('projectModalTitle').textContent = 'Edit Project';
+    document.getElementById('projectSubmitBtnText').textContent = 'Update Project';
+
+    // Show delete button for editing
+    document.getElementById('projectDeleteBtn').style.display = 'block';
+
+    // Show and populate members section
+    const membersSection = document.getElementById('projectMembersSection');
+    membersSection.style.display = 'block';
+    renderProjectMembersList(project);
+
+    // Populate add member dropdown
+    const memberIds = [project.owner_id, ...(project.members || [])];
+    const availableUsers = users.filter(u => !memberIds.includes(u.id));
+    const select = document.getElementById('projectNewMemberSelect');
+    select.innerHTML = '<option value="">Add team member...</option>' +
+        availableUsers.map(u => `<option value="${u.id}">${escapeHtml(u.name)}</option>`).join('');
+
+    document.getElementById('projectModal').classList.add('active');
+}
+
+// Render project members list in edit modal
+function renderProjectMembersList(project) {
+    const membersList = document.getElementById('projectMembersList');
+    const memberIds = project.members || [];
+    const members = users.filter(u => memberIds.includes(u.id));
+
+    if (members.length === 0) {
+        membersList.innerHTML = '<p style="color: var(--text-secondary); font-size: 0.875rem; margin: 0.5rem 0;">No members yet</p>';
+        return;
+    }
+
+    membersList.innerHTML = members.map(member => `
+        <div class="member-item-inline">
+            <span>${escapeHtml(member.name)}</span>
+            <button type="button" class="remove-member-btn" onclick="removeProjectMember('${member.id}')" title="Remove member">×</button>
+        </div>
+    `).join('');
+}
+
+// Add project member (when editing)
+async function addProjectMember() {
+    const userId = document.getElementById('projectNewMemberSelect').value;
+    const projectId = document.getElementById('projectId').value;
+
+    if (!userId || !projectId) return;
+
+    const select = document.getElementById('projectNewMemberSelect');
+    const addBtn = event.target;
+
+    // Disable controls
+    select.disabled = true;
+    addBtn.disabled = true;
+    addBtn.textContent = 'Adding...';
+
+    try {
+        const response = await fetch(`${API_PROJECTS}/${projectId}/members`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ user_id: userId })
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Failed to add member');
+        }
+
+        await loadProjects();
+        const project = projects.find(p => p.id === projectId);
+        renderProjectMembersList(project);
+
+        // Update dropdown
+        const memberIds = [project.owner_id, ...(project.members || [])];
+        const availableUsers = users.filter(u => !memberIds.includes(u.id));
+        select.innerHTML = '<option value="">Add team member...</option>' +
+            availableUsers.map(u => `<option value="${u.id}">${escapeHtml(u.name)}</option>`).join('');
+
+        showSuccess('Member added successfully');
+    } catch (error) {
+        showError(error.message);
+    } finally {
+        // Re-enable controls
+        select.disabled = false;
+        addBtn.disabled = false;
+        addBtn.textContent = 'Add';
+    }
+}
+
+// Remove project member (when editing)
+async function removeProjectMember(userId) {
+    const projectId = document.getElementById('projectId').value;
+    if (!projectId) return;
+
+    const removeBtn = event.target;
+    const originalText = removeBtn.textContent;
+
+    // Disable button
+    removeBtn.disabled = true;
+    removeBtn.textContent = 'Removing...';
+
+    try {
+        const response = await fetch(`${API_PROJECTS}/${projectId}/members/${userId}`, {
+            method: 'DELETE',
+            credentials: 'include'
+        });
+
+        if (!response.ok) throw new Error('Failed to remove member');
+
+        await loadProjects();
+        const project = projects.find(p => p.id === projectId);
+        renderProjectMembersList(project);
+
+        // Update dropdown
+        const memberIds = [project.owner_id, ...(project.members || [])];
+        const availableUsers = users.filter(u => !memberIds.includes(u.id));
+        const select = document.getElementById('projectNewMemberSelect');
+        select.innerHTML = '<option value="">Add team member...</option>' +
+            availableUsers.map(u => `<option value="${u.id}">${escapeHtml(u.name)}</option>`).join('');
+
+        showSuccess('Member removed successfully');
+    } catch (error) {
+        showError('Failed to remove member');
+        // Re-enable button on error
+        removeBtn.disabled = false;
+        removeBtn.textContent = originalText;
+    }
+}
+
+// Delete project from edit modal
+async function deleteProjectFromEdit() {
+    const projectId = document.getElementById('projectId').value;
+    if (!projectId) return;
+
+    if (!confirm('Are you sure you want to delete this project? All tasks will be deleted. This cannot be undone.')) {
+        return;
+    }
+
+    const deleteBtn = event.target;
+    const originalText = deleteBtn.textContent;
+
+    // Disable button
+    deleteBtn.disabled = true;
+    deleteBtn.textContent = 'Deleting...';
+
+    try {
+        const response = await fetch(`${API_PROJECTS}/${projectId}`, {
+            method: 'DELETE',
+            credentials: 'include'
+        });
+
+        if (!response.ok) throw new Error('Failed to delete project');
+
+        closeProjectModal();
+        await Promise.all([loadProjects(), loadTasks()]);
+
+        // Switch to all tasks view if we're viewing the deleted project
+        if (currentProjectId === projectId) {
             switchView('all');
         } else {
             updateUI();
@@ -1247,5 +1544,11 @@ window.openProjectSettings = function(projectId) {
 const originalEditTask = editTask;
 window.editTask = function(id) {
     originalEditTask(id);
+    setTimeout(initCustomSelects, 50);
+};
+
+const originalEditProject = editProject;
+window.editProject = function(projectId) {
+    originalEditProject(projectId);
     setTimeout(initCustomSelects, 50);
 };

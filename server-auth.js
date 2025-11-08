@@ -676,9 +676,9 @@ app.post('/api/tasks', requireAuth, async (req, res) => {
         }
 
         // Validate priority
-        const validPriorities = ['low', 'medium', 'high'];
+        const validPriorities = ['none', 'low', 'medium', 'high'];
         if (priority && !validPriorities.includes(priority)) {
-            return res.status(400).json({ error: 'Invalid priority. Must be: low, medium, or high' });
+            return res.status(400).json({ error: 'Invalid priority. Must be: none, low, medium, or high' });
         }
 
         // Check if user is member of the project
@@ -700,7 +700,7 @@ app.post('/api/tasks', requireAuth, async (req, res) => {
             assigned_to_id: assigned_to_id,
             created_by_id: req.session.userId,
             status: 'pending',
-            priority: priority || 'medium',
+            priority: priority || 'none',
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString()
         };
@@ -756,9 +756,9 @@ app.put('/api/tasks/:id', requireAuth, async (req, res) => {
         }
 
         // Validate priority if provided
-        const validPriorities = ['low', 'medium', 'high'];
+        const validPriorities = ['none', 'low', 'medium', 'high'];
         if (priority !== undefined && !validPriorities.includes(priority)) {
-            return res.status(400).json({ error: 'Invalid priority. Must be: low, medium, or high' });
+            return res.status(400).json({ error: 'Invalid priority. Must be: none, low, medium, or high' });
         }
 
         // If changing assigned user, verify they're in the project
@@ -774,7 +774,7 @@ app.put('/api/tasks/:id', requireAuth, async (req, res) => {
             date: date || task.date,
             assigned_to_id: assigned_to_id || task.assigned_to_id,
             status: status !== undefined ? status : task.status,
-            priority: priority || task.priority || 'medium'
+            priority: priority !== undefined ? priority : (task.priority || 'none')
         };
 
         const updatedTask = await dataService.updateTask(req.params.id, updates);

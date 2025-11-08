@@ -309,7 +309,7 @@ class DataService {
                     taskData.assigned_to_id,
                     taskData.created_by_id,
                     taskData.status || 'pending',
-                    taskData.priority || 'medium',
+                    taskData.priority || 'none',
                     taskData.created_at,
                     taskData.updated_at
                 ]

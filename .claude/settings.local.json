@@ -5,7 +5,8 @@
       "Bash(npm install)",
       "Bash(lsof:*)",
       "Bash(kill:*)",
-      "Bash(xargs kill:*)"
+      "Bash(xargs kill:*)",
+      "Bash(git add:*)"
     ],
     "deny": [],
     "ask": []
