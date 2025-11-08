@@ -149,7 +149,7 @@ body {
     padding: 1.5rem 2rem;
     display: flex;
     justify-content: space-between;
-    align-items: center;
+    align-items: flex-start; /* align actions with title line */
     gap: 2rem;
     flex-wrap: wrap;
 }
