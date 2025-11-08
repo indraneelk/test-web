@@ -14,12 +14,12 @@ const dataService = require('./data-service');
 const supabaseService = require('./supabase-service');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 5001;
 
 // CORS Configuration
 const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS
     ? process.env.ALLOWED_ORIGINS.split(',')
-    : ['http://localhost:3000', 'http://127.0.0.1:3000'];
+    : ['http://localhost:5001', 'http://127.0.0.1:5001'];
 
 // Security headers
 app.use(helmet({
@@ -29,7 +29,7 @@ app.use(helmet({
             styleSrc: ["'self'", "'unsafe-inline'"],
             scriptSrc: ["'self'"],
             imgSrc: ["'self'", "data:", "https:"],
-            connectSrc: ["'self'"]
+            connectSrc: ["'self'", "https://*.supabase.co"]  // Allow Supabase API calls
         }
     },
     hsts: {
@@ -77,7 +77,7 @@ app.use(session({
     cookie: {
         secure: process.env.NODE_ENV === 'production', // HTTPS only in production
         httpOnly: true,
-        sameSite: 'strict', // CSRF protection
+        sameSite: 'lax', // CSRF protection while allowing OAuth redirects
         maxAge: 24 * 60 * 60 * 1000 // 24 hours
     }
 }));
@@ -435,7 +435,7 @@ app.post('/api/auth/magic-link', magicLinkLimiter, async (req, res) => {
 });
 
 // Handle Supabase auth callback (verify and create/update user)
-app.post('/api/auth/supabase-callback', async (req, res) => {
+app.post('/api/auth/supabase-callback', authLimiter, async (req, res) => {
     try {
         if (!supabaseService.isEnabled()) {
             return res.status(501).json({ error: 'Supabase authentication is not configured' });
@@ -505,14 +505,14 @@ app.post('/api/auth/supabase-callback', async (req, res) => {
     } catch (error) {
         console.error('Supabase callback error:', error);
         res.status(500).json({
-            error: 'Authentication failed',
-            details: error.message
+            error: 'Authentication failed'
+            // Removed error.message to prevent information disclosure
         });
     }
 });
 
 // Complete profile setup for Supabase user
-app.post('/api/auth/profile-setup', async (req, res) => {
+app.post('/api/auth/profile-setup', authLimiter, async (req, res) => {
     try {
         if (!supabaseService.isEnabled()) {
             return res.status(501).json({ error: 'Supabase authentication is not configured' });
@@ -581,7 +581,7 @@ app.post('/api/auth/profile-setup', async (req, res) => {
 });
 
 // Create a server session from a Supabase access token
-app.post('/api/auth/supabase', async (req, res) => {
+app.post('/api/auth/supabase', authLimiter, async (req, res) => {
     try {
         const { access_token } = req.body || {};
         if (!access_token) {
@@ -596,8 +596,7 @@ app.post('/api/auth/supabase', async (req, res) => {
         // Ensure local user
         let user = await dataService.getUserById(supaUserId);
         if (!user) {
-            const bcrypt = require('bcryptjs');
-            const password_hash = bcrypt.hashSync('supabase-' + supaUserId, 10);
+            const password_hash = bcrypt.hashSync('supabase-' + supaUserId, BCRYPT_ROUNDS);
             const newUser = {
                 id: supaUserId,
                 username: (email ? email.split('@')[0] : `user_${supaUserId.slice(0,8)}`),
@@ -686,21 +685,20 @@ app.put('/api/auth/me', requireAuth, async (req, res) => {
         }
         if (password !== undefined && password !== null && password !== '') {
             if (!validatePassword(password)) {
-                return res.status(400).json({ error: 'Password must be at least 6 characters' });
+                return res.status(400).json({ error: 'Password must be at least 8 characters with a mix of uppercase, lowercase, numbers, and special characters' });
             }
         }
 
         const user = await dataService.getUserById(req.session.userId);
         if (!user) return res.status(404).json({ error: 'User not found' });
 
-        const bcrypt = require('bcryptjs');
         const updates = {
             name: name !== undefined ? sanitizeString(name) : user.name,
             email: email !== undefined ? sanitizeString(email) : user.email,
             initials: initials !== undefined ? sanitizeString(initials || '') : (user.initials || null)
         };
         if (password) {
-            updates.password_hash = bcrypt.hashSync(password, 10);
+            updates.password_hash = bcrypt.hashSync(password, BCRYPT_ROUNDS);
         }
 
         const updated = await dataService.updateUser(req.session.userId, updates);
