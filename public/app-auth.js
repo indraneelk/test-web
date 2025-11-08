@@ -1864,7 +1864,7 @@ class CustomSelect {
 
 // Helper for priority colors used by CustomSelect
 CustomSelect.prototype.getPriorityColor = function(value) {
-    const map = { high: '#ef4444', medium: '#f59e0b', low: '#10b981' };
+    const map = { high: '#ef4444', medium: '#f59e0b', low: '#3b82f6' };
     const key = (typeof value === 'string' ? value : '').toLowerCase().trim();
     return map[key] || '';
 };
@@ -1893,6 +1893,15 @@ window.openTaskModal = function() {
     originalOpenTaskModal();
     setTimeout(initCustomSelects, 50);
 };
+
+// Expose all close functions on window for inline onclick handlers
+window.closeTaskModal = closeTaskModal;
+window.closeTaskDetailsModal = closeTaskDetailsModal;
+window.closeUserSettings = closeUserSettings;
+window.closeProjectModal = closeProjectModal;
+window.closeProjectDetailsModal = closeProjectDetailsModal;
+window.closeProjectSettingsModal = closeProjectSettingsModal;
+window.closeDeleteModal = closeDeleteModal;
 
 const originalOpenProjectModal = openProjectModal;
 window.openProjectModal = function() {

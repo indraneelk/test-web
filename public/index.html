@@ -115,34 +115,38 @@
 
                 <div class="form-row">
                     <div class="form-group">
-                        <label for="taskPoc">Point of Contact <span class="required">*</span></label>
-                        <input type="text" id="taskPoc" class="form-input" placeholder="e.g., John Doe" required>
+                        <label for="taskProject">Project <span class="required">*</span></label>
+                        <select id="taskProject" class="form-select" required>
+                            <option value="">Select project...</option>
+                        </select>
                     </div>
 
                     <div class="form-group">
-                        <label for="taskDate">Due Date <span class="required">*</span></label>
-                        <input type="date" id="taskDate" class="form-input" required>
+                        <label for="taskAssignee">Assigned to <span class="required">*</span></label>
+                        <select id="taskAssignee" class="form-select" required>
+                            <option value="">Select person...</option>
+                        </select>
                     </div>
                 </div>
 
                 <div class="form-row">
                     <div class="form-group">
-                        <label for="taskProject">Project <span class="required">*</span></label>
-                        <input type="text" id="taskProject" class="form-input" placeholder="e.g., Website Redesign" required>
+                        <label for="taskDate">Due Date <span class="required">*</span></label>
+                        <input type="date" id="taskDate" class="form-input" required>
                     </div>
 
                     <div class="form-group">
-                        <label for="taskStatus">Status</label>
-                        <select id="taskStatus" class="form-select">
-                            <option value="pending">Pending</option>
-                            <option value="in-progress">In Progress</option>
-                            <option value="completed">Completed</option>
+                        <label for="taskPriority">Priority</label>
+                        <select id="taskPriority" class="form-select">
+                            <option value="none" selected>None</option>
+                            <option value="low">Low</option>
+                            <option value="medium">Medium</option>
+                            <option value="high">High</option>
                         </select>
                     </div>
                 </div>
 
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" onclick="closeTaskModal()">Cancel</button>
                     <button type="submit" class="btn btn-primary">
                         <span id="submitBtnText">Create Task</span>
                     </button>

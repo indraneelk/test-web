@@ -27,7 +27,7 @@ app.use(helmet({
         directives: {
             defaultSrc: ["'self'"],
             styleSrc: ["'self'", "'unsafe-inline'"],
-            scriptSrc: ["'self'"],
+            scriptSrc: ["'self'", "'unsafe-inline'"],  // Allow inline scripts for HTML pages
             imgSrc: ["'self'", "data:", "https:"],
             connectSrc: ["'self'", "https://*.supabase.co"]  // Allow Supabase API calls
         }
@@ -100,30 +100,28 @@ const logActivity = async (userId, action, details, taskId = null, projectId = n
     });
 };
 
-// Supabase JWT verification (HS256)
-const SUPABASE_JWT_SECRET = process.env.SUPABASE_JWT_SECRET || '';
-function base64urlDecode(str) {
-    str = str.replace(/-/g, '+').replace(/_/g, '/');
-    const pad = 4 - (str.length % 4);
-    if (pad !== 4) str += '='.repeat(pad);
-    return Buffer.from(str, 'base64');
+// Supabase JWT verification via JWKS (supports RS256 and HS256)
+const { jwtVerify, createRemoteJWKSet } = require('jose');
+const SUPABASE_URL = process.env.SUPABASE_URL || '';
+let SUPABASE_JWKS = null;
+function getProjectRefFromUrl(urlStr) {
+    try {
+        const u = new URL(urlStr);
+        return u.hostname.split('.')[0];
+    } catch {
+        return '';
+    }
 }
-function verifySupabaseJWT(token) {
-    if (!SUPABASE_JWT_SECRET) throw new Error('SUPABASE_JWT_SECRET not configured');
-    const parts = token.split('.');
-    if (parts.length !== 3) throw new Error('Invalid JWT');
-    const [headerB64, payloadB64, sigB64] = parts;
-    const data = `${headerB64}.${payloadB64}`;
-    const expected = crypto
-        .createHmac('sha256', Buffer.from(SUPABASE_JWT_SECRET, 'base64'))
-        .update(data)
-        .digest('base64')
-        .replace(/=/g, '')
-        .replace(/\+/g, '-')
-        .replace(/\//g, '_');
-    if (expected !== sigB64) throw new Error('Invalid signature');
-    const payload = JSON.parse(base64urlDecode(payloadB64).toString('utf8'));
+async function verifySupabaseJWT(token) {
+    const ref = getProjectRefFromUrl(SUPABASE_URL);
+    if (!ref) throw new Error('SUPABASE_URL not configured');
+    const jwksUrl = new URL('/auth/v1/jwks', SUPABASE_URL);
+    SUPABASE_JWKS = SUPABASE_JWKS || createRemoteJWKSet(jwksUrl);
+    const { payload } = await jwtVerify(token, SUPABASE_JWKS, {
+        algorithms: ['RS256', 'HS256']
+    });
     if (payload.exp && Date.now() / 1000 > payload.exp) throw new Error('Token expired');
+    if (payload.iss && !String(payload.iss).includes(ref)) throw new Error('Invalid issuer');
     return payload; // { sub, email, user_metadata?, ... }
 }
 
@@ -518,14 +516,18 @@ app.post('/api/auth/profile-setup', authLimiter, async (req, res) => {
             return res.status(501).json({ error: 'Supabase authentication is not configured' });
         }
 
-        const { access_token, name, initials, color } = req.body;
+        const { access_token, name, initials, color, password } = req.body;
 
         if (!access_token) {
             return res.status(400).json({ error: 'Access token is required' });
         }
 
-        if (!name || !initials) {
-            return res.status(400).json({ error: 'Name and initials are required' });
+        if (!name || !initials || !password) {
+            return res.status(400).json({ error: 'Name, initials, and password are required' });
+        }
+
+        if (password.length < 8) {
+            return res.status(400).json({ error: 'Password must be at least 8 characters' });
         }
 
         // Verify token
@@ -540,6 +542,22 @@ app.post('/api/auth/profile-setup', authLimiter, async (req, res) => {
 
         if (user) {
             return res.status(400).json({ error: 'User already exists' });
+        }
+
+        // Set password in Supabase
+        const adminClient = supabaseService.getAdminClient();
+        if (!adminClient) {
+            return res.status(500).json({ error: 'Supabase admin client not available. Please configure SUPABASE_SERVICE_ROLE_KEY.' });
+        }
+
+        const { error: passwordError } = await adminClient.auth.admin.updateUserById(
+            supabaseUser.id,
+            { password: password }
+        );
+
+        if (passwordError) {
+            console.error('Failed to set password in Supabase:', passwordError);
+            return res.status(500).json({ error: 'Failed to set password' });
         }
 
         // Create profile data
@@ -580,6 +598,57 @@ app.post('/api/auth/profile-setup', authLimiter, async (req, res) => {
     }
 });
 
+// Handle Supabase email/password login
+app.post('/api/auth/supabase-login', authLimiter, async (req, res) => {
+    try {
+        if (!supabaseService.isEnabled()) {
+            return res.status(501).json({ error: 'Supabase authentication is not configured' });
+        }
+
+        const { access_token } = req.body;
+
+        if (!access_token) {
+            return res.status(400).json({ error: 'Access token is required' });
+        }
+
+        // Verify token and get Supabase user
+        const supabaseUser = await supabaseService.getUserFromToken(access_token);
+
+        if (!supabaseUser) {
+            return res.status(401).json({ error: 'Invalid access token' });
+        }
+
+        // Get user from our database by Supabase ID
+        const user = await dataService.getUserBySupabaseId(supabaseUser.id);
+
+        if (!user) {
+            return res.status(404).json({
+                error: 'User not found. Please complete profile setup first.',
+                needsProfileSetup: true
+            });
+        }
+
+        // Set session
+        req.session.userId = user.id;
+        req.session.supabaseAccessToken = access_token;
+
+        await logActivity(user.id, 'user_login', `User ${user.name} logged in via Supabase`);
+
+        // Return user without sensitive info
+        const { password_hash: _, ...userWithoutPassword } = user;
+        res.json({
+            success: true,
+            user: userWithoutPassword
+        });
+    } catch (error) {
+        console.error('Supabase login error:', error);
+        res.status(500).json({
+            error: 'Login failed',
+            details: error.message
+        });
+    }
+});
+
 // Create a server session from a Supabase access token
 app.post('/api/auth/supabase', authLimiter, async (req, res) => {
     try {
@@ -587,7 +656,7 @@ app.post('/api/auth/supabase', authLimiter, async (req, res) => {
         if (!access_token) {
             return res.status(400).json({ error: 'Missing access_token' });
         }
-        const payload = verifySupabaseJWT(access_token);
+        const payload = await verifySupabaseJWT(access_token);
         const supaUserId = payload.sub;
         const email = payload.email || null;
         const meta = payload.user_metadata || {};
@@ -626,7 +695,8 @@ app.post('/api/auth/supabase', authLimiter, async (req, res) => {
             user = await dataService.getUserById(supaUserId);
         }
 
-        // Set server session
+        // Regenerate session to prevent fixation
+        await new Promise(resolve => req.session.regenerate(() => resolve()))
         req.session.userId = supaUserId;
         const { password_hash: _, ...userWithoutPass } = user;
         res.json({ user: userWithoutPass });
@@ -634,6 +704,14 @@ app.post('/api/auth/supabase', authLimiter, async (req, res) => {
         console.error('Supabase session error:', err.message);
         res.status(401).json({ error: 'Invalid Supabase token' });
     }
+});
+
+// Public config for frontend (safe to expose anon key)
+app.get('/api/config/public', (req, res) => {
+    res.json({
+        supabaseUrl: process.env.SUPABASE_URL || '',
+        supabaseAnonKey: process.env.SUPABASE_ANON_KEY || ''
+    });
 });
 
 // ==================== USER MANAGEMENT ROUTES ====================
