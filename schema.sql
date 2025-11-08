@@ -54,6 +54,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     assigned_to_id TEXT NOT NULL,
     created_by_id TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'pending',
+    priority TEXT NOT NULL DEFAULT 'none',
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
     FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
@@ -72,6 +73,7 @@ CREATE INDEX IF NOT EXISTS idx_tasks_project_id ON tasks(project_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_assigned_to_id ON tasks(assigned_to_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_created_by_id ON tasks(created_by_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
+CREATE INDEX IF NOT EXISTS idx_tasks_priority ON tasks(priority);
 CREATE INDEX IF NOT EXISTS idx_tasks_date ON tasks(date);
 
 -- Create activity log table for tracking changes
