@@ -588,8 +588,9 @@ function createTaskCard(task) {
     let projectAbbr = '';
     let projectColor = '#cccccc';
     if (project) {
-        // Use project name, truncated to 8 characters
-        projectAbbr = project.name.substring(0, 8);
+        // Use project name, truncated to 8 characters with first letter capitalized
+        const name = project.name.substring(0, 8);
+        projectAbbr = name.charAt(0).toUpperCase() + name.slice(1);
         projectColor = project.color || '#f06a6a';
     }
 
