@@ -234,6 +234,17 @@
 
         <div class="divider">or</div>
 
+        <!-- Supabase Magic Link Login -->
+        <form id="supaForm">
+            <div class="form-group">
+                <label for="supaEmail">Sign in with Email Link</label>
+                <input type="email" id="supaEmail" placeholder="you@example.com" required>
+            </div>
+            <button type="submit" class="btn btn-secondary">Send Magic Link</button>
+        </form>
+
+        <div class="divider">or</div>
+
         <button class="btn btn-secondary" onclick="showRegisterForm()">Create New Account</button>
 
         <!-- Register Form (hidden by default) -->
@@ -267,9 +278,53 @@
         </div>
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script>
+        const SUPABASE_URL = 'https://oxbaswpyxryvygamgtsu.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im94YmFzd3B5eHJ5dnlnYW1ndHN1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI1Njc2NjQsImV4cCI6MjA3ODE0MzY2NH0.Et4f6gG_wDecBkvLvuZLtvaumkUo_URTPj5hw7nD1fI';
+        const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
         const API_URL = '/api/auth';
         let isRegistering = false;
+
+        // Handle Supabase magic link login
+        document.getElementById('supaForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('supaEmail').value;
+            const container = document.querySelector('.login-container');
+            container.classList.add('loading');
+            try {
+                const { error } = await supa.auth.signInWithOtp({
+                    email,
+                    options: { emailRedirectTo: window.location.origin + '/login.html' }
+                });
+                if (error) throw error;
+                showSuccess('Magic link sent! Check your email.');
+            } catch (err) {
+                showError(err.message || 'Failed to send magic link');
+            } finally {
+                container.classList.remove('loading');
+            }
+        });
+
+        // On auth state change, create a server session then redirect
+        supa.auth.onAuthStateChange(async (event, session) => {
+            if (event === 'SIGNED_IN' && session?.access_token) {
+                try {
+                    const resp = await fetch('/api/auth/supabase', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        credentials: 'include',
+                        body: JSON.stringify({ access_token: session.access_token })
+                    });
+                    const data = await resp.json();
+                    if (!resp.ok) throw new Error(data.error || 'Failed to start session');
+                    localStorage.setItem('user', JSON.stringify(data.user));
+                    window.location.href = '/app-auth.html';
+                } catch (err) {
+                    showError(err.message);
+                }
+            }
+        });
 
         // Show error message
         function showError(message) {

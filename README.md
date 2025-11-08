@@ -63,6 +63,18 @@ node server-auth.js
 # Visit: http://localhost:3000/app-auth.html
 # or login at: http://localhost:3000/login.html
 
+## Supabase Auth (optional)
+
+Set environment variables:
+
+```
+SUPABASE_URL=https://oxbaswpyxryvygamgtsu.supabase.co
+SUPABASE_JWT_SECRET=Wj0qMDoTMW1MsmSulmFy7In5uJniONjo1Ec1aDqH7Lk26ZzG5JEMKSilPSeKl4NBfquZVn8H9s8UCOqQkXVGCw==
+```
+
+Login page supports Magic Link. After sign-in, the client posts the Supabase `access_token` to `/api/auth/supabase` to create a server session.
+
+
 # Default credentials:
 # Username: admin
 # Password: admin123

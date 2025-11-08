@@ -6,6 +6,7 @@ const path = require('path');
 const bcrypt = require('bcryptjs');
 const session = require('express-session');
 const cookieParser = require('cookie-parser');
+const crypto = require('crypto');
 const claudeService = require('./claude-service');
 const dataService = require('./data-service');
 
@@ -69,6 +70,33 @@ const logActivity = async (userId, action, details, taskId = null, projectId = n
         timestamp: new Date().toISOString()
     });
 };
+
+// Supabase JWT verification (HS256)
+const SUPABASE_JWT_SECRET = process.env.SUPABASE_JWT_SECRET || '';
+function base64urlDecode(str) {
+    str = str.replace(/-/g, '+').replace(/_/g, '/');
+    const pad = 4 - (str.length % 4);
+    if (pad !== 4) str += '='.repeat(pad);
+    return Buffer.from(str, 'base64');
+}
+function verifySupabaseJWT(token) {
+    if (!SUPABASE_JWT_SECRET) throw new Error('SUPABASE_JWT_SECRET not configured');
+    const parts = token.split('.');
+    if (parts.length !== 3) throw new Error('Invalid JWT');
+    const [headerB64, payloadB64, sigB64] = parts;
+    const data = `${headerB64}.${payloadB64}`;
+    const expected = crypto
+        .createHmac('sha256', Buffer.from(SUPABASE_JWT_SECRET, 'base64'))
+        .update(data)
+        .digest('base64')
+        .replace(/=/g, '')
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_');
+    if (expected !== sigB64) throw new Error('Invalid signature');
+    const payload = JSON.parse(base64urlDecode(payloadB64).toString('utf8'));
+    if (payload.exp && Date.now() / 1000 > payload.exp) throw new Error('Token expired');
+    return payload; // { sub, email, user_metadata?, ... }
+}
 
 // Validation helpers
 const validateString = (str, minLength = 1, maxLength = 500) => {
@@ -300,6 +328,63 @@ app.get('/api/auth/me', requireAuth, async (req, res) => {
         res.json({ user: userWithoutPassword });
     } catch (error) {
         res.status(500).json({ error: 'Failed to fetch user' });
+    }
+});
+
+// Create a server session from a Supabase access token
+app.post('/api/auth/supabase', async (req, res) => {
+    try {
+        const { access_token } = req.body || {};
+        if (!access_token) {
+            return res.status(400).json({ error: 'Missing access_token' });
+        }
+        const payload = verifySupabaseJWT(access_token);
+        const supaUserId = payload.sub;
+        const email = payload.email || null;
+        const meta = payload.user_metadata || {};
+        let name = meta.full_name || meta.name || (email ? email.split('@')[0] : 'User');
+
+        // Ensure local user
+        let user = await dataService.getUserById(supaUserId);
+        if (!user) {
+            const bcrypt = require('bcryptjs');
+            const password_hash = bcrypt.hashSync('supabase-' + supaUserId, 10);
+            const newUser = {
+                id: supaUserId,
+                username: (email ? email.split('@')[0] : `user_${supaUserId.slice(0,8)}`),
+                password_hash,
+                name: sanitizeString(name),
+                email: email ? sanitizeString(email) : null,
+                is_admin: false,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+            };
+            await dataService.createUser(newUser);
+
+            // Create personal project
+            const personalProject = {
+                id: generateId('project'),
+                name: `${newUser.name}'s Personal Tasks`,
+                description: 'Personal tasks and to-dos',
+                color: '#f06a6a',
+                owner_id: newUser.id,
+                members: [],
+                is_personal: 1,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+            };
+            await dataService.createProject(personalProject);
+            await logActivity(newUser.id, 'user_linked', 'User created via Supabase', null, personalProject.id);
+            user = await dataService.getUserById(supaUserId);
+        }
+
+        // Set server session
+        req.session.userId = supaUserId;
+        const { password_hash: _, ...userWithoutPass } = user;
+        res.json({ user: userWithoutPass });
+    } catch (err) {
+        console.error('Supabase session error:', err.message);
+        res.status(401).json({ error: 'Invalid Supabase token' });
     }
 });
 
