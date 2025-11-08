@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Edit Profile</title>
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    body { background-color: var(--bg-color); min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 2rem; }
+    .profile-container { max-width: 520px; width: 100%; padding: 2.5rem; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 0.75rem; box-shadow: var(--shadow); }
+    .profile-header { text-align: center; margin-bottom: 2rem; }
+    .profile-header h1 { font-size: 1.75rem; font-weight: 600; margin-bottom: 0.5rem; color: var(--text-primary); }
+    .profile-header p { color: var(--text-secondary); font-size: 0.9375rem; }
+    .input-group { margin-bottom: 1.25rem; }
+    .input-group label { display:block; margin-bottom:0.5rem; color: var(--text-primary); font-weight: 600; font-size: 0.875rem; }
+    .input-group input { width:100%; padding:0.75rem 1rem; border:1px solid var(--border-color); border-radius:0.5rem; font-size:0.9375rem; color:var(--text-primary); background:var(--card-bg); }
+    .input-row { display:grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+    .color-options { display: grid; grid-template-columns: repeat(auto-fill, minmax(38px, 1fr)); gap: 0.5rem; margin-top: 0.25rem; }
+    .color-option { width: 38px; height: 38px; border-radius: 50%; cursor: pointer; border: 2px solid transparent; }
+    .color-option.selected { border-color: #000; }
+    .actions { display:flex; gap: 0.75rem; margin-top: 1rem; }
+    .btn { padding: 0.75rem 1.25rem; border-radius: 0.5rem; border: none; cursor: pointer; font-weight: 600; }
+    .btn-primary { background: var(--primary-color); color: #fff; }
+    .btn-secondary { background: var(--bg-elevated); color: var(--text-primary); border:1px solid var(--border-color); }
+    .error { padding: 0.75rem 1rem; background: #fee2e2; border:1px solid #fca5a5; color:#991b1b; border-radius:0.5rem; margin-bottom:1rem; display:none; }
+    .success { padding: 0.75rem 1rem; background: #dcfce7; border:1px solid #86efac; color:#166534; border-radius:0.5rem; margin-bottom:1rem; display:none; }
+    @media (max-width: 640px) { .input-row { grid-template-columns: 1fr; } }
+  </style>
+  <script>
+    // Small Bearer helper (no supabase-js needed here)
+    async function authFetch(url, options = {}) {
+      const token = sessionStorage.getItem('sb_at');
+      const headers = new Headers(options.headers || {});
+      if (token) headers.set('Authorization', `Bearer ${token}`);
+      return fetch(url, { ...options, headers, credentials: token ? undefined : 'include' });
+    }
+  </script>
+  </head>
+<body>
+  <div class="profile-container">
+    <div class="profile-header">
+      <h1>⚙️ Edit Profile</h1>
+      <p>Update your profile information</p>
+    </div>
+
+    <div id="error" class="error"></div>
+    <div id="success" class="success"></div>
+
+    <form id="form">
+      <div class="input-group">
+        <label for="username">Username</label>
+        <input id="username" type="text" placeholder="username">
+      </div>
+
+      <div class="input-row">
+        <div class="input-group">
+          <label for="name">Full Name</label>
+          <input id="name" type="text" placeholder="John Doe" required>
+        </div>
+        <div class="input-group">
+          <label for="initials">Initials</label>
+          <input id="initials" type="text" placeholder="JD" maxlength="3" style="text-transform: uppercase" required>
+        </div>
+      </div>
+
+      <div class="input-group">
+        <label>Color</label>
+        <div id="colorOptions" class="color-options"></div>
+      </div>
+
+      <div class="actions">
+        <button type="submit" class="btn btn-primary">Update Profile</button>
+        <button type="button" class="btn btn-secondary" id="changePwdBtn">Change Password</button>
+        <button type="button" class="btn btn-secondary" onclick="window.location.href='/'">Back</button>
+      </div>
+    </form>
+  </div>
+
+  <script>
+    const colors = ['#FF6B6B','#4ECDC4','#45B7D1','#FFA07A','#98D8C8','#F7DC6F','#BB8FCE','#85C1E2','#F8B195','#F67280','#C06C84','#6C5B7B','#355C7D','#99B898','#FECEAB'];
+    let selectedColor = colors[0];
+
+    function showError(msg){ const el=document.getElementById('error'); el.textContent=msg; el.style.display='block'; document.getElementById('success').style.display='none'; }
+    function showSuccess(msg){ const el=document.getElementById('success'); el.textContent=msg; el.style.display='block'; document.getElementById('error').style.display='none'; }
+
+    function renderColors(current){
+      const wrap = document.getElementById('colorOptions');
+      wrap.innerHTML = '';
+      colors.forEach(c => {
+        const d = document.createElement('div');
+        d.className = 'color-option' + (c === current ? ' selected' : '');
+        d.style.backgroundColor = c;
+        d.addEventListener('click', () => {
+          selectedColor = c;
+          document.querySelectorAll('.color-option').forEach(n => n.classList.remove('selected'));
+          d.classList.add('selected');
+        });
+        wrap.appendChild(d);
+      });
+    }
+
+    async function loadProfile(){
+      const resp = await authFetch('/api/auth/me');
+      if (!resp.ok){ window.location.href='/login.html'; return; }
+      let data = await resp.json();
+      const user = data && data.user ? data.user : data;
+      document.getElementById('username').value = user.username || '';
+      document.getElementById('name').value = user.name || '';
+      document.getElementById('initials').value = (user.initials || '').toUpperCase();
+      selectedColor = user.color || '#4ECDC4';
+      renderColors(selectedColor);
+    }
+
+    document.getElementById('form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const payload = {
+        username: document.getElementById('username').value.trim(),
+        name: document.getElementById('name').value.trim(),
+        initials: document.getElementById('initials').value.trim().toUpperCase(),
+        color: selectedColor
+      };
+      try{
+        const resp = await authFetch('/api/auth/me', { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
+        const data = await resp.json();
+        if (!resp.ok){ throw new Error(data.error || 'Failed to update profile'); }
+        showSuccess('Profile updated');
+        // update fields from server response as source of truth
+        const user = data.user ? data.user : data;
+        document.getElementById('username').value = user.username || '';
+        document.getElementById('name').value = user.name || '';
+        document.getElementById('initials').value = (user.initials || '').toUpperCase();
+        selectedColor = user.color || selectedColor;
+        renderColors(selectedColor);
+      }catch(err){ showError(err.message); }
+    });
+
+    document.getElementById('changePwdBtn').addEventListener('click', () => {
+      window.location.href = '/profile-password.html';
+    });
+
+    loadProfile();
+  </script>
+</body>
+</html>
+

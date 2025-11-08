@@ -68,11 +68,12 @@ node server-auth.js
 Set environment variables:
 
 ```
-SUPABASE_URL=https://oxbaswpyxryvygamgtsu.supabase.co
-SUPABASE_JWT_SECRET=Wj0qMDoTMW1MsmSulmFy7In5uJniONjo1Ec1aDqH7Lk26ZzG5JEMKSilPSeKl4NBfquZVn8H9s8UCOqQkXVGCw==
+SUPABASE_URL=https://<project>.supabase.co
+SUPABASE_ANON_KEY=... (frontend-safe)
+SUPABASE_SERVICE_ROLE_KEY=... (server-only)
 ```
 
-Login page supports Magic Link. After sign-in, the client posts the Supabase `access_token` to `/api/auth/supabase` to create a server session.
+Authentication model: stateless JWT (Authorization: Bearer). Clients attach the Supabase access token to API calls; the Worker verifies it with JOSE (JWKS preferred, HS256 fallback). Use `/api/config/public` to hydrate frontend with URL + anon key.
 
 
 # Default credentials:
@@ -199,11 +200,10 @@ Role: Admin
   - `tasks.json` - All tasks
   - `activity.json` - Activity log
 
-### Production (Cloudflare Workers + D1)
-- User authentication with bcrypt
-- Relational database with proper foreign keys
-- Session management
-- Scalable cloud storage
+### Production (Cloudflare Workers/Pages + D1)
+- Stateless auth with Supabase JWT (Bearer)
+- D1 relational schema with normalized project membership (see MIGRATIONS.md)
+- Scalable and global
 
 ## 🌐 API Endpoints
 

@@ -6,11 +6,11 @@ Complete guide to setting up Supabase authentication with magic links for your T
 
 ## ✨ Features
 
-- **Magic Link Authentication** - Passwordless login via email
-- **OAuth Providers** - Google, GitHub, and more (ready to enable)
-- **User Profiles** - Name, initials, and color customization
-- **Secure** - No passwords stored, managed by Supabase
-- **User-Friendly** - Beautiful onboarding flow for new users
+- Magic Link and Email/Password (Supabase) authentication
+- OAuth Providers (Google, GitHub) ready to enable
+- User Profiles (name, initials, color) stored in D1
+- Stateless JWT (Authorization: Bearer) used across APIs
+- No service keys in client; anon key only
 
 ---
 
@@ -45,7 +45,7 @@ Complete guide to setting up Supabase authentication with magic links for your T
 # Supabase Authentication
 SUPABASE_URL=https://your-project-id.supabase.co
 SUPABASE_ANON_KEY=your-anon-key-here
-SUPABASE_SERVICE_ROLE_KEY=your-service-role-key-here
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key-here  # server-only (Worker/Functions)
 ```
 
 ### Step 4: Configure Email Settings (Optional but Recommended)
@@ -76,28 +76,27 @@ By default, Supabase uses their SMTP server (rate-limited). For production:
 
 ---
 
-## 📱 User Flow
+## 📱 User Flows
 
-### For New Users:
+### New users (Magic Link):
+1. `/magic-link.html` → send link
+2. `/auth/callback.html` → obtain `access_token`
+3. `/api/auth/supabase-login` → returns `needsProfileSetup` if user not found
+4. `/profile-setup.html` → create profile in D1 (name, initials, color)
+5. Logged into app
 
-1. **Visit Magic Link Page** → `/magic-link.html`
-2. **Enter Email** → Receive magic link email
-3. **Click Link** → Auto-redirected to callback page
-4. **Complete Profile** → Name, initials, and color
-5. **Start Using App** → Full access to task manager
+### Returning users:
+- `/login.html` (password) or Magic Link → Supabase session → app
 
-### For Returning Users:
-
-1. **Visit Magic Link Page** → `/magic-link.html`
-2. **Enter Email** → Receive magic link email
-3. **Click Link** → Instantly signed in
-4. **Redirected to App** → Continue where they left off
+### Editing profile and password
+- `/profile-update.html` → update D1 fields (username, name, initials, color)
+- `/profile-password.html` → update Supabase password via REST (`PUT /auth/v1/user`)
 
 ---
 
 ## 🎨 User Profile Fields
 
-When users complete their profile, they provide:
+When users complete or edit their profile, they provide:
 
 | Field | Description | Example | Required |
 |-------|-------------|---------|----------|
@@ -105,8 +104,8 @@ When users complete their profile, they provide:
 | **Initials** | 2-3 letter initials | JD | ✅ Yes |
 | **Color** | Avatar color | #4ECDC4 | Auto-generated |
 | **Email** | Email address | john@example.com | From Supabase |
-| **user_id** | Internal ID | Generated | Auto-generated |
-| **supabase_id** | Supabase auth ID | uuid | From Supabase |
+| **id** | User ID | Supabase `sub` | Auto (from token) |
+| **username** | Handle | john | Optional |
 
 These fields are used throughout the app for:
 - Avatar circles with initials

@@ -108,8 +108,8 @@ External Services:
 ## Key Differences from Local Setup
 
 ### Authentication
-- **Local**: Express sessions (Node)
-- **Cloudflare**: Stateless JWT verification per request (Authorization: Bearer). Prefer this across Pages/Workers.
+- Local: Express sessions (dev convenience only)
+- Cloudflare: Stateless JWT verification per request (Authorization: Bearer). Prefer this across Pages/Workers.
 
 ### Database
 - **Local**: JSON files in `data/`
@@ -238,6 +238,12 @@ Notes:
 - If no token is found, we fall back to cookie mode for local dev.
 - Login stores the Supabase access token in `sessionStorage` as `sb_at` for immediate use.
 
+### Self-hosting supabase-js (SDK)
+
+- In development, `server-auth.js` serves `/vendor/supabase.js` from local node_modules.
+- For Cloudflare Pages, copy `node_modules/@supabase/supabase-js/dist/umd/supabase.js` to `public/vendor/supabase.js` and reference it with `<script src="/vendor/supabase.js"></script>`.
+- This keeps CSP simple (`script-src 'self'`, `connect-src 'self' https://*.supabase.co`) and avoids CDN dependencies.
+
 ## Pages Functions Scaffold
 
 Added a minimal `functions/_worker.js` with:
@@ -260,5 +266,9 @@ database_id = "<your-database-id>"
 - Server helper `broadcastChange()` exists in `worker.js` to publish to a `task-updates` channel.
 - Clients subscribe when `window.supabase` is available; otherwise Plan B is skipped gracefully.
 - Scope channels per project later (e.g., `tasks-<projectId>`) to reduce reloads.
+
+## Schema Alignment
+
+Production code expects the canonical schema described in MIGRATIONS.md (normalized `project_members`, tasks with `archived`, users.id = Supabase `sub`). Ensure migrations bring any legacy DB into alignment.
 - Prefer Bearer tokens over cookies across domains.
 - Optionally prewarm JWKS on boot to reduce cold-start latency.

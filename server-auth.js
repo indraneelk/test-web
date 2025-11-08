@@ -188,11 +188,20 @@ const authLimiter = rateLimit({
 });
 
 const magicLinkLimiter = rateLimit({
-    windowMs: 60 * 60 * 1000, // 1 hour
-    max: 3, // 3 magic links per hour
-    message: { error: 'Too many magic link requests, please try again later' },
+    windowMs: 60 * 1000, // 1 minute
+    max: 1, // 1 magic link per minute
+    message: { error: 'Too many magic link requests. Please wait 60 seconds and try again.' },
     standardHeaders: true,
-    legacyHeaders: false
+    legacyHeaders: false,
+    keyGenerator: (req /*, res*/) => {
+        try {
+            const email = (req.body && typeof req.body.email === 'string') ? req.body.email.toLowerCase().trim() : '';
+            const ip = (req.ip || req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '').toString();
+            return `${email}|${ip}`;
+        } catch {
+            return req.ip || 'unknown';
+        }
+    }
 });
 
 // Authentication Middleware

@@ -4,7 +4,18 @@ This guide explains **all the ways** Claude can access your Cloudflare D1 databa
 
 ## Understanding the Architecture
 
-Claude AI (Anthropic API) **cannot directly access D1**. You need an intermediary. Here are your options:
+Claude AI (Anthropic API) **cannot directly access D1**. You need an intermediary. Here are your options and the canonical schema snapshot the app expects.
+
+### Canonical Schema Snapshot
+
+See MIGRATIONS.md for full detail. At a glance:
+- users(id, username, password_hash, name, email, initials, color, is_admin, created_at, updated_at)
+- projects(id, name, description, color, is_personal, owner_id, created_at, updated_at)
+- project_members(project_id, user_id, role, added_at, UNIQUE(project_id,user_id))
+- tasks(id, name, description, date, project_id, assigned_to_id, created_by_id, status, priority, archived, completed_at, created_at, updated_at)
+- activity_logs(id, user_id, task_id, project_id, action, details, created_at)
+
+Note: We standardized on `users.id = Supabase sub` (JWT subject). The `supabase_id` column from older migrations is deprecated.
 
 ## Option 1: Express Server → D1 API → Claude (Easiest)
 
@@ -58,8 +69,17 @@ CLOUDFLARE_API_TOKEN=your-token-here
 **Step 3: Initialize D1 Database**
 
 ```bash
-# Run schema
-wrangler d1 execute task-manager --file=./schema.sql
+# Apply migrations in order (see MIGRATIONS.md)
+wrangler d1 execute task-manager --file=./migrations/0001_initial_schema.sql
+wrangler d1 execute task-manager --file=./migrations/001_add_priority_to_tasks.sql
+wrangler d1 execute task-manager --file=./migrations/002_add_color_to_projects.sql
+wrangler d1 execute task-manager --file=./migrations/003_add_is_personal_to_projects.sql
+wrangler d1 execute task-manager --file=./migrations/004_add_initials_to_users.sql
+# Optional legacy
+wrangler d1 execute task-manager --file=./migrations/005_add_supabase_support.sql
+```
+
+If migrating from legacy JSON members → normalized `project_members`, insert a normalization migration. For data import, fix column mappings in 006 (see MIGRATIONS.md) before running.
 ```
 
 **Step 4: Update Server (already done!)**

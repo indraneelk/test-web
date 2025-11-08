@@ -51,7 +51,7 @@ ANTHROPIC_API_KEY=sk-ant-...
 - Fast, no API calls
 - Perfect for local development
 
-### Production (Cloudflare/VPS)
+### Production (Cloudflare Workers/Pages)
 ```bash
 # .env has D1 credentials
 SESSION_SECRET=abc123
@@ -65,10 +65,10 @@ CLOUDFLARE_API_TOKEN=your-token
 ```
 
 **Behavior:**
-- Uses Cloudflare D1 via REST API
+- Uses Cloudflare D1 (direct binding in Workers/Functions)
+- Stateless JWT verification (Authorization: Bearer)
 - No JSON files needed
 - Scalable, persistent
-- Production-ready
 
 ## Data Service API
 
@@ -122,10 +122,10 @@ await dataService.getActivityLog()
 - All CRUD operations supported
 - logActivity() updated to async
 
-### ⚠️ Routes Need Updating
+### ⚠️ Notes
 
-The server routes currently use old `readJSON`/`writeJSON` calls.
-These need to be updated to use `dataService` methods.
+- Development server (Express) is for local iteration only; production logic lives in the Worker/Functions.
+- See MIGRATIONS.md for the canonical schema and migration sequence expected by production code.
 
 **Example - Before:**
 ```javascript

@@ -13,7 +13,10 @@
       "Bash(curl:*)",
       "Bash(wrangler d1 execute:*)",
       "Bash(node migrate-data-to-d1.js:*)",
-      "Bash(node migrate.js:*)"
+      "Bash(node migrate.js:*)",
+      "Bash(git commit:*)",
+      "mcp__supabase__list_projects",
+      "mcp__supabase__execute_sql"
     ],
     "deny": [],
     "ask": []

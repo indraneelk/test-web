@@ -1,6 +1,6 @@
 # 🏗️ Architecture: How Supabase & D1 Work Together
 
-**TL;DR:** Supabase and D1 are **completely separate systems**. Supabase handles **authentication only**, while D1/JSON stores **all your data**.
+**TL;DR:** Supabase and D1 are **separate systems**. Supabase handles **authentication only**; D1/JSON stores **all app data**. The app uses stateless JWT (Authorization: Bearer) end-to-end in production.
 
 ---
 
@@ -49,7 +49,7 @@ Your task manager uses a **separation of concerns** architecture:
 **What it returns:**
 ```javascript
 {
-  id: "supabase-uuid-123",        // Supabase's user ID
+  id: "supabase-uuid-123",        // Supabase `sub` (used as users.id)
   email: "user@example.com",       // User's email
   user_metadata: {                 // Optional OAuth data
     name: "John Doe"
@@ -70,26 +70,13 @@ Your task manager uses a **separation of concerns** architecture:
 - Tracks activity logs
 - **DOES** store all your business data
 
-**Schema:**
+**Canonical Schema (summary):**
 ```sql
-users:
-  - id (YOUR internal ID, not Supabase's)
-  - supabase_id (links to Supabase auth)
-  - email
-  - name
-  - initials
-  - color
-
-projects:
-  - id
-  - name
-  - owner_id (links to users.id)
-
-tasks:
-  - id
-  - name
-  - project_id
-  - assigned_to_id (links to users.id)
+users(id, username, password_hash, name, email, initials, color, is_admin, created_at, updated_at)
+projects(id, name, description, color, is_personal, owner_id, created_at, updated_at)
+project_members(id, project_id, user_id, role, added_at, UNIQUE(project_id,user_id))
+tasks(id, name, description, date, project_id, assigned_to_id, created_by_id, status, priority, archived, completed_at, created_at, updated_at)
+activity_logs(id, user_id, task_id, project_id, action, details, created_at)
 ```
 
 ---
@@ -138,7 +125,7 @@ tasks:
 3. Callback page extracts JWT token from URL
 4. Frontend sends token to YOUR server (`/api/auth/supabase-callback`)
 5. Server verifies token with Supabase
-6. Server checks if `supabase_id` exists in YOUR database
+6. Server checks if user exists by `id = sub` in YOUR database
    - **If yes:** Log them in (existing user)
    - **If no:** Redirect to profile setup (new user)
 7. New user completes profile → Stored in YOUR database
@@ -153,8 +140,8 @@ tasks:
 | Data Type | Stored In | Purpose |
 |-----------|-----------|---------|
 | **Email address** | Both! | Supabase (auth), Your DB (contact info) |
-| **Password hash** | Your DB only | For bcrypt users (not Supabase users) |
-| **supabase_id** | Your DB only | Links to Supabase auth |
+| **Password hash** | Your DB only | For legacy/bcrypt users (Supabase users use 'supabase' placeholder) |
+| **users.id** | Your DB only | Equals Supabase `sub` |
 | **Name** | Your DB only | User's full name |
 | **Initials** | Your DB only | Avatar display |
 | **Color** | Your DB only | User identification |
