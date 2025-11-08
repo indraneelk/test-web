@@ -17,7 +17,7 @@
                     <div class="user-details">
                         <div style="display:flex; align-items:center; gap:0.5rem;">
                             <span class="user-name" id="userName">Loading...</span>
-                            <button class="icon-btn" title="Edit profile" onclick="window.location.href='/profile-update.html'">⚙️</button>
+                            <button class="icon-btn" title="Edit profile" onclick="window.location.href='/profile-setup.html'">⚙️</button>
                         </div>
                         <button class="logout-btn" onclick="logout()">Logout</button>
                     </div>
@@ -217,9 +217,9 @@
                     </div>
 
                     <div class="form-group">
-                        <label for="taskAssignee">Assigned to <span class="required">*</span></label>
-                        <select id="taskAssignee" class="form-select" required>
-                            <option value="">Select person...</option>
+                        <label for="taskAssignee">Assigned to (optional)</label>
+                        <select id="taskAssignee" class="form-select">
+                            <option value="">Unassigned</option>
                         </select>
                     </div>
                 </div>
