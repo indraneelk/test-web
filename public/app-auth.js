@@ -542,7 +542,7 @@ Click OK and waiting for you to link...`;
 
     } catch (error) {
         console.error('Failed to generate Discord link code:', error);
-        statusEl.innerHTML = `<span style="color: #ff4949;">✗ ${error.message}</span>`;
+        statusEl.innerHTML = `<span style="color: #ff4949;">✗ ${escapeHtml(error.message)}</span>`;
     }
 }
 
@@ -933,14 +933,14 @@ function createTaskCard(task) {
                 <div class="task-footer-left">
                     ${assignee ? `
                         <div class="assignee-circle" style="background-color: ${assigneeColor}" title="${escapeHtml(assignee.name)}">
-                            ${assigneeInitials}
+                            ${escapeHtml(assigneeInitials)}
                         </div>
                     ` : ''}
                     <span class="task-due ${isOverdue ? 'overdue' : ''}">${formattedDate}</span>
                 </div>
                 ${project ? `
                     <div class="task-project-badge">
-                        <span class="project-abbr">${projectAbbr}</span>
+                        <span class="project-abbr">${escapeHtml(projectAbbr)}</span>
                         <span class="project-color-dot" style="background-color: ${projectColor}"></span>
                     </div>
                 ` : ''}
