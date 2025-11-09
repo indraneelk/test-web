@@ -1261,8 +1261,30 @@ async function handleSendInvitation(request, env) {
             ).bind(now, 'pending', normalizedEmail).run();
         }
 
-        // Note: Actual magic link sending would require Supabase integration
-        // For now, just log the action
+        // Send magic link via Supabase Admin API
+        const origin = request.headers.get('Origin') || 'https://mmw-tm.pages.dev';
+        const redirectTo = `${origin}/auth/callback.html`;
+
+        const supabaseResponse = await fetch(`${env.SUPABASE_URL}/auth/v1/invite`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+                'apikey': env.SUPABASE_SERVICE_ROLE_KEY
+            },
+            body: JSON.stringify({
+                email: normalizedEmail,
+                data: {},
+                redirectTo
+            })
+        });
+
+        if (!supabaseResponse.ok) {
+            const errorData = await supabaseResponse.text();
+            console.error('Supabase invite error:', errorData);
+            throw new Error('Failed to send magic link email');
+        }
+
         await logActivity(env.DB, user.id, 'invitation_sent', `Invitation sent to ${normalizedEmail}`);
 
         return jsonResponse({
@@ -1347,6 +1369,30 @@ async function handleResendInvitation(request, env, email) {
         await env.DB.prepare(
             'UPDATE invitations SET magic_link_sent_at = ?, status = ? WHERE email = ?'
         ).bind(now, 'pending', normalizedEmail).run();
+
+        // Resend magic link via Supabase Admin API
+        const origin = request.headers.get('Origin') || 'https://mmw-tm.pages.dev';
+        const redirectTo = `${origin}/auth/callback.html`;
+
+        const supabaseResponse = await fetch(`${env.SUPABASE_URL}/auth/v1/invite`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+                'apikey': env.SUPABASE_SERVICE_ROLE_KEY
+            },
+            body: JSON.stringify({
+                email: normalizedEmail,
+                data: {},
+                redirectTo
+            })
+        });
+
+        if (!supabaseResponse.ok) {
+            const errorData = await supabaseResponse.text();
+            console.error('Supabase invite error:', errorData);
+            throw new Error('Failed to send magic link email');
+        }
 
         await logActivity(env.DB, user.id, 'invitation_resent', `Invitation resent to ${normalizedEmail}`);
 
