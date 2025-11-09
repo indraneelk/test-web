@@ -334,8 +334,8 @@
                     throw new Error('No session returned from Supabase');
                 }
 
-                // Store access token for Bearer auth
-                try { sessionStorage.setItem('sb_at', data.session.access_token); } catch(err) {}
+                // Do not duplicate tokens in storage; rely on supabase-js session
+                try { sessionStorage.removeItem('sb_at'); } catch(err) {}
                 // Create server session with the access token (optional fallback)
                 const response = await fetch('/api/auth/supabase-login', {
                     method: 'POST',

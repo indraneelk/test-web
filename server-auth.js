@@ -41,12 +41,16 @@ app.use(helmet({
 
 app.use(cors({
     origin: function (origin, callback) {
-        // Disallow null origin; only allow explicit origins
-        if (origin && ALLOWED_ORIGINS.includes(origin)) {
+        // Allow same-origin requests (no origin header)
+        if (!origin) {
+            callback(null, true);
+            return;
+        }
+        // Allow explicit origins
+        if (ALLOWED_ORIGINS.includes(origin)) {
             callback(null, true);
         } else {
-            const o = origin || 'null';
-            console.warn(`⚠️  Blocked CORS request from origin: ${o}`);
+            console.warn(`⚠️  Blocked CORS request from origin: ${origin}`);
             callback(new Error('Not allowed by CORS'));
         }
     },

@@ -40,7 +40,7 @@ async function ensureSupabase() {
 }
 
 async function getAccessToken() {
-    // Prefer supabase-js session if available
+    // Prefer supabase-js session; do not duplicate tokens in storage
     try {
         const client = await ensureSupabase();
         if (client) {
@@ -48,15 +48,31 @@ async function getAccessToken() {
             if (data?.session?.access_token) return data.session.access_token;
         }
     } catch (_) {}
-    // Fallback to sessionStorage
-    return sessionStorage.getItem('sb_at') || null;
+    return null;
 }
 
 async function authFetch(url, options = {}) {
-    const token = await getAccessToken();
-    const headers = new Headers(options.headers || {});
+    const origOptions = { ...options };
+    let token = await getAccessToken();
+    let headers = new Headers(options.headers || {});
     if (token) headers.set('Authorization', `Bearer ${token}`);
-    return fetch(url, { ...options, headers, credentials: token ? undefined : 'include' });
+    let resp = await fetch(url, { ...options, headers, credentials: token ? undefined : 'include' });
+    if (resp.status !== 401) return resp;
+    // Attempt one silent refresh via supabase-js and retry once
+    try {
+        const client = await ensureSupabase();
+        if (client) {
+            await client.auth.refreshSession();
+            const { data } = await client.auth.getSession();
+            const newToken = data?.session?.access_token || null;
+            if (newToken && newToken !== token) {
+                const retryHeaders = new Headers(origOptions.headers || {});
+                retryHeaders.set('Authorization', `Bearer ${newToken}`);
+                return await fetch(url, { ...origOptions, headers: retryHeaders, credentials: undefined });
+            }
+        }
+    } catch (_) { /* ignore and fall through */ }
+    return resp;
 }
 
 // Initialize app
