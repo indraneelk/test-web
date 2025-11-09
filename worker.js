@@ -352,10 +352,10 @@ async function authenticate(request, env) {
     return null;
 }
 
-// Super admin check - only for Indraneel.kasmalkar@gmail.com
+// Super admin check - only for indraneel.kasmalkar@gmail.com
 async function requireSuperAdmin(request, env) {
     const user = await authenticate(request, env);
-    if (!user || user.email !== 'Indraneel.kasmalkar@gmail.com') {
+    if (!user || !user.email || user.email.toLowerCase() !== 'indraneel.kasmalkar@gmail.com') {
         return null;
     }
     return user;
