@@ -31,7 +31,7 @@ const {
  * Create API fetch wrapper for Discord commands
  * This makes authenticated requests to the main team-task-manager worker
  */
-function createFetchAPI(env, discordUserId, discordUsername) {
+function createFetchAPI(env, discordUserId) {
     return async (userId, method, path, body = null) => {
         // Use the Discord bot's HMAC authentication
         const timestamp = Date.now().toString();
@@ -47,7 +47,7 @@ function createFetchAPI(env, discordUserId, discordUsername) {
             ['sign']
         );
 
-        const message = `${discordUserId}|${timestamp}`;
+        const message = `${timestamp}:${discordUserId}`;
         const signature = await crypto.subtle.sign(
             'HMAC',
             key,
@@ -65,7 +65,6 @@ function createFetchAPI(env, discordUserId, discordUsername) {
             headers: {
                 'Content-Type': 'application/json',
                 'X-Discord-User-ID': discordUserId,
-                'X-Discord-Username': discordUsername,
                 'X-Discord-Timestamp': timestamp,
                 'X-Discord-Signature': signatureHex
             }
@@ -75,31 +74,10 @@ function createFetchAPI(env, discordUserId, discordUsername) {
             options.body = JSON.stringify(body);
         }
 
-        console.log('[Discord Worker] Making request:', {
-            method,
-            path,
-            apiUrl,
-            discordUserId,
-            discordUsername,
-            hasBody: !!body,
-            bodyPreview: body ? JSON.stringify(body).substring(0, 100) : null
-        });
-
         const response = await fetch(apiUrl, options);
-
-        console.log('[Discord Worker] Response received:', {
-            status: response.status,
-            ok: response.ok,
-            path
-        });
 
         if (!response.ok) {
             const errorText = await response.text();
-            console.error('[Discord Worker] API error:', {
-                status: response.status,
-                path,
-                error: errorText
-            });
             throw new Error(`API error: ${response.status} - ${errorText}`);
         }
 
@@ -131,9 +109,7 @@ async function handleDiscordInteraction(request, env) {
     // Handle slash commands
     if (interaction.type === InteractionType.APPLICATION_COMMAND) {
         const { name, options } = interaction.data;
-        const discordUser = interaction.member?.user || interaction.user;
-        const discordUserId = discordUser?.id;
-        const discordUsername = discordUser?.username || `User#${discordUserId}`;
+        const discordUserId = interaction.member?.user?.id || interaction.user?.id;
 
         if (!discordUserId) {
             return new Response(JSON.stringify(
@@ -145,7 +121,7 @@ async function handleDiscordInteraction(request, env) {
 
         try {
             // Create API wrapper for this Discord user
-            const fetchAPI = createFetchAPI(env, discordUserId, discordUsername);
+            const fetchAPI = createFetchAPI(env, discordUserId);
 
             let responseData;
 

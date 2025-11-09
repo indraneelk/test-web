@@ -1027,6 +1027,73 @@ async function handleDiscordCompleteTask(request, env, taskIdentifier) {
     return jsonResponse({ data: updatedTask });
 }
 
+async function handleDiscordLink(request, env) {
+    const headers = getHeadersFromWorkersRequest(request);
+    const discordUserId = verifyDiscordRequest(headers, env.DISCORD_BOT_SECRET);
+
+    if (!discordUserId) {
+        return errorResponse('Unauthorized Discord request', 401);
+    }
+
+    const { code } = await request.json();
+
+    if (!code) {
+        return errorResponse('Link code is required', 400);
+    }
+
+    // Validate Discord User ID format
+    if (!/^\d{17,19}$/.test(discordUserId)) {
+        return errorResponse('Invalid Discord User ID format', 400);
+    }
+
+    const now = getCurrentTimestamp();
+
+    // Find the link code
+    const linkCode = await env.DB.prepare(
+        'SELECT id, user_id, expires_at, used FROM discord_link_codes WHERE code = ?'
+    ).bind(code).first();
+
+    if (!linkCode) {
+        return errorResponse('Invalid or expired link code', 404);
+    }
+
+    if (linkCode.expires_at < now) {
+        return errorResponse('Link code has expired', 400);
+    }
+
+    if (linkCode.used) {
+        return errorResponse('Link code has already been used', 400);
+    }
+
+    // Check if Discord ID is already linked to another user
+    const existingUser = await getUserByDiscordId(env.DB, discordUserId);
+    if (existingUser && existingUser.id !== linkCode.user_id) {
+        return errorResponse('This Discord account is already linked to another user', 400);
+    }
+
+    // Get Discord username from header (passed by discord-worker)
+    const discordUsername = headers['x-discord-username'] || `User#${discordUserId}`;
+
+    // Mark code as used
+    await env.DB.prepare('UPDATE discord_link_codes SET used = 1 WHERE id = ?')
+        .bind(linkCode.id).run();
+
+    // Update user with Discord info
+    await env.DB.prepare(
+        'UPDATE users SET discord_handle = ?, discord_user_id = ?, discord_verified = 1, updated_at = ? WHERE id = ?'
+    ).bind(discordUsername, discordUserId, getCurrentTimestamp(), linkCode.user_id).run();
+
+    const user = await getUserById(env.DB, linkCode.user_id);
+
+    return jsonResponse({
+        success: true,
+        message: 'Discord account linked successfully',
+        data: {
+            discord_handle: user.discord_handle
+        }
+    });
+}
+
 // Project Handlers
 async function handleGetProjects(request, env) {
     const user = await authenticate(request, env);
@@ -1714,6 +1781,17 @@ export default {
         const path = url.pathname;
         const method = request.method;
 
+        // Log all incoming Discord API requests
+        if (path.startsWith('/api/discord/')) {
+            console.log('[Main Worker] Incoming Discord API request:', {
+                method,
+                path,
+                origin: request.headers.get('Origin'),
+                hasDiscordUserId: !!request.headers.get('X-Discord-User-ID'),
+                hasDiscordSignature: !!request.headers.get('X-Discord-Signature')
+            });
+        }
+
         // Handle CORS preflight
         if (method === 'OPTIONS') {
             return new Response(null, { headers: getCorsHeaders(request) });
@@ -1782,6 +1860,20 @@ export default {
             if (path.match(/^\/api\/discord\/tasks\/[^/]+\/complete$/) && method === 'PUT') {
                 const taskIdentifier = decodeURIComponent(path.split('/')[4]);
                 return await handleDiscordCompleteTask(request, env, taskIdentifier);
+            }
+            if (path === '/api/discord/link' && method === 'POST') {
+                return await handleDiscordLink(request, env);
+            }
+            if (path === '/api/discord/summary' && method === 'GET') {
+                return await handleDiscordSummary(request, env);
+            }
+            if (path === '/api/discord/priorities' && method === 'GET') {
+                return await handleDiscordPriorities(request, env);
+            }
+
+            // Claude AI routes (can be called from Discord or web)
+            if (path === '/api/claude/smart' && method === 'POST') {
+                return await handleClaudeSmart(request, env);
             }
 
             // Project routes

@@ -6,7 +6,7 @@ compatibility_flags = ["nodejs_compat"]
 # Environment variables (non-sensitive)
 [vars]
 ENVIRONMENT = "production"
-MAIN_WORKER_URL = "https://team-task-manager.moovmyway.workers.dev/api"
+MAIN_WORKER_URL = "https://mmw-tm.pages.dev/api"
 
 # Secrets (add these with: wrangler secret put <NAME> --config wrangler-discord.toml)
 # Run these commands after creating the worker:
