@@ -8,6 +8,7 @@ const { generateId, getCurrentTimestamp, sanitizeString, generateDiscordLinkCode
 const { validateString, validateEmail, validateUsername, validatePassword, validatePriority, validateStatus } = require('./shared/validators');
 const businessLogic = require('./shared/business-logic');
 const { ValidationError, AuthenticationError, PermissionError, NotFoundError, ConflictError } = require('./shared/errors');
+const { verifyDiscordRequest, getHeadersFromWorkersRequest } = require('./shared/discord-auth');
 
 // ==================== HELPER FUNCTIONS ====================
 
@@ -309,10 +310,21 @@ function createDataService(db) {
 // ==================== AUTHENTICATION MIDDLEWARE ====================
 
 async function authenticate(request, env) {
-    // Try Discord User ID first (from Discord bot)
+    // Try Discord User ID first (from Discord bot) with HMAC signature verification
     const discordUserId = request.headers.get('X-Discord-User-ID');
     if (discordUserId) {
-        const user = await getUserByDiscordId(env.DB, discordUserId);
+        // Verify HMAC signature to prevent impersonation attacks
+        const headers = getHeadersFromWorkersRequest(request);
+        const secret = env.DISCORD_BOT_SECRET;
+        const verifiedUserId = verifyDiscordRequest(headers, secret);
+
+        if (!verifiedUserId) {
+            // Invalid signature or missing headers - reject immediately
+            console.log('Discord authentication failed: Invalid signature');
+            return null;
+        }
+
+        const user = await getUserByDiscordId(env.DB, verifiedUserId);
         if (user) return user;
         // If Discord ID provided but not found, return null (will trigger 401)
         return null;

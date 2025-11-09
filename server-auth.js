@@ -17,6 +17,7 @@ const { generateId, getCurrentTimestamp, sanitizeString, generateDiscordLinkCode
 const { validateString, validateEmail, validateUsername, validatePassword, validatePriority, validateStatus } = require('./shared/validators');
 const businessLogic = require('./shared/business-logic');
 const { ValidationError, AuthenticationError, PermissionError, NotFoundError, ConflictError } = require('./shared/errors');
+const { verifyDiscordRequest, getHeadersFromExpressRequest } = require('./shared/discord-auth');
 
 const app = express();
 const PORT = process.env.PORT || 5001;
@@ -171,11 +172,23 @@ const magicLinkLimiter = rateLimit({
 
 // Authentication Middleware - supports Discord User ID, Bearer tokens, and sessions
 const requireAuth = async (req, res, next) => {
-    // Try Discord User ID first (from Discord bot)
+    // Try Discord User ID first (from Discord bot) with HMAC signature verification
     const discordUserId = req.headers['x-discord-user-id'];
     if (discordUserId) {
+        // Verify HMAC signature to prevent impersonation attacks
+        const headers = getHeadersFromExpressRequest(req);
+        const secret = process.env.DISCORD_BOT_SECRET;
+        const verifiedUserId = verifyDiscordRequest(headers, secret);
+
+        if (!verifiedUserId) {
+            // Invalid signature or missing headers
+            return res.status(401).json({
+                error: 'Invalid Discord authentication. Request signature verification failed.'
+            });
+        }
+
         try {
-            const user = await dataService.getUserByDiscordId(discordUserId);
+            const user = await dataService.getUserByDiscordId(verifiedUserId);
             if (user) {
                 req.userId = user.id;
                 req.user = user;
