@@ -1497,12 +1497,12 @@ function openProjectSettings(projectId) {
     // Controls visibility based on ownership and personal flag
     const editBtn = document.getElementById('editProjectSettingsBtn');
     const membersSectionEl = document.getElementById('settingsTeamMembersSection');
-    const dangerZoneEl = document.getElementById('settingsDangerZone');
+    const dangerZoneEl = document.getElementById('dangerZoneSection');
     const addMemberSection = document.querySelector('#projectSettingsModal .add-member-section');
 
     if (editBtn) editBtn.style.display = isOwner && !project.is_personal ? '' : 'none';
     if (membersSectionEl) membersSectionEl.style.display = project.is_personal ? 'none' : '';
-    if (dangerZoneEl) dangerZoneEl.style.display = isOwner && !project.is_personal ? '' : 'none';
+    if (dangerZoneEl) dangerZoneEl.style.display = isOwner && !project.is_personal ? 'flex' : 'none';
     if (addMemberSection) addMemberSection.style.display = isOwner && !project.is_personal ? '' : 'none';
 
     // Render members (for non-personal)

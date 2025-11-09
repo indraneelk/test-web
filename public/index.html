@@ -466,10 +466,7 @@
                 <!-- Project Details Tab -->
                 <div class="tab-panel active" id="projectDetailsTab">
                     <div class="settings-section">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-                            <h3 style="margin: 0;">Project Information</h3>
-                            <button id="editProjectSettingsBtn" class="btn btn-primary" onclick="editProjectFromSettings()">Edit Project</button>
-                        </div>
+                        <h3 style="margin: 0 0 1rem 0;">Project Information</h3>
                         <div class="info-row">
                             <span class="info-label">Name:</span>
                             <span class="info-value" id="settingsProjectName"></span>
@@ -486,12 +483,14 @@
                             <span class="info-label">Description:</span>
                             <span class="info-value" id="settingsProjectDescription"></span>
                         </div>
+                        <div style="display: flex; justify-content: flex-end; margin-top: 1.5rem;">
+                            <button id="editProjectSettingsBtn" class="btn btn-primary" onclick="editProjectFromSettings()">Edit Project</button>
+                        </div>
                     </div>
 
-                    <!-- Danger Zone -->
-                    <div class="tab-footer danger-zone">
+                    <!-- Danger Zone - Only visible to owners -->
+                    <div class="tab-footer danger-zone" id="dangerZoneSection" style="display: none;">
                         <h3>⚠️ Danger Zone</h3>
-                        <p class="danger-zone-description">Once you delete a project, there is no going back. Please be certain.</p>
                         <button class="btn btn-danger" onclick="deleteCurrentProject()">Delete Project</button>
                     </div>
                 </div>
