@@ -274,7 +274,8 @@ class DataService {
             return projectData;
         } else {
             const projects = this.readJSON(this.PROJECTS_FILE);
-            projects.push({ ...projectData, members: [] });
+            const members = Array.isArray(projectData.members) ? projectData.members : [];
+            projects.push({ ...projectData, members });
             this.writeJSON(this.PROJECTS_FILE, projects);
             return projectData;
         }

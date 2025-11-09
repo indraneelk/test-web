@@ -1269,6 +1269,9 @@ async function handleProjectSubmit(e) {
 
 // Open project settings
 function openProjectSettings(projectId) {
+    // Fallback to currently selected project if none passed
+    if (!projectId) projectId = currentProjectId;
+    if (!projectId) { showError('Please select a project first'); return; }
     currentProjectForSettings = projectId;
     let project = projects.find(p => p.id === projectId);
     if (!project) {
@@ -1597,9 +1600,8 @@ async function deleteProjectFromDetails() {
     closeProjectDetailsModal();
 
     try {
-        const response = await fetch(`${API_PROJECTS}/${projectId}`, {
-            method: 'DELETE',
-            credentials: 'include'
+        const response = await authFetch(`${API_PROJECTS}/${projectId}`, {
+            method: 'DELETE'
         });
 
         if (!response.ok) throw new Error('Failed to delete project');
@@ -1621,6 +1623,9 @@ async function deleteProjectFromDetails() {
 
 // Edit project
 function editProject(projectId) {
+    // Fallback to currently selected project if none passed
+    if (!projectId) projectId = currentProjectId;
+    if (!projectId) { showError('Please select a project first'); return; }
     let project = projects.find(p => p.id === projectId);
     if (!project) {
         console.warn('Project not found locally. Reloading projects...');
