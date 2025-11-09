@@ -331,6 +331,16 @@ function initMobileUI() {
             renderTasks(filterTasks());
         });
     }
+
+    // Mobile archived toggle
+    const mobileShowArchived = document.getElementById('mobileShowArchived');
+    if (mobileShowArchived) {
+        mobileShowArchived.checked = !!currentFilters.showArchived;
+        mobileShowArchived.addEventListener('change', (e) => {
+            currentFilters.showArchived = e.target.checked;
+            renderTasks(filterTasks());
+        });
+    }
 }
 
 function renderMobileProjectOptions() {
@@ -689,11 +699,17 @@ function renderTasks(tasksToRender) {
     if (!tasksToRender || tasksToRender.length === 0) {
         taskList.innerHTML = '';
         emptyState.style.display = 'block';
+        // Hide mobile create button when showing empty state button to avoid duplicates
+        const mobileCreate = document.querySelector('.mobile-create-wrap');
+        if (mobileCreate) mobileCreate.style.display = 'none';
         return;
     }
 
     emptyState.style.display = 'none';
     taskList.innerHTML = tasksToRender.map(task => createTaskCard(task)).join('');
+    // Show mobile create button when there are tasks
+    const mobileCreate = document.querySelector('.mobile-create-wrap');
+    if (mobileCreate) mobileCreate.style.display = '';
 }
 
 // Create task card HTML
