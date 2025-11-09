@@ -926,6 +926,7 @@ async function handleVerifyDiscordLinkCode(request, env) {
 }
 
 // Discord Bot API Handlers (called from discord-worker)
+// Discord /tasks command handler - DEPLOYED 2025-11-09
 async function handleDiscordGetTasks(request, env) {
     try {
         console.log('[handleDiscordGetTasks] Starting...');
