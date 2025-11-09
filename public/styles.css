@@ -1338,7 +1338,7 @@ body {
     /* Delete button styling already handled by .btn-danger */
 }
 
-/* Remove Member Button - Always show circle X icon */
+/* Remove Member Button - Circular X button */
 .remove-member-btn,
 .leave-project-btn {
     background: var(--danger-color, #ff4949);
@@ -1353,50 +1353,15 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
+    font-size: 1.25rem;
+    line-height: 1;
+    font-weight: 300;
 }
 
 .remove-member-btn:hover,
 .leave-project-btn:hover {
     background: #e63939;
-    transform: scale(1.05);
-}
-
-.remove-member-btn .remove-icon,
-.leave-project-btn .leave-icon {
-    display: block;
-    width: 100%;
-    height: 100%;
-    position: relative;
-}
-
-.remove-member-btn .remove-text,
-.leave-project-btn .leave-text {
-    display: none;
-}
-
-/* Create X icon using pseudo-elements */
-.remove-member-btn .remove-icon::before,
-.remove-member-btn .remove-icon::after,
-.leave-project-btn .leave-icon::before,
-.leave-project-btn .leave-icon::after {
-    content: '';
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    width: 12px;
-    height: 2px;
-    background: white;
-    border-radius: 1px;
-}
-
-.remove-member-btn .remove-icon::before,
-.leave-project-btn .leave-icon::before {
-    transform: translate(-50%, -50%) rotate(45deg);
-}
-
-.remove-member-btn .remove-icon::after,
-.leave-project-btn .leave-icon::after {
-    transform: translate(-50%, -50%) rotate(-45deg);
+    transform: scale(1.1);
 }
 
 .modal-small {
