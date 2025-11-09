@@ -41,7 +41,10 @@
       "Bash(npm run deploy:pages:*)",
       "Bash(node register-commands.js:*)",
       "Bash(timeout 10 npx wrangler:*)",
-      "Bash(node:*)"
+      "Bash(node:*)",
+      "Bash(timeout 30 npx wrangler tail:*)",
+      "Skill(discord-bot)",
+      "Bash(timeout 30 npx wrangler pages deployment tail:*)"
     ],
     "deny": [],
     "ask": []

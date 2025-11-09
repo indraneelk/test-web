@@ -1406,24 +1406,45 @@ async function handleRemoveProjectMember(request, env, projectId, memberId) {
     }
 
     const isOwner = await isProjectOwner(env.DB, user.id, projectId);
-    if (!isOwner) {
-        return errorResponse('Only project owner can remove members', 403);
+    const isSelfRemoval = user.id === memberId;
+
+    console.log('Remove member attempt:', { userId: user.id, projectId, memberId, isOwner, isSelfRemoval });
+
+    // Allow either: owner removing anyone OR member removing themselves
+    if (!isOwner && !isSelfRemoval) {
+        console.log('Permission denied: not owner and not self-removal');
+        return errorResponse('Only project owner can remove other members', 403);
     }
 
     try {
         const project = await getProjectById(env.DB, projectId);
+        console.log('Project details:', { id: project?.id, is_personal: project?.is_personal, owner_id: project?.owner_id });
+
         if (project?.is_personal) {
+            console.log('Blocked: personal project');
             return errorResponse('Cannot modify members of a personal project', 403);
         }
+
+        // Prevent owner from removing themselves (they should delete the project instead)
+        if (isSelfRemoval && isOwner) {
+            console.log('Blocked: owner trying to leave');
+            return errorResponse('Project owner cannot leave the project. Delete the project instead.', 403);
+        }
+
+        console.log('Executing delete from project_members');
         await env.DB.prepare('DELETE FROM project_members WHERE project_id = ? AND user_id = ?')
             .bind(projectId, memberId).run();
 
         const removedUser = await getUserById(env.DB, memberId);
-        await logActivity(env.DB, user.id, 'project_member_removed', `Removed ${removedUser?.name || memberId} from project`, null, projectId);
+        const actionMessage = isSelfRemoval
+            ? `Left project`
+            : `Removed ${removedUser?.name || memberId} from project`;
+        await logActivity(env.DB, user.id, 'project_member_removed', actionMessage, null, projectId);
         await broadcastChange(env, 'project-updated', { projectId });
+        console.log('Remove member successful');
         return jsonResponse({ message: 'Member removed successfully' });
     } catch (error) {
-        console.error('Remove member error');
+        console.error('Remove member error:', error);
         return errorResponse('Failed to remove member', 500);
     }
 }
@@ -2068,6 +2089,69 @@ async function handleDiscordInteraction(request, env) {
 
                     const linkedUser = await env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(linkCode.user_id).first();
                     return { data: linkedUser };
+                }
+
+                // POST /claude/smart - AI assistant
+                if (path === '/claude/smart' && method === 'POST') {
+                    console.log('[Claude] Endpoint hit with body:', body);
+                    const { input } = body;
+                    console.log('[Claude] Input:', input);
+
+                    if (!env.ANTHROPIC_API_KEY) {
+                        throw new Error('ANTHROPIC_API_KEY not configured');
+                    }
+
+                    // Get user's tasks for context
+                    const userTasks = await env.DB.prepare(
+                        'SELECT * FROM tasks WHERE assigned_to_id = ? AND archived = 0 ORDER BY created_at DESC LIMIT 50'
+                    ).bind(user.id).all();
+
+                    // Build context for Claude
+                    const tasksContext = (userTasks.results || []).map(t =>
+                        `- ${t.name} (${t.status}, priority: ${t.priority}, due: ${t.date})`
+                    ).join('\n');
+
+                    // Call Claude API
+                    const claudeResponse = await fetch('https://api.anthropic.com/v1/messages', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'x-api-key': env.ANTHROPIC_API_KEY,
+                            'anthropic-version': '2023-06-01'
+                        },
+                        body: JSON.stringify({
+                            model: 'claude-3-5-sonnet-20241022',
+                            max_tokens: 1024,
+                            messages: [{
+                                role: 'user',
+                                content: `You are a task management assistant. Here are the user's current tasks:
+
+${tasksContext || 'No tasks yet.'}
+
+User question: ${input}
+
+Please provide a helpful response. If the user wants to create/update tasks, respond with a clear summary of what should be done.`
+                            }]
+                        })
+                    });
+
+                    if (!claudeResponse.ok) {
+                        const error = await claudeResponse.text();
+                        console.error('[Claude] API error:', error);
+                        throw new Error('Claude API error');
+                    }
+
+                    const claudeData = await claudeResponse.json();
+                    const answer = claudeData.content[0].text;
+
+                    console.log('[Claude] Response from API:', answer);
+
+                    return {
+                        data: {
+                            type: 'answer',
+                            answer: answer
+                        }
+                    };
                 }
 
                 throw new Error(`Unknown path: ${path}`);

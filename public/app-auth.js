@@ -1470,7 +1470,7 @@ function openProjectSettings(projectId) {
     }
 
     const owner = Array.isArray(users) ? users.find(u => u.id === project.owner_id) : null;
-    const isOwner = project.owner_id === currentUser.id || !!currentUser.is_admin;
+    const isOwner = project.owner_id === currentUser.id;
 
     document.getElementById('settingsProjectName').textContent = project.name;
     document.getElementById('settingsProjectOwner').textContent = owner ? (owner.username || owner.name) : 'Unknown';
@@ -1536,7 +1536,7 @@ function renderMembersList(project) {
     const membersList = document.getElementById('membersList');
     const memberIds = project.members || [];
     const members = users.filter(u => memberIds.includes(u.id));
-    const isOwner = project.owner_id === currentUser.id || !!currentUser.is_admin;
+    const isOwner = project.owner_id === currentUser.id;
 
     if (members.length === 0) {
         membersList.innerHTML = '<p style="color: var(--text-secondary); font-size: 0.875rem;">No members yet. Add team members below.</p>';
@@ -1687,25 +1687,25 @@ async function leaveProject() {
             credentials: 'include'
         });
 
-        if (!response.ok) throw new Error('Failed to leave project');
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            console.error('Leave project failed:', response.status, errorData);
+            throw new Error(errorData.error || 'Failed to leave project');
+        }
 
         await loadProjects();
+        await loadTasks();
 
         // Close modal and reset view
         closeProjectSettingsModal();
 
-        // Switch to first available project or clear view
-        if (projects.length > 0) {
-            currentProjectId = projects[0].id;
-            loadTasks();
-        } else {
-            currentProjectId = null;
-            renderTasks();
-        }
+        // Switch to All Tasks view
+        switchView('all');
 
         showSuccess('Left project successfully');
     } catch (error) {
-        showError('Failed to leave project');
+        console.error('Leave project error:', error);
+        showError(error.message || 'Failed to leave project');
         // Re-enable button on error
         leaveBtn.disabled = false;
         leaveBtn.textContent = originalText;
@@ -1880,9 +1880,9 @@ function editProject(projectId) {
     }
 
     // Check if current user is the owner
-    if (project.owner_id !== currentUser.id && !currentUser.is_admin) {
-        // Non-owners should see read-only view
-        viewProjectInfo(projectId);
+    if (project.owner_id !== currentUser.id) {
+        // Non-owners should see read-only view (project settings modal)
+        openProjectSettings(projectId);
         return;
     }
 
