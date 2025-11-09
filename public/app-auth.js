@@ -17,6 +17,7 @@ let currentFilters = {
 let taskToDelete = null;
 let currentProjectForSettings = null;
 let currentProjectDetailsId = null;
+let projectToDelete = null;
 
 // Date helpers (DD/MM/YYYY <-> ISO YYYY-MM-DD)
 function formatDateToDMY(iso) {
@@ -586,9 +587,9 @@ function switchToProject(projectId) {
     const titleEl = document.getElementById('pageTitle');
     const projectColor = project.color || '#f06a6a';
     titleEl.innerHTML = `
-        <span class="project-color-dot" style="width:10px;height:10px;background-color:${projectColor};display:inline-block;vertical-align:middle;"></span>
+        <span class=\"project-color-dot\" style=\"width:10px;height:10px;background-color:${projectColor};display:inline-block;vertical-align:middle;\"></span>
         ${escapeHtml(project.name)}
-        <button class="icon-btn title-gear" type="button" onclick="viewProjectDetails('${project.id}')" title="Project details">⚙️</button>
+        <button class=\"icon-btn title-gear\" type=\"button\" onclick=\"openProjectSettings('${project.id}')\" title=\"Project settings\">⚙️</button>
     `;
 
     renderTasks(filterTasks());
@@ -636,7 +637,7 @@ function renderProjectsGrid() {
         const memberCount = (project.members?.length || 0) + 1; // +1 for owner
 
         return `
-            <div class="project-card" onclick="viewProjectDetails('${project.id}')">
+            <div class=\"project-card\" onclick=\"openProjectSettings('${project.id}')\">
                 <div class="project-card-header">
                     <div>
                         <h3 class="project-card-title">
@@ -1330,6 +1331,7 @@ function openProjectSettings(projectId) {
     }
 
     const owner = users.find(u => u.id === project.owner_id);
+    const isOwner = project.owner_id === currentUser.id || !!currentUser.is_admin;
 
     document.getElementById('settingsProjectName').textContent = project.name;
     document.getElementById('settingsProjectOwner').textContent = owner ? (owner.username || owner.name) : 'Unknown';
@@ -1359,19 +1361,16 @@ function openProjectSettings(projectId) {
         colorRowEl.innerHTML = `<span class="project-color-dot project-color-dot-lg" style="background-color:${color};" title="Project color"></span>`;
     }
 
-    // Personal project: hide editing capabilities and members
+    // Controls visibility based on ownership and personal flag
     const editBtn = document.getElementById('editProjectSettingsBtn');
     const membersSectionEl = document.getElementById('settingsTeamMembersSection');
     const dangerZoneEl = document.getElementById('settingsDangerZone');
-    if (project.is_personal) {
-        if (editBtn) editBtn.style.display = 'none';
-        if (membersSectionEl) membersSectionEl.style.display = 'none';
-        if (dangerZoneEl) dangerZoneEl.style.display = 'none';
-    } else {
-        if (editBtn) editBtn.style.display = '';
-        if (membersSectionEl) membersSectionEl.style.display = '';
-        if (dangerZoneEl) dangerZoneEl.style.display = '';
-    }
+    const addMemberSection = document.querySelector('#projectSettingsModal .add-member-section');
+
+    if (editBtn) editBtn.style.display = isOwner && !project.is_personal ? '' : 'none';
+    if (membersSectionEl) membersSectionEl.style.display = project.is_personal ? 'none' : '';
+    if (dangerZoneEl) dangerZoneEl.style.display = isOwner && !project.is_personal ? '' : 'none';
+    if (addMemberSection) addMemberSection.style.display = isOwner && !project.is_personal ? '' : 'none';
 
     // Render members (for non-personal)
     if (!project.is_personal) {
@@ -1397,6 +1396,7 @@ function renderMembersList(project) {
     const membersList = document.getElementById('membersList');
     const memberIds = project.members || [];
     const members = users.filter(u => memberIds.includes(u.id));
+    const isOwner = project.owner_id === currentUser.id || !!currentUser.is_admin;
 
     if (members.length === 0) {
         membersList.innerHTML = '<p style="color: var(--text-secondary); font-size: 0.875rem;">No members yet. Add team members below.</p>';
@@ -1404,16 +1404,16 @@ function renderMembersList(project) {
     }
 
     membersList.innerHTML = members.map(member => `
-        <div class="member-item">
-            <div class="member-info">
-                <div class="member-avatar"></div>
-                <div class="member-details">
-                    <div class="member-name">${escapeHtml(member.name)}</div>
-                    <div class="member-role">Member</div>
+        <div class=\"member-item\">
+            <div class=\"member-info\">
+                <div class=\"member-avatar\"></div>
+                <div class=\"member-details\">
+                    <div class=\"member-name\">${escapeHtml(member.name)}</div>
+                    <div class=\"member-role\">Member</div>
                 </div>
             </div>
-            <div class="member-actions">
-                <button onclick="removeMember('${member.id}')">Remove</button>
+            <div class=\"member-actions\">
+                ${isOwner ? `<button onclick=\"removeMember('${member.id}')\">Remove</button>` : ''}
             </div>
         </div>
     `).join('');
@@ -1595,12 +1595,30 @@ function viewProjectDetails(projectId) {
     // Hide actions for personal project
     const editBtn = document.getElementById('projectDetailsEditBtn');
     const deleteBtn = document.getElementById('projectDetailsDeleteBtn');
-    if (project.is_personal) {
-        if (editBtn) editBtn.style.display = 'none';
-        if (deleteBtn) deleteBtn.style.display = 'none';
-    } else {
+    const leaveBtn = document.getElementById('projectDetailsLeaveBtn');
+    const footerLeft = document.querySelector('#projectDetailsModal .modal-footer .footer-left');
+    const footerRight = document.querySelector('#projectDetailsModal .modal-footer .footer-right');
+
+    const isOwner = project.owner_id === currentUser.id || !!currentUser.is_admin;
+
+    // Reset visibility
+    if (leaveBtn) leaveBtn.style.display = 'none';
+    if (deleteBtn) deleteBtn.style.display = 'none';
+    if (editBtn) editBtn.style.display = 'none';
+
+    if (isOwner && !project.is_personal) {
         if (editBtn) editBtn.style.display = '';
         if (deleteBtn) deleteBtn.style.display = '';
+        // Ensure buttons are in their default containers
+        if (footerRight && editBtn && editBtn.parentElement !== footerRight) footerRight.appendChild(editBtn);
+        if (footerLeft && deleteBtn && deleteBtn.parentElement !== footerLeft) footerLeft.appendChild(deleteBtn);
+    } else {
+        // Non-owner: show Leave button bottom-left in grey
+        if (leaveBtn) {
+            leaveBtn.style.display = '';
+            if (footerLeft && leaveBtn.parentElement !== footerLeft) footerLeft.appendChild(leaveBtn);
+        }
+        // Keep edit/delete hidden for non-owner or personal projects
     }
 
     document.getElementById('projectDetailsModal').classList.add('active');
@@ -1621,35 +1639,55 @@ function editProjectFromDetails() {
 }
 
 // Delete project from details modal
-async function deleteProjectFromDetails() {
+function deleteProjectFromDetails() {
     if (!currentProjectDetailsId) return;
+    openProjectDeleteModal(currentProjectDetailsId);
+}
 
-    if (!confirm('Are you sure you want to delete this project? All tasks will be deleted. This cannot be undone.')) {
-        return;
-    }
+function openProjectDeleteModal(projectId) {
+    projectToDelete = projectId;
+    const proj = projects.find(p => p.id === projectId);
+    const nameEl = document.getElementById('projectDeleteName');
+    if (nameEl) nameEl.textContent = proj ? (proj.name || '') : '';
+    const modal = document.getElementById('projectDeleteModal');
+    if (modal) modal.classList.add('active');
+}
 
-    const projectId = currentProjectDetailsId;
-    closeProjectDetailsModal();
+function closeProjectDeleteModal() {
+    const modal = document.getElementById('projectDeleteModal');
+    if (modal) modal.classList.remove('active');
+    projectToDelete = null;
+}
 
+async function confirmDeleteProject() {
+    if (!projectToDelete) return;
+    const id = projectToDelete;
+    const modal = document.getElementById('projectDeleteModal');
+    const deleteBtn = modal ? modal.querySelector('button.btn-danger') : null;
+    const cancelBtn = modal ? modal.querySelector('button.btn-secondary') : null;
+    if (deleteBtn) deleteBtn.disabled = true;
+    if (cancelBtn) cancelBtn.disabled = true;
+    if (deleteBtn) deleteBtn.textContent = 'Deleting...';
     try {
-        const response = await authFetch(`${API_PROJECTS}/${projectId}`, {
-            method: 'DELETE'
-        });
-
-        if (!response.ok) throw new Error('Failed to delete project');
-
+        const resp = await authFetch(`${API_PROJECTS}/${id}`, { method: 'DELETE' });
+        if (!resp.ok) throw new Error('Failed');
+        closeProjectDeleteModal();
+        // Also close settings/details modals if open
+        try { closeProjectSettingsModal(); } catch(_) {}
+        try { closeProjectDetailsModal(); } catch(_) {}
+        // Refresh data and go back to All Tasks if needed
         await Promise.all([loadProjects(), loadTasks()]);
-
-        // Switch to all tasks view if we're viewing the deleted project
-        if (currentProjectId === projectId) {
+        if (currentProjectId === id) {
             switchView('all');
         } else {
             updateUI();
         }
-
         showSuccess('Project deleted successfully');
-    } catch (error) {
+    } catch (err) {
         showError('Failed to delete project');
+        if (deleteBtn) deleteBtn.disabled = false;
+        if (cancelBtn) cancelBtn.disabled = false;
+        if (deleteBtn) deleteBtn.textContent = 'Delete';
     }
 }
 
@@ -2399,3 +2437,8 @@ window.editProject = function(projectId) {
     originalEditProject(projectId);
     setTimeout(initCustomSelects, 50);
 };
+
+// Expose project delete modal helpers
+window.openProjectDeleteModal = openProjectDeleteModal;
+window.closeProjectDeleteModal = closeProjectDeleteModal;
+window.confirmDeleteProject = confirmDeleteProject;

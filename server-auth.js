@@ -988,41 +988,58 @@ app.post('/api/projects/:id/members', requireAuth, async (req, res) => {
 // Remove member from project
 app.delete('/api/projects/:id/members/:userId', requireAuth, async (req, res) => {
     try {
-        const project = await dataService.getProjectById(req.params.id);
+        const projectId = req.params.id;
+        const targetUserId = req.params.userId;
+        const project = await dataService.getProjectById(projectId);
 
         if (!project) {
             return res.status(404).json({ error: 'Project not found' });
         }
 
-        // Check if current user is owner
-        if (!(await isProjectOwner(req.userId, req.params.id))) {
-            return res.status(403).json({ error: 'Only project owner can remove members' });
+        const selfRemoval = targetUserId === req.userId;
+        if (selfRemoval) {
+            if (project.owner_id === req.userId) {
+                return res.status(400).json({ error: 'Project owners cannot leave their own project' });
+            }
+            if (!(await isProjectMember(req.userId, projectId))) {
+                return res.status(404).json({ error: 'You are not a member of this project' });
+            }
+            await dataService.removeProjectMember(projectId, req.userId);
+            // Unassign tasks in this project assigned to this user
+            const tasks = await dataService.getTasks();
+            const myTasks = tasks.filter(t => t.project_id === projectId && t.assigned_to_id === req.userId);
+            for (const task of myTasks) {
+                await dataService.updateTask(task.id, { ...task, assigned_to_id: null });
+            }
+            await logActivity(req.userId, 'member_removed', `You left the project "${project.name}"`, null, projectId);
+            return res.json({ message: 'You left the project' });
         }
 
-        // Prevent removing members from personal projects
+        // Removing someone else requires owner or admin
+        const user = await dataService.getUserById(req.userId);
+        const owner = await isProjectOwner(req.userId, projectId);
+        if (!owner && !user?.is_admin) {
+            return res.status(403).json({ error: 'Only project owner can remove members' });
+        }
         if (project.is_personal) {
             return res.status(403).json({ error: 'Cannot remove members from personal project' });
         }
-
-        // Check if user is actually a member
-        if (!(await isProjectMember(req.params.userId, req.params.id))) {
+        if (!(await isProjectMember(targetUserId, projectId))) {
             return res.status(404).json({ error: 'Member not found' });
         }
 
-        await dataService.removeProjectMember(req.params.id, req.params.userId);
-
-        // Unassign all tasks in this project that were assigned to the removed user
+        await dataService.removeProjectMember(projectId, targetUserId);
+        // Unassign tasks in this project assigned to removed user
         const tasks = await dataService.getTasks();
-        const projectTasks = tasks.filter(t => t.project_id === req.params.id && t.assigned_to_id === req.params.userId);
-        for (const task of projectTasks) {
+        const theirTasks = tasks.filter(t => t.project_id === projectId && t.assigned_to_id === targetUserId);
+        for (const task of theirTasks) {
             await dataService.updateTask(task.id, { ...task, assigned_to_id: null });
         }
 
-        const removedUser = await dataService.getUserById(req.params.userId);
+        const removedUser = await dataService.getUserById(targetUserId);
+        await logActivity(req.userId, 'member_removed', `${removedUser?.name || 'User'} removed from project "${project.name}"`, null, projectId);
 
-        await logActivity(req.userId, 'member_removed', `${removedUser?.name || 'User'} removed from project "${project.name}"`, null, req.params.id);
-
-        const updatedProject = await dataService.getProjectById(req.params.id);
+        const updatedProject = await dataService.getProjectById(projectId);
         res.json(updatedProject);
     } catch (error) {
         res.status(500).json({ error: 'Failed to remove member' });
@@ -1096,10 +1113,10 @@ app.post('/api/tasks', requireAuth, async (req, res) => {
     try {
         const { name, description, date, project_id, assigned_to_id, priority } = req.body;
 
-        // Validate required fields (assigned_to_id is now optional)
-        if (!name || !description || !date || !project_id) {
+        // Validate required fields (assigned_to_id and description are optional)
+        if (!name || !date || !project_id) {
             return res.status(400).json({
-                error: 'Missing required fields: name, description, date, project_id'
+                error: 'Missing required fields: name, date, project_id'
             });
         }
 
@@ -1108,7 +1125,7 @@ app.post('/api/tasks', requireAuth, async (req, res) => {
             return res.status(400).json({ error: 'Task name must be 1-200 characters' });
         }
 
-        // Validate description
+        // Validate description (optional)
         if (!validateString(description, 0, 2000)) {
             return res.status(400).json({ error: 'Description must be less than 2000 characters' });
         }

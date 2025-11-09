@@ -442,15 +442,15 @@
                     <div id="detailsProjectMembers"></div>
                 </div>
             </div>
-            <div class="modal-footer split">
-                <div class="footer-left">
-                    <button type="button" id="projectDetailsDeleteBtn" class="btn btn-secondary" onclick="deleteProjectFromDetails()">Delete Project</button>
+                <div class="modal-footer split">
+                    <div class="footer-left">
+                        <button type="button" id="projectDetailsDeleteBtn" class="btn btn-secondary" onclick="deleteProjectFromDetails()">Delete Project</button>
+                    </div>
+                    <div class="footer-right">
+                        <button type="button" id="projectDetailsEditBtn" class="btn btn-primary" onclick="editProjectFromDetails()">Edit Project</button>
+                        <button type="button" id="projectDetailsLeaveBtn" class="btn btn-secondary" onclick="leaveProjectFromDetails()" style="display: none;">Leave Project</button>
+                    </div>
                 </div>
-                <div class="footer-right">
-                    <button type="button" id="projectDetailsEditBtn" class="btn btn-primary" onclick="editProjectFromDetails()">Edit Project</button>
-                    <button type="button" id="projectDetailsLeaveBtn" class="btn btn-secondary" onclick="leaveProjectFromDetails()" style="display: none;">Leave Project</button>
-                </div>
-            </div>
         </div>
     </div>
 
@@ -495,7 +495,7 @@
 
                 <div id="settingsDangerZone" class="settings-section danger-zone">
                     <h3>Danger Zone</h3>
-                    <button class="btn btn-danger" onclick="deleteCurrentProject()">Delete Project</button>
+                    <button class="btn btn-danger" onclick="openProjectDeleteModal(currentProjectForSettings)">Delete Project</button>
                 </div>
             </div>
         </div>
@@ -515,6 +515,24 @@
             <div class="modal-footer">
                 <button class="btn btn-secondary" onclick="closeDeleteModal()">Cancel</button>
                 <button class="btn btn-danger" onclick="confirmDelete()">Delete</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Project Delete Confirmation Modal -->
+    <div id="projectDeleteModal" class="modal">
+        <div class="modal-backdrop" onclick="closeProjectDeleteModal()"></div>
+        <div class="modal-content modal-small">
+            <div class="modal-header">
+                <h2>Delete Project</h2>
+                <button class="close-btn" onclick="closeProjectDeleteModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to delete project <strong id="projectDeleteName"></strong>? This will delete all of its tasks. This action cannot be undone.</p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeProjectDeleteModal()">Cancel</button>
+                <button class="btn btn-danger" onclick="confirmDeleteProject()">Delete</button>
             </div>
         </div>
     </div>

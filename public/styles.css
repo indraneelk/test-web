@@ -442,8 +442,8 @@ body {
     font-size: 0.9375rem;
 }
 
-/* Mobile Media Query - small phones */
-@media (max-width: 600px) {
+/* Mobile Media Query - Tablets and below */
+@media (max-width: 768px) {
     /* Show mobile UI elements */
     .mobile-topbar,
     .mobile-footer,
@@ -1420,53 +1420,7 @@ label {
     display: inline-block;
 }
 
-/* Responsive Design */
-@media (max-width: 1024px) {
-    .sidebar {
-        width: 240px;
-    }
-}
-
-@media (max-width: 768px) {
-    .app-container {
-        flex-direction: column;
-    }
-
-    .sidebar {
-        width: 100%;
-        height: auto;
-        border-right: none;
-        border-bottom: 1px solid var(--border-color);
-    }
-
-    .main-header {
-        flex-direction: column;
-        align-items: stretch;
-    }
-
-    .stats-actions-row {
-        flex-direction: column;
-        align-items: stretch;
-        gap: 0.75rem;
-    }
-
-    .header-actions {
-        flex-direction: column;
-        width: 100%;
-    }
-
-    .search-input {
-        width: 100%;
-    }
-
-    .form-row {
-        grid-template-columns: 1fr;
-    }
-
-    .content-area {
-        padding: 1rem;
-    }
-}
+/* Responsive Design - All mobile styles consolidated at 768px breakpoint above */
 
 /* Loading State */
 .settings-section.danger-zone {
