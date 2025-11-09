@@ -83,6 +83,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     setupEventListeners();
     await loadData();
+    initMobileUI();
     // Plan B: Supabase Realtime subscription (optional)
     try {
         const client = await ensureSupabase();
@@ -141,6 +142,18 @@ function updateUserInfo() {
             ? currentUser.initials.trim().toUpperCase()
             : (currentUser.username || currentUser.name).split(/\s+/).map(w => w[0]).slice(0,2).join('').toUpperCase();
         avatar.textContent = initials;
+    }
+    // Update mobile avatar
+    const mobileAvatar = document.getElementById('mobileUserAvatar');
+    if (mobileAvatar) {
+        const initials = (currentUser.initials && currentUser.initials.trim())
+            ? currentUser.initials.trim().toUpperCase()
+            : (currentUser.username || currentUser.name).split(/\s+/).map(w => w[0]).slice(0,2).join('').toUpperCase();
+        mobileAvatar.textContent = initials;
+        // Set color if user has one
+        if (currentUser.color) {
+            mobileAvatar.style.backgroundColor = currentUser.color;
+        }
     }
 }
 
@@ -251,6 +264,101 @@ function setupEventListeners() {
     });
 }
 
+// MOBILE UI FUNCTIONS
+function initMobileUI() {
+    // Mobile project dropdown
+    const mobileProjectSelect = document.getElementById('mobileProjectSelect');
+    if (mobileProjectSelect) {
+        renderMobileProjectOptions();
+        mobileProjectSelect.addEventListener('change', (e) => {
+            const value = e.target.value;
+            if (value === 'add-project') {
+                openProjectModal();
+                // Reset to current selection
+                e.target.value = currentProjectId || '';
+                return;
+            }
+            if (!value) {
+                switchView('all');
+            } else {
+                switchToProject(value);
+            }
+        });
+    }
+
+    // Mobile project settings button
+    const mobileProjectSettingsBtn = document.getElementById('mobileProjectSettingsBtn');
+    if (mobileProjectSettingsBtn) {
+        mobileProjectSettingsBtn.addEventListener('click', () => {
+            if (currentProjectId) {
+                openProjectSettings(currentProjectId);
+            } else {
+                openProjectModal();
+            }
+        });
+    }
+
+    // Mobile profile settings button
+    const mobileProfileSettingsBtn = document.getElementById('mobileProfileSettingsBtn');
+    if (mobileProfileSettingsBtn) {
+        mobileProfileSettingsBtn.addEventListener('click', () => {
+            window.location.href = '/profile-update.html';
+        });
+    }
+
+    // Mobile user avatar click
+    const mobileUserAvatar = document.getElementById('mobileUserAvatar');
+    if (mobileUserAvatar) {
+        mobileUserAvatar.addEventListener('click', () => {
+            window.location.href = '/profile-update.html';
+        });
+    }
+
+    // Mobile create task button
+    const mobileCreateTaskBtn = document.getElementById('mobileCreateTaskBtn');
+    if (mobileCreateTaskBtn) {
+        mobileCreateTaskBtn.addEventListener('click', openTaskModal);
+    }
+
+    // Mobile sort dropdown
+    const mobileSortSelect = document.getElementById('mobileSortSelect');
+    if (mobileSortSelect) {
+        mobileSortSelect.value = currentFilters.sort || '';
+        mobileSortSelect.addEventListener('change', (e) => {
+            currentFilters.sort = e.target.value;
+            renderTasks(filterTasks());
+        });
+    }
+
+    // Mobile priority filter dropdown
+    const mobilePriorityFilter = document.getElementById('mobilePriorityFilter');
+    if (mobilePriorityFilter) {
+        mobilePriorityFilter.value = currentFilters.priority || '';
+        mobilePriorityFilter.addEventListener('change', (e) => {
+            currentFilters.priority = e.target.value;
+            renderTasks(filterTasks());
+        });
+    }
+}
+
+function renderMobileProjectOptions() {
+    const select = document.getElementById('mobileProjectSelect');
+    if (!select) return;
+
+    const options = [
+        `<option value="">All Tasks</option>`,
+        ...projects.map(p => `<option value="${p.id}" ${currentProjectId === p.id ? 'selected' : ''}>${escapeHtml(p.name)}</option>`),
+        `<option value="add-project">+ Add Project</option>`
+    ];
+
+    select.innerHTML = options.join('');
+
+    // Ensure correct selection
+    if (!currentProjectId) {
+        select.value = '';
+    }
+}
+
 // USER SETTINGS
 function openUserSettings() {
     if (!currentUser) {
@@ -348,6 +456,7 @@ async function loadProjects() {
         const response = await authFetch(API_PROJECTS);
         projects = await response.json();
         renderProjectsNav();
+        renderMobileProjectOptions();
     } catch (error) {
         console.error('Failed to load projects:', error);
     }
@@ -403,6 +512,7 @@ function switchView(view) {
     }
 
     updateStats();
+    renderMobileProjectOptions();
 }
 
 // Switch to project view
@@ -437,6 +547,7 @@ function switchToProject(projectId) {
 
     renderTasks(filterTasks());
     updateStats();
+    renderMobileProjectOptions();
 }
 
 // Render projects navigation

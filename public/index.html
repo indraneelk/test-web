@@ -10,6 +10,20 @@
 </head>
 <body>
     <div class="app-container">
+        <!-- Mobile Top Bar -->
+        <div class="mobile-topbar">
+            <div class="mobile-left">
+                <select id="mobileProjectSelect" class="mobile-select">
+                    <option value="">All Tasks</option>
+                </select>
+                <button id="mobileProjectSettingsBtn" class="icon-btn mobile-icon-btn" title="Project settings">⚙️</button>
+            </div>
+            <div class="mobile-right">
+                <div id="mobileUserAvatar" class="user-avatar mobile-avatar" title="Profile"></div>
+                <button id="mobileProfileSettingsBtn" class="icon-btn mobile-icon-btn" title="Profile settings">⚙️</button>
+            </div>
+        </div>
+
         <!--  Sidebar -->
         <aside class="sidebar">
             <div class="sidebar-header">
@@ -118,6 +132,12 @@
                             <span>+</span> Create Task
                         </button>
                     </div>
+                    <!-- Mobile Create Task Button -->
+                    <div class="mobile-create-wrap">
+                        <button id="mobileCreateTaskBtn" class="btn btn-primary mobile-create-btn">
+                            <span>+</span> New Task
+                        </button>
+                    </div>
                 </div>
 
                 <!-- Projects View -->
@@ -134,6 +154,28 @@
                 </div>
             </div>
         </main>
+
+        <!-- Mobile Footer -->
+        <div class="mobile-footer">
+            <div class="mobile-footer-item">
+                <label for="mobileSortSelect">Sort:</label>
+                <select id="mobileSortSelect" class="mobile-select">
+                    <option value="">None</option>
+                    <option value="due">Due Date</option>
+                    <option value="priority">Priority</option>
+                </select>
+            </div>
+            <div class="mobile-footer-item">
+                <label for="mobilePriorityFilter">Filter:</label>
+                <select id="mobilePriorityFilter" class="mobile-select">
+                    <option value="">All</option>
+                    <option value="high">High</option>
+                    <option value="medium">Medium</option>
+                    <option value="low">Low</option>
+                    <option value="none">None</option>
+                </select>
+            </div>
+        </div>
     </div>
 
     <!-- Task Modal -->
