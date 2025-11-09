@@ -189,18 +189,16 @@ async function handleTasks(message) {
             return message.reply('📭 No tasks found!');
         }
 
-        // Group tasks by status
-        const pending = tasks.filter(t => t.status === 'pending');
-        const inProgress = tasks.filter(t => t.status === 'in-progress');
+        // Group tasks by status (combine pending + in-progress as "Pending")
+        const pending = tasks.filter(t => t.status === 'pending' || t.status === 'in-progress');
         const completed = tasks.filter(t => t.status === 'completed');
 
         const embed = new EmbedBuilder()
             .setColor(0x4f46e5)
             .setTitle('📋 Your Tasks')
             .addFields(
-                { name: '⏳ Pending', value: `${pending.length} tasks`, inline: true },
-                { name: '🚧 In Progress', value: `${inProgress.length} tasks`, inline: true },
-                { name: '✅ Completed', value: `${completed.length} tasks`, inline: true }
+                { name: '⏳ Pending', value: `${pending.length} tasks` },
+                { name: '✅ Completed', value: `${completed.length} tasks` }
             )
             .setTimestamp();
 
@@ -239,8 +237,7 @@ async function handleSummary(message) {
             .setDescription(response.data.summary)
             .addFields({
                 name: 'Total Tasks',
-                value: `${response.data.taskCount}`,
-                inline: true
+                value: `${response.data.taskCount}`
             })
             .setTimestamp();
 
@@ -441,8 +438,8 @@ async function handleCreate(message, args) {
             .setTitle('✅ Task Created')
             .addFields(
                 { name: 'Title', value: task.name },
-                { name: 'Due Date', value: task.date, inline: true },
-                { name: 'Priority', value: task.priority || 'none', inline: true }
+                { name: 'Due Date', value: task.date },
+                { name: 'Priority', value: task.priority || 'none' }
             )
             .setTimestamp();
 

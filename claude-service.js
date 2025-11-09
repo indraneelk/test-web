@@ -183,8 +183,7 @@ class ClaudeService extends EventEmitter {
             summary: {
                 totalTasks: tasks.length,
                 completed: tasks.filter(t => t.status === 'completed').length,
-                pending: tasks.filter(t => t.status === 'pending').length,
-                inProgress: tasks.filter(t => t.status === 'in-progress').length,
+                pending: tasks.filter(t => t.status === 'pending' || t.status === 'in-progress').length,
                 overdue: tasks.filter(t => new Date(t.date) < new Date() && t.status !== 'completed').length,
                 totalProjects: projects.length
             }
@@ -198,7 +197,7 @@ ${JSON.stringify(context, null, 2)}
 Provide concise, actionable responses. When suggesting priorities, consider:
 - Overdue tasks (highest priority)
 - Due dates (sooner = higher priority)
-- Task status (in-progress before pending)
+- Task status (pending vs completed)
 - Project context
 
 Format your responses clearly with bullet points or numbered lists when appropriate.`;
