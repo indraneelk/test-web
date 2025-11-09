@@ -1672,6 +1672,33 @@ async function leaveProject() {
 function closeProjectSettingsModal() {
     document.getElementById('projectSettingsModal').classList.remove('active');
     currentProjectForSettings = null;
+    // Reset to details tab when closing
+    switchProjectSettingsTab('details');
+}
+
+// Switch between tabs in Project Settings modal
+function switchProjectSettingsTab(tabName) {
+    // Update tab buttons
+    const tabButtons = document.querySelectorAll('#projectSettingsModal .tab-btn');
+    tabButtons.forEach(btn => {
+        if (btn.dataset.tab === tabName) {
+            btn.classList.add('active');
+        } else {
+            btn.classList.remove('active');
+        }
+    });
+
+    // Update tab panels
+    const detailsTab = document.getElementById('projectDetailsTab');
+    const membersTab = document.getElementById('projectMembersTab');
+
+    if (tabName === 'details') {
+        detailsTab.classList.add('active');
+        membersTab.classList.remove('active');
+    } else if (tabName === 'members') {
+        detailsTab.classList.remove('active');
+        membersTab.classList.add('active');
+    }
 }
 
 // Edit project from settings modal
@@ -2382,6 +2409,7 @@ window.openUserSettings = openUserSettings;
 
 // Expose other inline handler functions
 window.switchView = switchView;
+window.switchProjectSettingsTab = switchProjectSettingsTab;
 window.editTaskFromDetails = editTaskFromDetails;
 window.deleteTaskFromDetails = deleteTaskFromDetails;
 // window.addProjectMember - removed (deprecated function)

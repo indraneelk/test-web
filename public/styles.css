@@ -724,6 +724,41 @@ body {
         background: #e63939;
         transform: scale(1.05);
     }
+
+    /* Mobile Tab Optimizations */
+    .modal-tabs {
+        margin: 0 -1.25rem; /* Extend to modal edges */
+        padding: 0 0.5rem;
+    }
+
+    .tab-btn {
+        padding: 0.75rem 0.5rem;
+        font-size: 0.8125rem;
+        min-height: 44px; /* Touch-friendly */
+        gap: 0.25rem;
+    }
+
+    .tab-icon {
+        font-size: 1rem;
+    }
+
+    /* On very small screens, hide tab label and show only icon */
+    @media (max-width: 360px) {
+        .tab-label {
+            display: none;
+        }
+
+        .tab-btn {
+            flex-direction: column;
+            gap: 0.125rem;
+        }
+    }
+
+    /* Adjust tab footer spacing on mobile */
+    .tab-footer {
+        margin-top: 1.5rem;
+        padding-top: 1rem;
+    }
 }
 
 .search-input {
@@ -1246,6 +1281,87 @@ body {
 .member-name { font-size: 0.9375rem; font-weight: 600; }
 .member-role { font-size: 0.75rem; color: var(--text-secondary); }
 .member-actions button { padding: 0.25rem 0.5rem; font-size: 0.8rem; }
+
+/* Tab Navigation for Project Settings Modal */
+.modal-tabs {
+    display: flex;
+    border-bottom: 2px solid var(--border-color);
+    gap: 0;
+    background: var(--card-bg);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+
+.tab-btn {
+    flex: 1;
+    padding: 0.875rem 1rem;
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    cursor: pointer;
+    font-size: 0.9375rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    margin-bottom: -2px;
+    position: relative;
+}
+
+.tab-btn:hover {
+    color: var(--text-primary);
+    background: rgba(0, 0, 0, 0.02);
+}
+
+.tab-btn.active {
+    color: var(--primary-color);
+    font-weight: 600;
+    border-bottom-color: var(--primary-color);
+}
+
+.tab-icon {
+    font-size: 1.125rem;
+}
+
+.tab-label {
+    /* Full label shown by default */
+}
+
+/* Tab Panels */
+.tab-panel {
+    display: none;
+    animation: fadeIn 0.2s ease;
+}
+
+.tab-panel.active {
+    display: block;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(4px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Tab Footer for actions like Delete button */
+.tab-footer {
+    margin-top: 2rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--border-color);
+}
+
+.tab-footer .btn {
+    /* Delete button styling already handled by .btn-danger */
+}
 
 /* Remove Member Button - Desktop shows text, mobile shows icon */
 .remove-member-btn {
