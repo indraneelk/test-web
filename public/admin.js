@@ -1,5 +1,8 @@
 // Admin Panel - User Invitation Management
 
+// Configuration
+const ADMIN_EMAIL = 'indraneel.kasmalkar@gmail.com';
+
 let invitations = [];
 let currentFilter = 'all';
 
@@ -15,7 +18,7 @@ async function checkAdminAccess() {
         const user = data.user;
 
         // Check if super admin
-        if (!user.email || user.email.toLowerCase() !== 'indraneel.kasmalkar@gmail.com') {
+        if (!user.email || user.email.toLowerCase() !== ADMIN_EMAIL) {
             alert('Access denied. This page is for administrators only.');
             window.location.href = '/';
             return false;

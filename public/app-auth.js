@@ -1,5 +1,8 @@
 // Authentication-enabled Task Manager Frontend
 
+// Configuration
+const ADMIN_EMAIL = 'indraneel.kasmalkar@gmail.com';
+
 // Loading Spinner Control
 function updateLoadingText(text) {
     const subtextEl = document.getElementById('loadingSubtext');
@@ -211,7 +214,7 @@ function updateUserInfo() {
 
     // Show admin link for super admin
     const adminLink = document.getElementById('adminLink');
-    if (adminLink && currentUser.email && currentUser.email.toLowerCase() === 'indraneel.kasmalkar@gmail.com') {
+    if (adminLink && currentUser.email && currentUser.email.toLowerCase() === ADMIN_EMAIL) {
         adminLink.style.display = 'flex';
     }
 }
