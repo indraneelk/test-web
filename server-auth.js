@@ -162,11 +162,15 @@ const magicLinkLimiter = rateLimit({
     keyGenerator: (req /*, res*/) => {
         try {
             const email = (req.body && typeof req.body.email === 'string') ? req.body.email.toLowerCase().trim() : '';
-            const ip = (req.ip || req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '').toString();
-            return `${email}|${ip}`;
+            return email || 'unknown';
         } catch {
-            return req.ip || 'unknown';
+            return 'unknown';
         }
+    },
+    // Disable IP fallback since we're rate limiting by email only
+    skip: (req) => {
+        // Skip if no email provided (will be caught by validation anyway)
+        return !(req.body && req.body.email);
     }
 });
 

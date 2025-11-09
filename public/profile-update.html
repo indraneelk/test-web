@@ -7,7 +7,9 @@
   <link rel="stylesheet" href="styles.css">
   <style>
     body { background-color: var(--bg-color); min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 2rem; }
-    .profile-container { max-width: 520px; width: 100%; padding: 2.5rem; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 0.75rem; box-shadow: var(--shadow); }
+    .profile-container { max-width: 520px; width: 100%; padding: 2.5rem; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 0.75rem; box-shadow: var(--shadow); position: relative; }
+    .close-btn { position: absolute; top: 1rem; right: 1rem; width: 32px; height: 32px; border-radius: 50%; border: none; background: var(--bg-elevated); color: var(--text-secondary); cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 1.25rem; line-height: 1; transition: all 0.2s; }
+    .close-btn:hover { background: var(--border-color); color: var(--text-primary); }
     .profile-header { text-align: center; margin-bottom: 2rem; }
     .profile-header h1 { font-size: 1.75rem; font-weight: 600; margin-bottom: 0.5rem; color: var(--text-primary); }
     .profile-header p { color: var(--text-secondary); font-size: 0.9375rem; }
@@ -19,7 +21,7 @@
     .color-option { width: 38px; height: 38px; border-radius: 50%; cursor: pointer; border: 2px solid transparent; }
     .color-option.selected { border-color: #000; }
     .actions { display:flex; gap: 0.75rem; margin-top: 1rem; }
-    .btn { padding: 0.75rem 1.25rem; border-radius: 0.5rem; border: none; cursor: pointer; font-weight: 600; }
+    .btn { padding: 0.75rem 1.25rem; border-radius: 0.5rem; border: none; cursor: pointer; font-weight: 600; flex: 1; }
     .btn-primary { background: var(--primary-color); color: #fff; }
     .btn-secondary { background: var(--bg-elevated); color: var(--text-primary); border:1px solid var(--border-color); }
     .error { padding: 0.75rem 1rem; background: #fee2e2; border:1px solid #fca5a5; color:#991b1b; border-radius:0.5rem; margin-bottom:1rem; display:none; }
@@ -72,6 +74,8 @@
   </head>
 <body>
   <div class="profile-container">
+    <button class="close-btn" onclick="window.location.href='/'" title="Close">×</button>
+
     <div class="profile-header">
       <h1>⚙️ Edit Profile</h1>
       <p>Update your profile information</p>
@@ -103,9 +107,8 @@
       </div>
 
       <div class="actions">
-        <button type="submit" class="btn btn-primary">Update Profile</button>
         <button type="button" class="btn btn-secondary" id="changePwdBtn">Change Password</button>
-        <button type="button" class="btn btn-secondary" onclick="window.location.href='/'">Back</button>
+        <button type="submit" class="btn btn-primary">Update Profile</button>
       </div>
     </form>
   </div>
