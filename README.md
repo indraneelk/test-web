@@ -116,6 +116,139 @@ Password: admin123
 Role: Admin
 ```
 
+## 🤖 Discord Bot Authentication
+
+### Overview
+The Discord bot integration uses **HMAC-SHA256 signature verification** to securely authenticate requests. This prevents attackers from impersonating Discord users by forging API requests.
+
+### Security Architecture
+
+**Problem:** Without authentication, anyone could send a request with `X-Discord-User-ID: 123456789` and gain access to that user's tasks.
+
+**Solution:** HMAC (Hash-based Message Authentication Code) ensures only requests from your legitimate Discord bot are accepted.
+
+### How It Works
+
+1. **Shared Secret**: Both your Discord bot and server share a secret key (`DISCORD_BOT_SECRET`)
+2. **Signature Generation**: Bot creates HMAC signature: `HMAC-SHA256(userId|timestamp, secret)`
+3. **Request Headers**: Bot sends three headers with each API request:
+   - `X-Discord-User-ID`: Discord user ID
+   - `X-Discord-Timestamp`: Current timestamp (milliseconds)
+   - `X-Discord-Signature`: HMAC signature (64-char hex)
+4. **Server Verification**: Server recomputes signature and verifies it matches
+5. **Timestamp Check**: Request must be within 60 seconds (prevents replay attacks)
+
+### Setup Instructions
+
+#### 1. Generate Secret (Automatic)
+
+The setup script automatically generates a secure secret:
+
+```bash
+npm run setup
+# When prompted about Discord bot, choose "Yes"
+# The script will generate DISCORD_BOT_SECRET and display it
+```
+
+#### 2. Manual Configuration (Alternative)
+
+If you need to generate a secret manually:
+
+```bash
+# Generate 64-character hex secret
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
+
+Add to `.env`:
+```bash
+DISCORD_BOT_SECRET=<your-generated-secret>
+```
+
+#### 3. Configure Your Discord Bot
+
+See `discord-bot-example.js` for complete integration code.
+
+**Basic Example:**
+```javascript
+const crypto = require('crypto');
+
+const DISCORD_BOT_SECRET = process.env.DISCORD_BOT_SECRET;
+const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:3000';
+
+// Create HMAC signature
+function createDiscordSignature(discordUserId, timestamp) {
+    const payload = `${discordUserId}|${timestamp}`;
+    return crypto.createHmac('sha256', DISCORD_BOT_SECRET)
+        .update(payload)
+        .digest('hex');
+}
+
+// Make authenticated request
+async function authenticatedRequest(discordUserId, endpoint, options = {}) {
+    const timestamp = Date.now().toString();
+    const signature = createDiscordSignature(discordUserId, timestamp);
+
+    return fetch(`${API_BASE_URL}${endpoint}`, {
+        ...options,
+        headers: {
+            'Content-Type': 'application/json',
+            'X-Discord-User-ID': discordUserId,
+            'X-Discord-Timestamp': timestamp,
+            'X-Discord-Signature': signature,
+            ...options.headers
+        }
+    });
+}
+
+// Example: Get user's tasks
+const response = await authenticatedRequest('123456789012345678', '/api/tasks', {
+    method: 'GET'
+});
+```
+
+### Security Features
+
+- **HMAC-SHA256**: Cryptographically secure one-way hash function
+- **Timestamp Validation**: 60-second window prevents replay attacks
+- **Constant-Time Comparison**: Prevents timing attacks via `crypto.timingSafeEqual()`
+- **Secret Validation**: Rejects default/missing secrets
+- **Length Validation**: Verifies signature is exactly 64 hex characters
+
+### Example Discord Bot Commands
+
+See `discord-bot-example.js` for complete Discord.js integration, including:
+- `/createtask` - Create a new task
+- `/mytasks` - View your tasks
+- Task updates and deletions
+- Full error handling
+
+### Troubleshooting
+
+**"Invalid Discord authentication" error:**
+- Verify `DISCORD_BOT_SECRET` matches on both bot and server
+- Check timestamp is within 60 seconds
+- Ensure signature is 64-character hex string
+- Verify payload format: `userId|timestamp`
+
+**"Request too old" error:**
+- Server and bot clocks may be out of sync
+- Ensure system time is accurate (NTP recommended)
+
+**Testing Authentication:**
+```bash
+# Test HMAC signing (doesn't require server)
+node discord-bot-example.js
+
+# This will show generated signatures and headers
+```
+
+### Files Reference
+
+- `shared/discord-auth.js` - HMAC verification logic
+- `discord-bot-example.js` - Complete Discord bot integration guide
+- `server-auth.js` - Express middleware for Discord auth
+- `worker.js` - Cloudflare Workers authentication
+
 ## 📁 Project Management
 
 ### Creating Projects

@@ -126,6 +126,14 @@ async function setupEnvironment() {
         if (discordToken) {
             config.DISCORD_BOT_TOKEN = discordToken;
             config.API_BASE_URL = `http://localhost:${config.PORT}/api`;
+
+            // Generate secure secret for HMAC authentication
+            console.log('\n🔐 Generating secure Discord bot secret for HMAC authentication...');
+            config.DISCORD_BOT_SECRET = generateSecret();
+            console.log('✅ Discord bot secret generated');
+            console.log('   This secret secures API communication between Discord bot and server.');
+            console.log('   IMPORTANT: Use this same secret in your Discord bot configuration!\n');
+            console.log(`   DISCORD_BOT_SECRET=${config.DISCORD_BOT_SECRET}\n`);
             console.log('✅ Discord bot enabled');
         }
     }
@@ -178,7 +186,9 @@ function writeEnvFile(config) {
     if (config.DISCORD_BOT_TOKEN) {
         envContent += '# Discord Bot\n';
         envContent += `DISCORD_BOT_TOKEN=${config.DISCORD_BOT_TOKEN}\n`;
-        envContent += `API_BASE_URL=${config.API_BASE_URL}\n\n`;
+        envContent += `DISCORD_BOT_SECRET=${config.DISCORD_BOT_SECRET}\n`;
+        envContent += `API_BASE_URL=${config.API_BASE_URL}\n`;
+        envContent += '# IMPORTANT: Use the same DISCORD_BOT_SECRET in your Discord bot!\n\n';
     }
 
     if (config.CLOUDFLARE_ACCOUNT_ID) {
