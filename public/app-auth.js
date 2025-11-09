@@ -1555,12 +1555,20 @@ function renderMembersList(project) {
         const showLeaveButton = isCurrentUser && !isOwner;
         const showRemoveButton = isOwner && !isCurrentUser;
 
+        // Get member initials
+        const initials = (member.initials && member.initials.trim())
+            ? member.initials.trim().toUpperCase()
+            : (member.username || member.name || '?').split(/\s+/).map(w => w[0]).slice(0,2).join('').toUpperCase();
+
+        // Get member color or use default
+        const avatarStyle = member.color ? `style="background-color: ${member.color};"` : '';
+
         return `
             <div class=\"member-item\">
                 <div class=\"member-info\">
-                    <div class=\"member-avatar\"></div>
+                    <div class=\"member-avatar\" ${avatarStyle}>${escapeHtml(initials)}</div>
                     <div class=\"member-details\">
-                        <div class=\"member-name\">${escapeHtml(member.name)}</div>
+                        <div class=\"member-name\">${escapeHtml(member.username)}</div>
                         <div class=\"member-role\">Member</div>
                     </div>
                 </div>
