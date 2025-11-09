@@ -11,6 +11,8 @@ const rateLimit = require('express-rate-limit');
 const claudeService = require('./claude-service');
 const dataService = require('./data-service');
 const supabaseService = require('./supabase-service');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 
 const app = express();
 const PORT = process.env.PORT || 5001;
@@ -213,18 +215,34 @@ const requireAuth = async (req, res, next) => {
     const authHeader = req.headers.authorization;
     if (authHeader && authHeader.startsWith('Bearer ')) {
         const token = authHeader.substring(7);
+
+        // Try our JWT tokens first (from /api/auth/login)
         try {
-            const payload = await verifySupabaseJWT(token);
-            // Look up user by ID (user.id = Supabase sub)
+            const JWT_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
+            const payload = jwt.verify(token, JWT_SECRET);
+
+            // Look up user by ID
             const user = await dataService.getUserById(payload.sub);
             if (user) {
                 req.user = user;
                 req.userId = user.id;
                 return next();
             }
-        } catch (err) {
-            // Invalid token - return 401 immediately for Bearer auth failures
-            return res.status(401).json({ error: 'Invalid or expired token' });
+        } catch (jwtErr) {
+            // Not a local JWT, try Supabase JWT
+            try {
+                const payload = await verifySupabaseJWT(token);
+                // Look up user by ID (user.id = Supabase sub)
+                const user = await dataService.getUserById(payload.sub);
+                if (user) {
+                    req.user = user;
+                    req.userId = user.id;
+                    return next();
+                }
+            } catch (supabaseErr) {
+                // Invalid token - return 401 immediately for Bearer auth failures
+                return res.status(401).json({ error: 'Invalid or expired token' });
+            }
         }
     }
 
@@ -294,6 +312,68 @@ const isProjectOwner = async (userId, projectId) => {
 //   - Email/password login managed by Supabase
 //   - See /api/auth/supabase-login for the current login endpoint
 
+// ==================== JWT AUTH (for Discord bot & API integrations) ====================
+// JWT-based username/password login - Returns a JWT token instead of creating a session
+app.post('/api/auth/login', authLimiter, async (req, res) => {
+    try {
+        const { username, password } = req.body;
+
+        if (!username || !password) {
+            return res.status(400).json({ error: 'Username and password are required' });
+        }
+
+        // Find user by username
+        const users = await dataService.getUsers();
+        const user = users.find(u => u.username === username);
+
+        if (!user) {
+            return res.status(401).json({ error: 'Invalid credentials' });
+        }
+
+        // Verify password (only works for bcrypt-based users)
+        if (!user.password_hash) {
+            return res.status(401).json({
+                error: 'This account uses Supabase authentication. Please login through the web interface.'
+            });
+        }
+
+        const isValidPassword = await bcrypt.compare(password, user.password_hash);
+        if (!isValidPassword) {
+            return res.status(401).json({ error: 'Invalid credentials' });
+        }
+
+        // Generate JWT token
+        const JWT_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
+        const token = jwt.sign(
+            {
+                sub: user.id,
+                username: user.username,
+                email: user.email,
+                is_admin: user.is_admin
+            },
+            JWT_SECRET,
+            { expiresIn: '24h' }
+        );
+
+        // Also create a session for cookie-based access
+        req.session.regenerate(() => {});
+        req.session.userId = user.id;
+
+        await logActivity(user.id, 'user_login', 'User logged in via JWT');
+
+        // Return both token and user data
+        const { password_hash: _, ...userWithoutPassword } = user;
+        res.json({
+            success: true,
+            token,
+            user: userWithoutPassword
+        });
+    } catch (error) {
+        console.error('Login error:', error);
+        res.status(500).json({ error: 'Login failed' });
+    }
+});
+
 // Logout
 app.post('/api/auth/logout', (req, res) => {
     const userId = req.session?.userId;
@@ -324,7 +404,8 @@ app.post('/api/auth/logout', (req, res) => {
 // Check session
 app.get('/api/auth/me', requireAuth, async (req, res) => {
     try {
-        const user = await dataService.getUserById(req.session.userId);
+        // req.userId is set by requireAuth middleware (supports both JWT and session)
+        const user = await dataService.getUserById(req.userId);
 
         if (!user) {
             return res.status(404).json({ error: 'User not found' });

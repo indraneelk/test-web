@@ -10,7 +10,7 @@ if (!DISCORD_TOKEN) {
     process.exit(1);
 }
 
-// Store user sessions (Discord User ID -> Cookie)
+// Store user sessions (Discord User ID -> JWT Token)
 const userSessions = new Map();
 
 // Create Discord client
@@ -94,9 +94,13 @@ async function handleLogin(message, args) {
             password
         });
 
-        // Store session cookie
-        const cookies = response.headers['set-cookie'];
-        userSessions.set(message.author.id, cookies);
+        // Store JWT token
+        const token = response.data.token;
+        if (!token) {
+            return message.reply('❌ Login failed: No token received from server.');
+        }
+
+        userSessions.set(message.author.id, token);
 
         const user = response.data.user;
         await message.reply(`✅ Welcome back, ${user.name}! You're now logged in.`);
@@ -116,14 +120,14 @@ async function handleLogin(message, args) {
 
 // Get tasks
 async function handleTasks(message) {
-    const session = userSessions.get(message.author.id);
-    if (!session) {
+    const token = userSessions.get(message.author.id);
+    if (!token) {
         return message.reply('❌ Please login first: `login <username> <password>`');
     }
 
     try {
         const response = await axios.get(`${API_BASE}/tasks`, {
-            headers: { Cookie: session }
+            headers: { Authorization: `Bearer ${token}` }
         });
 
         const tasks = response.data;
@@ -167,8 +171,8 @@ async function handleTasks(message) {
 
 // Get summary from Claude
 async function handleSummary(message) {
-    const session = userSessions.get(message.author.id);
-    if (!session) {
+    const token = userSessions.get(message.author.id);
+    if (!token) {
         return message.reply('❌ Please login first: `login <username> <password>`');
     }
 
@@ -176,7 +180,7 @@ async function handleSummary(message) {
 
     try {
         const response = await axios.get(`${API_BASE}/claude/summary`, {
-            headers: { Cookie: session }
+            headers: { Authorization: `Bearer ${token}` }
         });
 
         const embed = new EmbedBuilder()
@@ -199,8 +203,8 @@ async function handleSummary(message) {
 
 // Get priorities from Claude
 async function handlePriorities(message) {
-    const session = userSessions.get(message.author.id);
-    if (!session) {
+    const token = userSessions.get(message.author.id);
+    if (!token) {
         return message.reply('❌ Please login first: `login <username> <password>`');
     }
 
@@ -208,7 +212,7 @@ async function handlePriorities(message) {
 
     try {
         const response = await axios.get(`${API_BASE}/claude/priorities`, {
-            headers: { Cookie: session }
+            headers: { Authorization: `Bearer ${token}` }
         });
 
         const embed = new EmbedBuilder()
@@ -226,8 +230,8 @@ async function handlePriorities(message) {
 
 // Ask Claude a question
 async function handleAsk(message, args) {
-    const session = userSessions.get(message.author.id);
-    if (!session) {
+    const token = userSessions.get(message.author.id);
+    if (!token) {
         return message.reply('❌ Please login first: `login <username> <password>`');
     }
 
@@ -243,7 +247,7 @@ async function handleAsk(message, args) {
     try {
         const response = await axios.post(`${API_BASE}/claude/ask`,
             { question },
-            { headers: { Cookie: session } }
+            { headers: { Authorization: `Bearer ${token}` } }
         );
 
         // Split long responses

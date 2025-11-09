@@ -14,12 +14,23 @@ ENVIRONMENT = "production"
 SUPABASE_URL = "https://oxbaswpyxryvygamgtsu.supabase.co"
 
 # Secrets (add these with: wrangler secret put <NAME>)
-# Run these commands after creating the worker:
+# Run these commands after deploying to Cloudflare:
+#
+# Required for authentication:
+# wrangler secret put SESSION_SECRET
+#   Generate with: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+#
+# Optional for Supabase authentication:
 # wrangler secret put SUPABASE_ANON_KEY
 # wrangler secret put SUPABASE_SERVICE_ROLE_KEY
 # wrangler secret put SUPABASE_JWT_SECRET
-# wrangler secret put SESSION_SECRET
-# wrangler secret put ANTHROPIC_API_KEY (optional, for Claude AI features)
+#
+# Optional for Claude AI features (Discord bot needs this):
+# wrangler secret put ANTHROPIC_API_KEY
+#   Get from: https://console.anthropic.com/settings/keys
+#
+# Note: Discord bot token is NOT needed in Cloudflare, only locally
+# Set DISCORD_BOT_TOKEN in your local .env file for the Discord bot
 
 # Development environment (for local testing)
 [env.dev]
