@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS users (
     name TEXT NOT NULL,
     email TEXT,
     initials TEXT,
+    color TEXT DEFAULT '#667eea',
     is_admin INTEGER DEFAULT 0,
     discord_handle TEXT,
     discord_user_id TEXT UNIQUE,

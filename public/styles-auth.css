@@ -12,7 +12,7 @@
     width: 40px;
     height: 40px;
     border-radius: 50%;
-    background: linear-gradient(135deg, var(--primary-color) 0%, #764ba2 100%);
+    background: #667eea; /* Default color, will be overridden by JS */
     flex-shrink: 0;
     color: #fff;
     display: flex;

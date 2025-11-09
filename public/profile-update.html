@@ -817,13 +817,10 @@
 
         showSuccess('profile', '✓ Profile updated successfully');
 
-        // Update fields from server response
-        const user = data.user ? data.user : data;
-        document.getElementById('username').value = user.username || '';
-        document.getElementById('name').value = user.name || '';
-        document.getElementById('initials').value = (user.initials || '').toUpperCase();
-        selectedColor = user.color || selectedColor;
-        renderColors(selectedColor);
+        // Redirect back to main page after brief delay
+        setTimeout(() => {
+          window.location.href = '/';
+        }, 800);
       } catch (err) {
         showError('profile', err.message);
       }

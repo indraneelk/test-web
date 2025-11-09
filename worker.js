@@ -161,7 +161,7 @@ async function broadcastChange(env, eventType, payload) {
 async function logActivity(db, userId, action, details, taskId = null, projectId = null) {
     try {
         await db.prepare(
-            'INSERT INTO activity_logs (id, user_id, task_id, project_id, action, details, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+            'INSERT INTO activity_log (id, user_id, task_id, project_id, action, details, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)'
         ).bind(
             generateId('activity'),
             userId,
@@ -173,7 +173,7 @@ async function logActivity(db, userId, action, details, taskId = null, projectId
         ).run();
         // Simple retention: occasionally prune entries older than 90 days
         if (Math.random() < 0.05) {
-            await db.prepare("DELETE FROM activity_logs WHERE created_at < datetime('now','-90 days')").run();
+            await db.prepare("DELETE FROM activity_log WHERE timestamp < datetime('now','-90 days')").run();
         }
     } catch (error) {
         console.error('Failed to log activity:', error);
@@ -528,9 +528,10 @@ async function handleSupabaseCallback(request, env) {
 
             // Create personal project for new user
             const personalProjectId = generateId('project');
+            const personalProjectName = `${username}-Personal`;
             await env.DB.prepare(
                 'INSERT INTO projects (id, name, description, color, owner_id, is_personal, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-            ).bind(personalProjectId, 'My Tasks', 'Personal tasks and notes', '#667eea', sub, 1, now, now).run();
+            ).bind(personalProjectId, personalProjectName, 'Personal tasks and notes', '#667eea', sub, 1, now, now).run();
 
             // Add user as member of their personal project
             await env.DB.prepare(
@@ -640,16 +641,21 @@ async function handleGetConfig(request, env) {
 
 // User Handlers
 async function handleGetUsers(request, env) {
-    const user = await authenticate(request, env);
-    if (!user) {
-        return errorResponse('Authentication required', 401);
+    try {
+        const user = await authenticate(request, env);
+        if (!user) {
+            return errorResponse('Authentication required', 401);
+        }
+
+        const { results } = await env.DB.prepare(
+            'SELECT id, username, name, email, initials, color, is_admin, created_at FROM users ORDER BY name ASC'
+        ).all();
+
+        return jsonResponse(results || []);
+    } catch (error) {
+        console.error('Get users error:', error);
+        return errorResponse('Failed to fetch users', 500);
     }
-
-    const { results } = await env.DB.prepare(
-        'SELECT id, username, name, email, initials, color, is_admin, created_at FROM users ORDER BY name ASC'
-    ).all();
-
-    return jsonResponse(results);
 }
 
 async function handleGetUser(request, env, userId) {
@@ -1203,7 +1209,7 @@ async function handleGetActivity(request, env) {
     }
 
     const { results } = await env.DB.prepare(
-        'SELECT * FROM activity_logs ORDER BY created_at DESC LIMIT 100'
+        'SELECT * FROM activity_log ORDER BY timestamp DESC LIMIT 100'
     ).all();
 
     return jsonResponse(results);

@@ -198,6 +198,10 @@ function updateUserInfo() {
             ? currentUser.initials.trim().toUpperCase()
             : (currentUser.username || currentUser.name).split(/\s+/).map(w => w[0]).slice(0,2).join('').toUpperCase();
         avatar.textContent = initials;
+        // Set color if user has one
+        if (currentUser.color) {
+            avatar.style.backgroundColor = currentUser.color;
+        }
     }
     // Update mobile avatar
     const mobileAvatar = document.getElementById('mobileUserAvatar');
@@ -1465,7 +1469,7 @@ function openProjectSettings(projectId) {
         });
     }
 
-    const owner = users.find(u => u.id === project.owner_id);
+    const owner = Array.isArray(users) ? users.find(u => u.id === project.owner_id) : null;
     const isOwner = project.owner_id === currentUser.id || !!currentUser.is_admin;
 
     document.getElementById('settingsProjectName').textContent = project.name;
