@@ -939,6 +939,110 @@ async function handleGetActivity(request, env) {
     return jsonResponse(results);
 }
 
+// ==================== DISCORD BOT HANDLERS ====================
+
+// Discord bot authentication - returns JWT for a user
+async function handleDiscordAuth(request, env) {
+    try {
+        const body = await request.json();
+        const { api_key, username } = body;
+
+        // Verify Discord bot API key
+        if (!api_key || api_key !== env.DISCORD_BOT_API_KEY) {
+            return errorResponse('Invalid API key', 401);
+        }
+
+        if (!username) {
+            return errorResponse('Username required', 400);
+        }
+
+        // Find user by username
+        const user = await env.DB.prepare('SELECT * FROM users WHERE username = ?')
+            .bind(username.toLowerCase()).first();
+
+        if (!user) {
+            return errorResponse('User not found', 404);
+        }
+
+        // Create JWT for the user
+        if (!env.SESSION_SECRET) {
+            return errorResponse('Server configuration error', 500);
+        }
+
+        const token = await createJWT({
+            userId: user.id,
+            username: user.username,
+            email: user.email
+        }, env.SESSION_SECRET, '24h');
+
+        return jsonResponse({
+            token,
+            user: {
+                id: user.id,
+                username: user.username,
+                name: user.name,
+                email: user.email,
+                initials: user.initials
+            }
+        });
+    } catch (error) {
+        console.error('Discord auth error:', error);
+        return errorResponse('Authentication failed', 500);
+    }
+}
+
+// Discord bot Claude integration
+async function handleDiscordClaude(request, env) {
+    const user = await authenticate(request, env);
+    if (!user) {
+        return errorResponse('Authentication required', 401);
+    }
+
+    try {
+        const body = await request.json();
+        const { question, context } = body;
+
+        if (!question) {
+            return errorResponse('Question required', 400);
+        }
+
+        if (!env.ANTHROPIC_API_KEY) {
+            return errorResponse('Claude AI is not configured', 503);
+        }
+
+        // Make request to Claude API
+        const claudeResponse = await fetch('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'x-api-key': env.ANTHROPIC_API_KEY,
+                'anthropic-version': '2023-06-01'
+            },
+            body: JSON.stringify({
+                model: 'claude-3-5-sonnet-20241022',
+                max_tokens: 1024,
+                messages: [{
+                    role: 'user',
+                    content: context ? `Context: ${context}\n\nQuestion: ${question}` : question
+                }]
+            })
+        });
+
+        if (!claudeResponse.ok) {
+            console.error('Claude API error:', await claudeResponse.text());
+            return errorResponse('Claude AI request failed', 502);
+        }
+
+        const result = await claudeResponse.json();
+        const answer = result.content?.[0]?.text || 'No response from Claude';
+
+        return jsonResponse({ answer });
+    } catch (error) {
+        console.error('Discord Claude error:', error);
+        return errorResponse('Failed to process question', 500);
+    }
+}
+
 // ==================== MAIN REQUEST HANDLER ====================
 
 export default {
@@ -1037,6 +1141,14 @@ export default {
             // Activity route
             if (path === '/api/activity' && method === 'GET') {
                 return await handleGetActivity(request, env);
+            }
+
+            // Discord bot routes
+            if (path === '/api/discord/auth' && method === 'POST') {
+                return await handleDiscordAuth(request, env);
+            }
+            if (path === '/api/discord/claude' && method === 'POST') {
+                return await handleDiscordClaude(request, env);
             }
 
             // 404 for unknown API routes

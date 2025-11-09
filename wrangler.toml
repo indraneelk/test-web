@@ -14,12 +14,13 @@ ENVIRONMENT = "production"
 SUPABASE_URL = "https://oxbaswpyxryvygamgtsu.supabase.co"
 
 # Secrets (add these with: wrangler secret put <NAME>)
-# Run these commands after creating the worker:
+# Run these commands after deploying the worker:
 # wrangler secret put SUPABASE_ANON_KEY
 # wrangler secret put SUPABASE_SERVICE_ROLE_KEY
 # wrangler secret put SUPABASE_JWT_SECRET
 # wrangler secret put SESSION_SECRET
 # wrangler secret put ANTHROPIC_API_KEY (optional, for Claude AI features)
+# wrangler secret put DISCORD_BOT_API_KEY (required for Discord bot integration)
 
 # Development environment (for local testing)
 [env.dev]

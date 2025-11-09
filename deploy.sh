@@ -1,185 +1,93 @@
 #!/bin/bash
-# Cloudflare Deployment Script
-# Usage: ./deploy.sh
+
+# Cloudflare Deployment Script for Team Task Manager
+# This script automates the deployment process
 
 set -e  # Exit on error
 
-echo "🚀 Starting Cloudflare Deployment..."
+echo "🚀 Team Task Manager - Cloudflare Deployment"
+echo "==========================================="
 echo ""
 
-# Check if wrangler is installed
-if ! command -v wrangler &> /dev/null; then
-    echo "❌ Wrangler CLI not found. Installing..."
-    npm install -g wrangler
+# Colors for output
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+NC='\033[0m' # No Color
+
+# Function to print colored output
+print_success() {
+    echo -e "${GREEN}✓ $1${NC}"
+}
+
+print_warning() {
+    echo -e "${YELLOW}⚠ $1${NC}"
+}
+
+print_error() {
+    echo -e "${RED}✗ $1${NC}"
+}
+
+# Check if wrangler is available
+if ! command -v npx &> /dev/null; then
+    print_error "npm/npx not found. Please install Node.js and npm."
+    exit 1
 fi
 
-# Check if logged in
-echo "Checking Cloudflare authentication..."
-if ! wrangler whoami &> /dev/null; then
-    echo "Please log in to Cloudflare:"
-    wrangler login
-fi
+print_success "Found npm/npx"
 
+# Step 1: Check authentication
 echo ""
-echo "✅ Wrangler authenticated"
-echo ""
-
-# Step 1: Check if database_id is set
-DATABASE_ID=$(grep "database_id" wrangler.toml | sed 's/.*= *"\(.*\)".*/\1/')
-
-if [ -z "$DATABASE_ID" ] || [ "$DATABASE_ID" = "" ]; then
-    echo "📦 Creating D1 database..."
-    echo ""
-
-    wrangler d1 create task-manager-db
-
-    echo ""
-    echo "⚠️  Please update wrangler.toml with the database_id from above"
-    echo "   Edit line 9 of wrangler.toml and paste the database_id"
-    echo "   Then run this script again."
-    echo ""
-    exit 0
-fi
-
-echo "✅ Database ID configured: $DATABASE_ID"
-echo ""
-
-# Step 2: Run migrations
-echo "📊 Running database migrations..."
-echo ""
-
-# Check if migrations have been run
-MIGRATION_CHECK=$(wrangler d1 execute task-manager-db --command "SELECT name FROM sqlite_master WHERE type='table' AND name='users'" 2>&1 || echo "error")
-
-if echo "$MIGRATION_CHECK" | grep -q "error\|no such table"; then
-    echo "Running initial schema..."
-    wrangler d1 execute task-manager-db --file=./migrations/0001_initial_schema.sql
-
-    echo "Running migration 002..."
-    wrangler d1 execute task-manager-db --file=./migrations/002_add_color_to_projects.sql 2>/dev/null || echo "Migration 002 already applied or not needed"
-
-    echo "Running migration 003..."
-    wrangler d1 execute task-manager-db --file=./migrations/003_add_is_personal_to_projects.sql 2>/dev/null || echo "Migration 003 already applied or not needed"
-
-    echo "Running migration 004..."
-    wrangler d1 execute task-manager-db --file=./migrations/004_add_initials_to_users.sql 2>/dev/null || echo "Migration 004 already applied or not needed"
-
-    echo "Running migration 005..."
-    wrangler d1 execute task-manager-db --file=./migrations/005_add_supabase_support.sql 2>/dev/null || echo "Migration 005 already applied or not needed"
-
-    echo ""
-    echo "✅ Migrations completed"
+echo "Step 1: Checking Cloudflare authentication..."
+if ! npx wrangler whoami &> /dev/null; then
+    print_warning "Not logged in to Cloudflare"
+    echo "Running: npx wrangler login"
+    npx wrangler login
 else
-    echo "✅ Database already initialized"
+    print_success "Already logged in to Cloudflare"
 fi
 
+# Step 2: Verify database
 echo ""
-
-# Step 2.5: Migrate existing data (optional)
-if [ -d "data" ] && [ "$(ls -A data/*.json 2>/dev/null)" ]; then
-    echo "📦 Found local JSON data files..."
+echo "Step 2: Verifying D1 database..."
+DB_ID=$(grep "database_id" wrangler.toml | cut -d'"' -f2)
+if [ -z "$DB_ID" ]; then
+    print_warning "Database ID not found in wrangler.toml"
+    echo "You may need to create a D1 database:"
+    echo "  npx wrangler d1 create task-manager-db"
     echo ""
-    read -p "Would you like to migrate local data to D1? (y/n) " -n 1 -r
+    read -p "Continue anyway? (y/n) " -n 1 -r
     echo
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        echo "🔄 Migrating data from JSON to D1..."
-        node migrate-data-to-d1.js --execute
-        echo ""
-        echo "✅ Data migration completed"
-    else
-        echo "⏭️  Skipping data migration"
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        exit 1
     fi
 else
-    echo "ℹ️  No local data files found (data/*.json), skipping migration"
+    print_success "Found D1 database: $DB_ID"
 fi
 
+# Step 3: Deploy
 echo ""
-
-# Step 3: Check secrets
-echo "🔐 Checking secrets..."
+echo "Step 3: Deploying worker..."
 echo ""
-
-SECRETS=$(wrangler secret list 2>&1 || echo "")
-
-if ! echo "$SECRETS" | grep -q "SUPABASE_ANON_KEY"; then
-    echo "⚠️  Missing secret: SUPABASE_ANON_KEY"
-    echo "   Please set it with: wrangler secret put SUPABASE_ANON_KEY"
-    echo ""
-    echo "   Get your keys from:"
-    echo "   https://app.supabase.com → Your Project → Settings → API"
-    echo ""
-
-    read -p "Would you like to set secrets now? (y/n) " -n 1 -r
-    echo
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        echo "Enter your Supabase anon key:"
-        wrangler secret put SUPABASE_ANON_KEY
-
-        echo "Enter your Supabase service role key:"
-        wrangler secret put SUPABASE_SERVICE_ROLE_KEY
-
-        echo "Enter a session secret (or press Enter to generate):"
-        read SESSION_SECRET
-        if [ -z "$SESSION_SECRET" ]; then
-            SESSION_SECRET=$(openssl rand -base64 32 2>/dev/null || date | md5sum | cut -c1-32)
-        fi
-        echo "$SESSION_SECRET" | wrangler secret put SESSION_SECRET
-
-        echo ""
-        echo "✅ Secrets configured"
-    else
-        echo "Please run: wrangler secret put SUPABASE_ANON_KEY"
-        echo "Then run this script again."
-        exit 0
-    fi
+read -p "Deploy to production? (y for production, n for dev) " -n 1 -r
+echo
+if [[ $REPLY =~ ^[Yy]$ ]]; then
+    echo "Deploying to production..."
+    npx wrangler deploy
+    ENV="production"
 else
-    echo "✅ Secrets configured"
+    echo "Deploying to dev environment..."
+    npx wrangler deploy --env dev
+    ENV="dev"
 fi
 
-echo ""
+print_success "Deployment complete!"
 
-# Step 4: Deploy Worker
-echo "🔧 Deploying Worker..."
+# Show next steps
 echo ""
-wrangler deploy
-
+echo "==========================================="
+echo "🎉 Deployment Successful!"
+echo "==========================================="
 echo ""
-echo "✅ Worker deployed"
-echo ""
-
-# Step 5: Deploy Pages
-echo "📄 Deploying Pages..."
-echo ""
-wrangler pages deploy public --project-name=team-task-manager
-
-echo ""
-echo "✅ Pages deployed"
-echo ""
-
-# Step 6: Get deployment URLs
-WORKER_URL=$(wrangler deployments list 2>&1 | grep -o 'https://[^[:space:]]*' | head -1 || echo "Check Cloudflare dashboard")
-PAGES_URL="https://team-task-manager.pages.dev"
-
-echo ""
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "🎉 Deployment Complete!"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo ""
-echo "Your application is live at:"
-echo ""
-echo "  Frontend: $PAGES_URL"
-echo "  API:      $WORKER_URL"
-echo ""
-echo "Test endpoints:"
-echo "  Health:   $WORKER_URL/api/health"
-echo "  DB Check: $WORKER_URL/api/db-check"
-echo ""
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo ""
-echo "Next steps:"
-echo "  1. Visit $PAGES_URL"
-echo "  2. Sign up with email or magic link"
-echo "  3. Create your first project and tasks"
-echo ""
-echo "Documentation: ./DEPLOY_NOW.md"
+echo "Next steps in DEPLOYMENT.md"
 echo ""

@@ -9,7 +9,10 @@
     "dev": "node start.js",
     "server": "node server-auth.js",
     "discord": "node discord-bot.js",
-    "dev-all": "npm run server & npm run discord"
+    "discord-cloudflare": "node discord-bot-cloudflare.js",
+    "dev-all": "npm run server & npm run discord",
+    "deploy": "wrangler deploy",
+    "deploy-dev": "wrangler deploy --env dev"
   },
   "keywords": [
     "task-manager",
