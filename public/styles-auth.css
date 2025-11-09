@@ -148,6 +148,7 @@
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
     gap: 1.5rem;
+    padding-bottom: 1rem; /* Add space at bottom for better scrolling UX */
 }
 
 .project-card {
