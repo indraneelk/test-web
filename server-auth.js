@@ -15,6 +15,8 @@ const supabaseService = require('./supabase-service');
 // Shared modules
 const { generateId, getCurrentTimestamp, sanitizeString, generateDiscordLinkCode, isHexColor } = require('./shared/helpers');
 const { validateString, validateEmail, validateUsername, validatePassword, validatePriority, validateStatus } = require('./shared/validators');
+const businessLogic = require('./shared/business-logic');
+const { ValidationError, AuthenticationError, PermissionError, NotFoundError, ConflictError } = require('./shared/errors');
 
 const app = express();
 const PORT = process.env.PORT || 5001;
@@ -992,80 +994,15 @@ app.get('/api/projects/:id', requireAuth, async (req, res) => {
 });
 
 // Create new project
-// Helper to pick a stable random color for personal projects
-function pickRandomProjectColor() {
-    const colors = ['#f06a6a', '#ffc82c', '#13ce66', '#667eea', '#764ba2', '#f093fb', '#4facfe', '#43e97b'];
-    return colors[Math.floor(Math.random() * colors.length)];
-}
-
 app.post('/api/projects', requireAuth, async (req, res) => {
     try {
-        const { name, description, color, members } = req.body;
-
-        // Validate required fields
-        if (!name) {
-            return res.status(400).json({ error: 'Project name is required' });
-        }
-
-        // Validate project name
-        if (!validateString(name, 1, 100)) {
-            return res.status(400).json({ error: 'Project name must be 1-100 characters' });
-        }
-
-        // Validate description if provided
-        if (description && !validateString(description, 0, 1000)) {
-            return res.status(400).json({ error: 'Description must be less than 1000 characters' });
-        }
-
-        // Validate color if provided
-        let projectColor = '#f06a6a';
-        if (typeof color === 'string' && color.trim() !== '') {
-            const hex = color.trim();
-            const isValidHex = /^#([0-9A-Fa-f]{6})$/.test(hex);
-            if (!isValidHex) {
-                return res.status(400).json({ error: 'Invalid color. Use 6-digit hex like #f06a6a' });
-            }
-            projectColor = hex.toLowerCase();
-        }
-
-        // Validate members if provided
-        let projectMembers = [];
-        if (Array.isArray(members)) {
-            // Verify all member IDs exist and are valid users
-            const allUsers = await dataService.getUsers();
-            for (const memberId of members) {
-                if (!allUsers.find(u => u.id === memberId)) {
-                    return res.status(400).json({ error: `Invalid member ID: ${memberId}` });
-                }
-            }
-            projectMembers = members;
-        }
-
-        const projects = await dataService.getProjects();
-
-        // Check for duplicate name
-        if (projects.find(p => p.name.trim().toLowerCase() === name.trim().toLowerCase())) {
-            return res.status(400).json({ error: 'Project name already exists' });
-        }
-
-        const newProject = {
-            id: generateId('project'),
-            name: sanitizeString(name),
-            description: description ? sanitizeString(description) : '',
-            color: projectColor,
-            is_personal: 0,
-            owner_id: req.userId,
-            members: projectMembers,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-        };
-
-        await dataService.createProject(newProject);
-
-        await logActivity(req.userId, 'project_created', `Project "${newProject.name}" created`, null, newProject.id);
-
-        res.status(201).json(newProject);
+        const project = await businessLogic.createProject(dataService, req.userId, req.body);
+        await logActivity(req.userId, 'project_created', `Project "${project.name}" created`, null, project.id);
+        res.status(201).json(project);
     } catch (error) {
+        if (error instanceof ValidationError) return res.status(400).json({ error: error.message });
+        if (error instanceof PermissionError) return res.status(403).json({ error: error.message });
+        if (error instanceof NotFoundError) return res.status(404).json({ error: error.message });
         res.status(500).json({ error: 'Failed to create project' });
     }
 });
@@ -1073,59 +1010,13 @@ app.post('/api/projects', requireAuth, async (req, res) => {
 // Update project
 app.put('/api/projects/:id', requireAuth, async (req, res) => {
     try {
-        const project = await dataService.getProjectById(req.params.id);
-
-        if (!project) {
-            return res.status(404).json({ error: 'Project not found' });
-        }
-
-        // Check if user is owner or admin
-        const user = await dataService.getUserById(req.userId);
-        const isOwner = await isProjectOwner(req.userId, req.params.id);
-        if (!isOwner && !user?.is_admin) {
-            return res.status(403).json({ error: 'Only project owner or admin can update project' });
-        }
-
-        const { name, description, color } = req.body;
-
-        // Validate name if provided
-        if (project.is_personal) {
-            return res.status(403).json({ error: 'Personal projects cannot be edited' });
-        }
-
-        // Validate name if provided
-        if (name !== undefined && !validateString(name, 1, 100)) {
-            return res.status(400).json({ error: 'Project name must be 1-100 characters' });
-        }
-
-        // Validate description if provided
-        if (description !== undefined && description !== null && !validateString(description, 0, 1000)) {
-            return res.status(400).json({ error: 'Description must be less than 1000 characters' });
-        }
-
-        // Validate color if provided
-        let updateColor = project.color || '#f06a6a';
-        if (color !== undefined && color !== null) {
-            const hex = String(color).trim();
-            const isValidHex = /^#([0-9A-Fa-f]{6})$/.test(hex);
-            if (!isValidHex) {
-                return res.status(400).json({ error: 'Invalid color. Use 6-digit hex like #f06a6a' });
-            }
-            updateColor = hex.toLowerCase();
-        }
-
-        const updates = {
-            name: name ? sanitizeString(name) : project.name,
-            description: description !== undefined ? sanitizeString(description || '') : project.description,
-            color: updateColor
-        };
-
-        const updatedProject = await dataService.updateProject(req.params.id, updates);
-
+        const updatedProject = await businessLogic.updateProject(dataService, req.userId, req.params.id, req.body);
         await logActivity(req.userId, 'project_updated', `Project "${updatedProject.name}" updated`, null, req.params.id);
-
         res.json(updatedProject);
     } catch (error) {
+        if (error instanceof ValidationError) return res.status(400).json({ error: error.message });
+        if (error instanceof PermissionError) return res.status(403).json({ error: error.message });
+        if (error instanceof NotFoundError) return res.status(404).json({ error: error.message });
         res.status(500).json({ error: 'Failed to update project' });
     }
 });
@@ -1133,30 +1024,16 @@ app.put('/api/projects/:id', requireAuth, async (req, res) => {
 // Delete project
 app.delete('/api/projects/:id', requireAuth, async (req, res) => {
     try {
+        // Get project before deletion for logging
         const project = await dataService.getProjectById(req.params.id);
 
-        if (!project) {
-            return res.status(404).json({ error: 'Project not found' });
-        }
-
-        // Check if user is owner or admin
-        const user = await dataService.getUserById(req.userId);
-        const isOwner = await isProjectOwner(req.userId, req.params.id);
-        if (!isOwner && !user?.is_admin) {
-            return res.status(403).json({ error: 'Only project owner or admin can delete project' });
-        }
-
-        // Prevent deletion of personal projects (except by admin)
-        if (project.is_personal && !user?.is_admin) {
-            return res.status(403).json({ error: 'Cannot delete personal project' });
-        }
-
-        await dataService.deleteProject(req.params.id);
-
+        await businessLogic.deleteProject(dataService, req.userId, req.params.id);
         await logActivity(req.userId, 'project_deleted', `Project "${project.name}" deleted`, null, req.params.id);
 
         res.json({ message: 'Project deleted successfully', project: project });
     } catch (error) {
+        if (error instanceof PermissionError) return res.status(403).json({ error: error.message });
+        if (error instanceof NotFoundError) return res.status(404).json({ error: error.message });
         res.status(500).json({ error: 'Failed to delete project' });
     }
 });
@@ -1339,69 +1216,13 @@ app.get('/api/tasks/:id', requireAuth, async (req, res) => {
 // Create new task
 app.post('/api/tasks', requireAuth, async (req, res) => {
     try {
-        const { name, description, date, project_id, assigned_to_id, priority } = req.body;
-
-        // Validate required fields (assigned_to_id and description are optional)
-        if (!name || !date || !project_id) {
-            return res.status(400).json({
-                error: 'Missing required fields: name, date, project_id'
-            });
-        }
-
-        // Validate task name
-        if (!validateString(name, 1, 200)) {
-            return res.status(400).json({ error: 'Task name must be 1-200 characters' });
-        }
-
-        // Validate description (optional)
-        if (!validateString(description, 0, 2000)) {
-            return res.status(400).json({ error: 'Description must be less than 2000 characters' });
-        }
-
-        // Validate date format
-        const dateObj = new Date(date);
-        if (isNaN(dateObj.getTime())) {
-            return res.status(400).json({ error: 'Invalid date format' });
-        }
-
-        // Validate priority
-        const validPriorities = ['none', 'low', 'medium', 'high'];
-        if (priority && !validPriorities.includes(priority)) {
-            return res.status(400).json({ error: 'Invalid priority. Must be: none, low, medium, or high' });
-        }
-
-        // Check if user is member of the project
-        if (!(await isProjectMember(req.userId, project_id))) {
-            return res.status(403).json({ error: 'You are not a member of this project' });
-        }
-
-        // Check if assigned user is member of the project (only if assignee is provided)
-        if (assigned_to_id && assigned_to_id.trim() !== '' && !(await isProjectMember(assigned_to_id, project_id))) {
-            return res.status(400).json({ error: 'Assigned user is not a member of this project' });
-        }
-
-        const newTask = {
-            id: generateId('task'),
-            name: sanitizeString(name),
-            description: sanitizeString(description),
-            date: date,
-            project_id: project_id,
-            assigned_to_id: (assigned_to_id && assigned_to_id.trim() !== '') ? assigned_to_id : null,
-            created_by_id: req.userId,
-            status: 'pending',
-            priority: priority || 'none',
-            archived: false,
-            completed_at: null,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-        };
-
-        await dataService.createTask(newTask);
-
-        await logActivity(req.userId, 'task_created', `Task "${newTask.name}" created`, newTask.id, project_id);
-
-        res.status(201).json(newTask);
+        const task = await businessLogic.createTask(dataService, req.userId, req.body);
+        await logActivity(req.userId, 'task_created', `Task "${task.name}" created`, task.id, task.project_id);
+        res.status(201).json(task);
     } catch (error) {
+        if (error instanceof ValidationError) return res.status(400).json({ error: error.message });
+        if (error instanceof PermissionError) return res.status(403).json({ error: error.message });
+        if (error instanceof NotFoundError) return res.status(404).json({ error: error.message });
         res.status(500).json({ error: 'Failed to create task' });
     }
 });
@@ -1409,87 +1230,11 @@ app.post('/api/tasks', requireAuth, async (req, res) => {
 // Update task
 app.put('/api/tasks/:id', requireAuth, async (req, res) => {
     try {
-        const task = await dataService.getTaskById(req.params.id);
+        // Get old task to track status changes for celebration
+        const oldTask = await dataService.getTaskById(req.params.id);
+        const oldStatus = oldTask ? oldTask.status : null;
 
-        if (!task) {
-            return res.status(404).json({ error: 'Task not found' });
-        }
-
-        // Check if user is member of the project
-        if (!(await isProjectMember(req.userId, task.project_id))) {
-            return res.status(403).json({ error: 'Access denied' });
-        }
-
-        const { name, description, date, assigned_to_id, status, priority, project_id } = req.body;
-
-        // Validate name if provided
-        if (name !== undefined && !validateString(name, 1, 200)) {
-            return res.status(400).json({ error: 'Task name must be 1-200 characters' });
-        }
-
-        // Validate description if provided
-        if (description !== undefined && !validateString(description, 0, 2000)) {
-            return res.status(400).json({ error: 'Description must be less than 2000 characters' });
-        }
-
-        // Validate date if provided
-        if (date !== undefined) {
-            const dateObj = new Date(date);
-            if (isNaN(dateObj.getTime())) {
-                return res.status(400).json({ error: 'Invalid date format' });
-            }
-        }
-
-        // Validate status if provided (for checkbox completion)
-        const validStatuses = ['pending', 'in-progress', 'completed'];
-        if (status !== undefined && !validStatuses.includes(status)) {
-            return res.status(400).json({ error: 'Invalid status. Must be: pending, in-progress, or completed' });
-        }
-
-        // Validate priority if provided
-        const validPriorities = ['none', 'low', 'medium', 'high'];
-        if (priority !== undefined && !validPriorities.includes(priority)) {
-            return res.status(400).json({ error: 'Invalid priority. Must be: none, low, medium, or high' });
-        }
-
-        // If changing assignee, verify they're in the correct project (old or new if provided)
-        const targetProjectId = project_id && project_id !== task.project_id ? project_id : task.project_id;
-        if (assigned_to_id && assigned_to_id.trim() !== '' && !(await isProjectMember(assigned_to_id, targetProjectId))) {
-            return res.status(400).json({ error: 'Assigned user is not a member of the target project' });
-        }
-
-        // If changing project, verify requester can access target project
-        if (project_id && project_id !== task.project_id) {
-            if (!(await isProjectMember(req.userId, project_id))) {
-                return res.status(403).json({ error: 'Access denied to target project' });
-            }
-            // If assignee unchanged, verify current assignee can belong to new project
-            if ((!assigned_to_id || assigned_to_id.trim() === '') && task.assigned_to_id) {
-                if (!(await isProjectMember(task.assigned_to_id, project_id))) {
-                    return res.status(400).json({ error: 'Current assignee is not a member of the target project' });
-                }
-            }
-        }
-
-        const oldStatus = task.status;
-        const newStatus = status !== undefined ? status : task.status;
-
-        const updates = {
-            name: name ? sanitizeString(name) : task.name,
-            description: description !== undefined ? sanitizeString(description) : task.description,
-            date: date || task.date,
-            assigned_to_id: assigned_to_id !== undefined ? ((assigned_to_id && assigned_to_id.trim() !== '') ? assigned_to_id : null) : task.assigned_to_id,
-            status: newStatus,
-            priority: priority !== undefined ? priority : (task.priority || 'none'),
-            completed_at: (oldStatus !== 'completed' && newStatus === 'completed') ? new Date().toISOString() : task.completed_at,
-            archived: task.archived !== undefined ? task.archived : false
-        };
-        if (project_id && project_id !== task.project_id) {
-            updates.project_id = project_id;
-        }
-
-        const updatedTask = await dataService.updateTask(req.params.id, updates);
-
+        const updatedTask = await businessLogic.updateTask(dataService, req.userId, req.params.id, req.body);
         await logActivity(req.userId, 'task_updated', `Task "${updatedTask.name}" updated`, req.params.id, updatedTask.project_id);
 
         // Return status change info for celebration
@@ -1499,6 +1244,9 @@ app.put('/api/tasks/:id', requireAuth, async (req, res) => {
             _wasCompleted: oldStatus !== 'completed' && updatedTask.status === 'completed'
         });
     } catch (error) {
+        if (error instanceof ValidationError) return res.status(400).json({ error: error.message });
+        if (error instanceof PermissionError) return res.status(403).json({ error: error.message });
+        if (error instanceof NotFoundError) return res.status(404).json({ error: error.message });
         res.status(500).json({ error: 'Failed to update task' });
     }
 });
@@ -1506,23 +1254,16 @@ app.put('/api/tasks/:id', requireAuth, async (req, res) => {
 // Delete task
 app.delete('/api/tasks/:id', requireAuth, async (req, res) => {
     try {
+        // Get task before deletion for logging
         const task = await dataService.getTaskById(req.params.id);
 
-        if (!task) {
-            return res.status(404).json({ error: 'Task not found' });
-        }
-
-        // Check if user is member of the project
-        if (!(await isProjectMember(req.userId, task.project_id))) {
-            return res.status(403).json({ error: 'Access denied' });
-        }
-
-        await dataService.deleteTask(req.params.id);
-
+        await businessLogic.deleteTask(dataService, req.userId, req.params.id);
         await logActivity(req.userId, 'task_deleted', `Task "${task.name}" deleted`, req.params.id, task.project_id);
 
         res.json({ message: 'Task deleted successfully', task: task });
     } catch (error) {
+        if (error instanceof PermissionError) return res.status(403).json({ error: error.message });
+        if (error instanceof NotFoundError) return res.status(404).json({ error: error.message });
         res.status(500).json({ error: 'Failed to delete task' });
     }
 });

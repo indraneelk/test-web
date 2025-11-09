@@ -6,6 +6,8 @@ import { jwtVerify, SignJWT, createRemoteJWKSet } from 'jose';
 // Shared modules
 const { generateId, getCurrentTimestamp, sanitizeString, generateDiscordLinkCode, isHexColor } = require('./shared/helpers');
 const { validateString, validateEmail, validateUsername, validatePassword, validatePriority, validateStatus } = require('./shared/validators');
+const businessLogic = require('./shared/business-logic');
+const { ValidationError, AuthenticationError, PermissionError, NotFoundError, ConflictError } = require('./shared/errors');
 
 // ==================== HELPER FUNCTIONS ====================
 
@@ -207,6 +209,101 @@ async function isProjectMember(db, userId, projectId) {
 async function isProjectOwner(db, userId, projectId) {
     const project = await getProjectById(db, projectId);
     return project && project.owner_id === userId;
+}
+
+// Create dataService wrapper for business logic
+function createDataService(db) {
+    return {
+        getTaskById: async (taskId) => {
+            return await db.prepare('SELECT * FROM tasks WHERE id = ?').bind(taskId).first();
+        },
+        createTask: async (task) => {
+            await db.prepare(
+                'INSERT INTO tasks (id, name, description, date, project_id, assigned_to_id, created_by_id, status, priority, archived, completed_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+            ).bind(
+                task.id,
+                task.name,
+                task.description,
+                task.date,
+                task.project_id,
+                task.assigned_to_id,
+                task.created_by_id,
+                task.status,
+                task.priority,
+                task.archived ? 1 : 0,
+                task.completed_at,
+                task.created_at,
+                task.updated_at
+            ).run();
+        },
+        updateTask: async (taskId, updates) => {
+            const fields = [];
+            const values = [];
+            for (const [key, value] of Object.entries(updates)) {
+                if (key === 'archived') {
+                    fields.push(`${key} = ?`);
+                    values.push(value ? 1 : 0);
+                } else {
+                    fields.push(`${key} = ?`);
+                    values.push(value);
+                }
+            }
+            values.push(taskId);
+            await db.prepare(`UPDATE tasks SET ${fields.join(', ')} WHERE id = ?`).bind(...values).run();
+        },
+        deleteTask: async (taskId) => {
+            await db.prepare('DELETE FROM tasks WHERE id = ?').bind(taskId).run();
+        },
+        getProjectById,
+        createProject: async (project) => {
+            await db.prepare(
+                'INSERT INTO projects (id, name, description, color, owner_id, is_personal, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+            ).bind(
+                project.id,
+                project.name,
+                project.description,
+                project.color,
+                project.owner_id,
+                project.is_personal ? 1 : 0,
+                project.created_at,
+                project.updated_at
+            ).run();
+
+            // Add members if provided
+            if (Array.isArray(project.members) && project.members.length > 0) {
+                for (const memberId of project.members) {
+                    await db.prepare(
+                        'INSERT INTO project_members (project_id, user_id, added_at) VALUES (?, ?, ?)'
+                    ).bind(project.id, memberId, project.created_at).run();
+                }
+            }
+        },
+        updateProject: async (projectId, updates) => {
+            const fields = [];
+            const values = [];
+            for (const [key, value] of Object.entries(updates)) {
+                fields.push(`${key} = ?`);
+                values.push(value);
+            }
+            values.push(projectId);
+            await db.prepare(`UPDATE projects SET ${fields.join(', ')} WHERE id = ?`).bind(...values).run();
+        },
+        deleteProject: async (projectId) => {
+            // Delete associated tasks and members first
+            await db.prepare('DELETE FROM tasks WHERE project_id = ?').bind(projectId).run();
+            await db.prepare('DELETE FROM project_members WHERE project_id = ?').bind(projectId).run();
+            await db.prepare('DELETE FROM projects WHERE id = ?').bind(projectId).run();
+        },
+        getProjectMembers: async (projectId) => {
+            const { results } = await db.prepare('SELECT user_id FROM project_members WHERE project_id = ?')
+                .bind(projectId).all();
+            return results.map(r => ({ id: r.user_id, user_id: r.user_id }));
+        },
+        addProjectMember: async (projectId, userId) => {
+            await db.prepare('INSERT INTO project_members (project_id, user_id, added_at) VALUES (?, ?, ?)')
+                .bind(projectId, userId, getCurrentTimestamp()).run();
+        }
+    };
 }
 
 // ==================== AUTHENTICATION MIDDLEWARE ====================
@@ -783,29 +880,17 @@ async function handleCreateProject(request, env) {
 
     try {
         const body = await request.json();
-        const { name, description, color = '#f06a6a', is_personal = false } = body;
+        const dataService = createDataService(env.DB);
+        const project = await businessLogic.createProject(dataService, user.id, body);
 
-        if (!name || !name.trim()) {
-            return errorResponse('Project name is required', 400);
-        }
-        const cleanName = sanitizeString(name, 200);
-        const cleanDesc = sanitizeString(description || '', 2000);
-        const cleanColor = isHexColor(color) ? color : '#f06a6a';
-
-        const projectId = generateId('project');
-        const now = getCurrentTimestamp();
-
-        await env.DB.prepare(
-            'INSERT INTO projects (id, name, description, color, owner_id, is_personal, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-        ).bind(projectId, cleanName, cleanDesc, cleanColor, user.id, is_personal ? 1 : 0, now, now).run();
-
-        await logActivity(env.DB, user.id, 'project_created', `Project "${name}" created`, null, projectId);
-
-        const project = await getProjectById(env.DB, projectId);
+        await logActivity(env.DB, user.id, 'project_created', `Project "${project.name}" created`, null, project.id);
         await broadcastChange(env, 'project-created', { project });
 
         return jsonResponse(project, 201);
     } catch (error) {
+        if (error instanceof ValidationError) return errorResponse(error.message, 400);
+        if (error instanceof PermissionError) return errorResponse(error.message, 403);
+        if (error instanceof NotFoundError) return errorResponse(error.message, 404);
         console.error('Create project error:', error);
         return errorResponse('Failed to create project', 500);
     }
@@ -817,41 +902,20 @@ async function handleUpdateProject(request, env, projectId) {
         return errorResponse('Authentication required', 401);
     }
 
-    const isOwner = await isProjectOwner(env.DB, user.id, projectId);
-    if (!isOwner) {
-        return errorResponse('Only project owner can update project', 403);
-    }
-
     try {
         const body = await request.json();
-        const { name, description, color } = body;
+        const dataService = createDataService(env.DB);
+        const updatedProject = await businessLogic.updateProject(dataService, user.id, projectId, body);
 
-        const updates = [];
-        const values = [];
+        await logActivity(env.DB, user.id, 'project_updated', `Project "${updatedProject.name}" updated`, null, projectId);
+        await broadcastChange(env, 'project-updated', { project: updatedProject });
 
-        if (name) { updates.push('name = ?'); values.push(sanitizeString(name, 200)); }
-        if (description !== undefined) { updates.push('description = ?'); values.push(sanitizeString(description || '', 2000)); }
-        if (color) { if (!isHexColor(color)) return errorResponse('Invalid color', 400); updates.push('color = ?'); values.push(color.trim()); }
-
-        if (updates.length === 0) {
-            return errorResponse('No valid fields to update', 400);
-        }
-
-        updates.push('updated_at = ?');
-        values.push(getCurrentTimestamp());
-        values.push(projectId);
-
-        await env.DB.prepare(
-            `UPDATE projects SET ${updates.join(', ')} WHERE id = ?`
-        ).bind(...values).run();
-
-        await logActivity(env.DB, user.id, 'project_updated', `Project updated`, null, projectId);
-
-        const project = await getProjectById(env.DB, projectId);
-        await broadcastChange(env, 'project-updated', { project });
-        return jsonResponse(project);
+        return jsonResponse(updatedProject);
     } catch (error) {
-        console.error('Update project error');
+        if (error instanceof ValidationError) return errorResponse(error.message, 400);
+        if (error instanceof PermissionError) return errorResponse(error.message, 403);
+        if (error instanceof NotFoundError) return errorResponse(error.message, 404);
+        console.error('Update project error:', error);
         return errorResponse('Failed to update project', 500);
     }
 }
@@ -862,29 +926,21 @@ async function handleDeleteProject(request, env, projectId) {
         return errorResponse('Authentication required', 401);
     }
 
-    const isOwner = await isProjectOwner(env.DB, user.id, projectId);
-    if (!isOwner) {
-        return errorResponse('Only project owner can delete project', 403);
-    }
-
     try {
+        // Get project before deletion for logging
         const project = await getProjectById(env.DB, projectId);
-        if (project?.is_personal) {
-            return errorResponse('Cannot delete personal project', 403);
-        }
 
-        // Delete associated tasks
-        await env.DB.prepare('DELETE FROM tasks WHERE project_id = ?').bind(projectId).run();
-
-        // Delete project
-        await env.DB.prepare('DELETE FROM projects WHERE id = ?').bind(projectId).run();
+        const dataService = createDataService(env.DB);
+        await businessLogic.deleteProject(dataService, user.id, projectId);
 
         await logActivity(env.DB, user.id, 'project_deleted', `Project "${project.name}" deleted`, null, projectId);
         await broadcastChange(env, 'project-deleted', { projectId });
 
         return jsonResponse({ message: 'Project deleted successfully' });
     } catch (error) {
-        console.error('Delete project error');
+        if (error instanceof PermissionError) return errorResponse(error.message, 403);
+        if (error instanceof NotFoundError) return errorResponse(error.message, 404);
+        console.error('Delete project error:', error);
         return errorResponse('Failed to delete project', 500);
     }
 }
@@ -1013,56 +1069,18 @@ async function handleCreateTask(request, env) {
 
     try {
         const body = await request.json();
-        let { name, description, date, project_id, assigned_to_id, priority = 'none' } = body;
+        const dataService = createDataService(env.DB);
+        const task = await businessLogic.createTask(dataService, user.id, body);
 
-        if (!name || !date || !project_id || !assigned_to_id) {
-            return errorResponse('Missing required fields: name, date, project_id, assigned_to_id', 400);
-        }
-
-        name = sanitizeString(name, 200);
-        description = sanitizeString(description || '', 4000);
-        priority = String(priority || 'none').toLowerCase().trim();
-        if (!validatePriority(priority)) return errorResponse('Invalid priority', 400);
-
-        const isMember = await isProjectMember(env.DB, user.id, project_id);
-        if (!isMember) {
-            return errorResponse('Access denied to this project', 403);
-        }
-
-        // Assignee must be project owner or member
-        const assigneeAllowed = await isProjectMember(env.DB, assigned_to_id, project_id);
-        if (!assigneeAllowed) {
-            return errorResponse('Assignee must be a project member', 400);
-        }
-
-        const taskId = generateId('task');
-        const now = getCurrentTimestamp();
-
-        await env.DB.prepare(
-            'INSERT INTO tasks (id, name, description, date, project_id, assigned_to_id, created_by_id, status, priority, archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-        ).bind(
-            taskId,
-            name,
-            description,
-            date,
-            project_id,
-            assigned_to_id,
-            user.id,
-            'pending',
-            priority,
-            0,
-            now,
-            now
-        ).run();
-
-        await logActivity(env.DB, user.id, 'task_created', `Created task "${name}"`, taskId, project_id);
-        await broadcastChange(env, 'task-created', { taskId, projectId: project_id });
-
-        const task = await env.DB.prepare('SELECT * FROM tasks WHERE id = ?').bind(taskId).first();
+        await logActivity(env.DB, user.id, 'task_created', `Created task "${task.name}"`, task.id, task.project_id);
+        await broadcastChange(env, 'task-created', { taskId: task.id, projectId: task.project_id });
 
         return jsonResponse(task, 201);
     } catch (error) {
-        console.error('Create task error');
+        if (error instanceof ValidationError) return errorResponse(error.message, 400);
+        if (error instanceof PermissionError) return errorResponse(error.message, 403);
+        if (error instanceof NotFoundError) return errorResponse(error.message, 404);
+        console.error('Create task error:', error);
         return errorResponse('Failed to create task', 500);
     }
 }
@@ -1074,88 +1092,19 @@ async function handleUpdateTask(request, env, taskId) {
     }
 
     try {
-        const task = await env.DB.prepare('SELECT * FROM tasks WHERE id = ?').bind(taskId).first();
-        if (!task) {
-            return errorResponse('Task not found', 404);
-        }
-
-        const isMember = await isProjectMember(env.DB, user.id, task.project_id);
-        if (!isMember) {
-            return errorResponse('Access denied', 403);
-        }
-
         const body = await request.json();
-        const { name, description, date, status, priority, archived, assigned_to_id, project_id } = body;
+        const dataService = createDataService(env.DB);
+        const updatedTask = await businessLogic.updateTask(dataService, user.id, taskId, body);
 
-        const updates = [];
-        const values = [];
-
-        if (name !== undefined) { updates.push('name = ?'); values.push(sanitizeString(name, 200)); }
-        if (description !== undefined) { updates.push('description = ?'); values.push(sanitizeString(description || '', 4000)); }
-        if (date !== undefined) {
-            updates.push('date = ?');
-            values.push(date);
-        }
-        if (status !== undefined) {
-            if (!validateStatus(status)) return errorResponse('Invalid status', 400);
-            updates.push('status = ?');
-            values.push(status);
-
-            // Track completion
-            if (status === 'completed' && task.status !== 'completed') {
-                updates.push('completed_at = ?');
-                values.push(getCurrentTimestamp());
-            }
-        }
-        if (priority !== undefined) {
-            if (!validatePriority(priority)) return errorResponse('Invalid priority', 400);
-            updates.push('priority = ?');
-            values.push(priority);
-        }
-        if (archived !== undefined) {
-            updates.push('archived = ?');
-            values.push(archived ? 1 : 0);
-        }
-        if (assigned_to_id !== undefined) {
-            const targetProjectId = project_id && project_id !== task.project_id ? project_id : task.project_id;
-            const allowed = await isProjectMember(env.DB, assigned_to_id, targetProjectId);
-            if (!allowed) return errorResponse('Assignee must be a project member', 400);
-            updates.push('assigned_to_id = ?');
-            values.push(assigned_to_id);
-        }
-
-        if (project_id !== undefined && project_id !== task.project_id) {
-            // Verify user has access to the new project
-            const canAccess = await isProjectMember(env.DB, user.id, project_id);
-            if (!canAccess) return errorResponse('Access denied to target project', 403);
-            // Ensure current (or updated) assignee is a member of the new project
-            const finalAssignee = assigned_to_id !== undefined ? assigned_to_id : task.assigned_to_id;
-            if (finalAssignee) {
-                const assigneeAllowed = await isProjectMember(env.DB, finalAssignee, project_id);
-                if (!assigneeAllowed) return errorResponse('Assignee must be a member of target project', 400);
-            }
-            updates.push('project_id = ?');
-            values.push(project_id);
-        }
-
-        if (updates.length === 0) {
-            return errorResponse('No valid fields to update', 400);
-        }
-
-        updates.push('updated_at = ?');
-        values.push(getCurrentTimestamp());
-        values.push(taskId);
-
-        await env.DB.prepare(
-            `UPDATE tasks SET ${updates.join(', ')} WHERE id = ?`
-        ).bind(...values).run();
-
-        const updatedTask = await env.DB.prepare('SELECT * FROM tasks WHERE id = ?').bind(taskId).first();
-        await logActivity(env.DB, user.id, 'task_updated', `Updated task "${name || task.name}"`, taskId, updatedTask.project_id);
+        await logActivity(env.DB, user.id, 'task_updated', `Updated task "${updatedTask.name}"`, taskId, updatedTask.project_id);
         await broadcastChange(env, 'task-updated', { taskId, projectId: updatedTask.project_id });
+
         return jsonResponse(updatedTask);
     } catch (error) {
-        console.error('Update task error');
+        if (error instanceof ValidationError) return errorResponse(error.message, 400);
+        if (error instanceof PermissionError) return errorResponse(error.message, 403);
+        if (error instanceof NotFoundError) return errorResponse(error.message, 404);
+        console.error('Update task error:', error);
         return errorResponse('Failed to update task', 500);
     }
 }
@@ -1167,24 +1116,20 @@ async function handleDeleteTask(request, env, taskId) {
     }
 
     try {
+        // Get task before deletion for logging
         const task = await env.DB.prepare('SELECT * FROM tasks WHERE id = ?').bind(taskId).first();
-        if (!task) {
-            return errorResponse('Task not found', 404);
-        }
 
-        const isMember = await isProjectMember(env.DB, user.id, task.project_id);
-        if (!isMember) {
-            return errorResponse('Access denied', 403);
-        }
+        const dataService = createDataService(env.DB);
+        await businessLogic.deleteTask(dataService, user.id, taskId);
 
         await logActivity(env.DB, user.id, 'task_deleted', `Deleted task "${task.name}"`, taskId, task.project_id);
         await broadcastChange(env, 'task-deleted', { taskId, projectId: task.project_id });
 
-        await env.DB.prepare('DELETE FROM tasks WHERE id = ?').bind(taskId).run();
-
         return jsonResponse({ message: 'Task deleted successfully' });
     } catch (error) {
-        console.error('Delete task error');
+        if (error instanceof PermissionError) return errorResponse(error.message, 403);
+        if (error instanceof NotFoundError) return errorResponse(error.message, 404);
+        console.error('Delete task error:', error);
         return errorResponse('Failed to delete task', 500);
     }
 }
