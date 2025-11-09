@@ -1,0 +1,706 @@
+openapi: 3.0.3
+info:
+  title: Team Task Manager API
+  description: |
+    A production-ready task management API with multi-user support, project management,
+    and AI-powered insights via Claude integration.
+
+    ## Authentication
+    The API supports three authentication methods:
+    - **Session Cookies**: For web browser clients
+    - **Bearer Tokens**: For Supabase JWT authentication
+    - **Discord HMAC**: For Discord bot integration (requires HMAC signature)
+
+    ## Rate Limiting
+    - Login endpoints: 5 requests per 15 minutes
+    - All other endpoints: 100 requests per 15 minutes (when implemented globally)
+  version: 2.0.0
+  contact:
+    name: API Support
+    url: https://github.com/your-org/test-web
+  license:
+    name: MIT
+
+servers:
+  - url: http://localhost:5001
+    description: Local development server
+  - url: http://localhost:3000
+    description: Simple version server
+
+tags:
+  - name: Authentication
+    description: User authentication and session management
+  - name: Users
+    description: User management operations
+  - name: Projects
+    description: Project management and membership
+  - name: Tasks
+    description: Task CRUD operations
+  - name: Activity
+    description: Activity log and audit trail
+  - name: Claude AI
+    description: AI-powered task insights and assistance
+  - name: Discord
+    description: Discord account linking
+
+paths:
+  /api/auth/register:
+    post:
+      tags: [Authentication]
+      summary: Register a new user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password, name]
+              properties:
+                username:
+                  type: string
+                  minLength: 3
+                  maxLength: 50
+                  pattern: '^[a-zA-Z0-9_-]+$'
+                  example: john_doe
+                password:
+                  type: string
+                  minLength: 6
+                  maxLength: 100
+                  description: Must contain at least 3 of: uppercase, lowercase, numbers, special chars
+                  example: SecurePass123!
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 100
+                  example: John Doe
+                email:
+                  type: string
+                  format: email
+                  maxLength: 255
+                  example: john@example.com
+      responses:
+        '201':
+          description: User registered successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '409':
+          $ref: '#/components/responses/ConflictError'
+
+  /api/auth/login:
+    post:
+      tags: [Authentication]
+      summary: Login with username and password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username:
+                  type: string
+                  example: admin
+                password:
+                  type: string
+                  example: admin123
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/AuthenticationError'
+        '429':
+          description: Too many login attempts
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/auth/logout:
+    post:
+      tags: [Authentication]
+      summary: Logout current user
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: Logout successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Logged out successfully
+
+  /api/auth/me:
+    get:
+      tags: [Authentication]
+      summary: Get current user
+      security:
+        - sessionAuth: []
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Current user details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/AuthenticationError'
+
+  /api/projects:
+    get:
+      tags: [Projects]
+      summary: List all projects accessible to current user
+      security:
+        - sessionAuth: []
+        - bearerAuth: []
+        - discordHMAC: []
+      responses:
+        '200':
+          description: List of projects
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Project'
+        '401':
+          $ref: '#/components/responses/AuthenticationError'
+
+    post:
+      tags: [Projects]
+      summary: Create a new project
+      security:
+        - sessionAuth: []
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 100
+                  example: Website Redesign
+                description:
+                  type: string
+                  maxLength: 1000
+                  example: Complete overhaul of company website
+                color:
+                  type: string
+                  pattern: '^#[0-9A-Fa-f]{6}$'
+                  example: '#667eea'
+                members:
+                  type: array
+                  items:
+                    type: string
+                  example: ['user_123', 'user_456']
+      responses:
+        '201':
+          description: Project created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/AuthenticationError'
+
+  /api/projects/{id}:
+    get:
+      tags: [Projects]
+      summary: Get project by ID
+      security:
+        - sessionAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          example: proj_1234567890_abc123
+      responses:
+        '200':
+          description: Project details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+
+    put:
+      tags: [Projects]
+      summary: Update project (owner only)
+      security:
+        - sessionAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 100
+                description:
+                  type: string
+                  maxLength: 1000
+                color:
+                  type: string
+                  pattern: '^#[0-9A-Fa-f]{6}$'
+      responses:
+        '200':
+          description: Project updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+        '403':
+          $ref: '#/components/responses/PermissionError'
+
+    delete:
+      tags: [Projects]
+      summary: Delete project (owner only)
+      security:
+        - sessionAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Project deleted successfully
+        '403':
+          $ref: '#/components/responses/PermissionError'
+
+  /api/tasks:
+    get:
+      tags: [Tasks]
+      summary: List all tasks in user's projects
+      security:
+        - sessionAuth: []
+        - bearerAuth: []
+        - discordHMAC: []
+      responses:
+        '200':
+          description: List of tasks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Task'
+
+    post:
+      tags: [Tasks]
+      summary: Create a new task
+      security:
+        - sessionAuth: []
+        - bearerAuth: []
+        - discordHMAC: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, date, project_id]
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 200
+                  example: Design homepage mockup
+                description:
+                  type: string
+                  maxLength: 2000
+                  example: Create modern, responsive design for homepage
+                date:
+                  type: string
+                  format: date
+                  example: '2025-12-31'
+                project_id:
+                  type: string
+                  example: proj_1234567890_abc123
+                assigned_to_id:
+                  type: string
+                  example: user_1234567890_xyz789
+                priority:
+                  type: string
+                  enum: [none, low, medium, high]
+                  default: none
+      responses:
+        '201':
+          description: Task created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/tasks/{id}:
+    get:
+      tags: [Tasks]
+      summary: Get task by ID
+      security:
+        - sessionAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Task details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+
+    put:
+      tags: [Tasks]
+      summary: Update task
+      security:
+        - sessionAuth: []
+        - bearerAuth: []
+        - discordHMAC: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 200
+                description:
+                  type: string
+                  maxLength: 2000
+                date:
+                  type: string
+                  format: date
+                status:
+                  type: string
+                  enum: [pending, in-progress, completed]
+                priority:
+                  type: string
+                  enum: [none, low, medium, high]
+                assigned_to_id:
+                  type: string
+      responses:
+        '200':
+          description: Task updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+        '403':
+          $ref: '#/components/responses/PermissionError'
+
+    delete:
+      tags: [Tasks]
+      summary: Delete task
+      security:
+        - sessionAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Task deleted successfully
+        '403':
+          $ref: '#/components/responses/PermissionError'
+
+  /api/claude/ask:
+    post:
+      tags: [Claude AI]
+      summary: Ask Claude AI a question about tasks
+      security:
+        - sessionAuth: []
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [question]
+              properties:
+                question:
+                  type: string
+                  example: What are my highest priority tasks this week?
+                context:
+                  type: object
+                  description: Additional context (tasks, projects, etc.)
+      responses:
+        '200':
+          description: Claude's response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  answer:
+                    type: string
+
+  /api/discord/link:
+    post:
+      tags: [Discord]
+      summary: Generate Discord linking code
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: Linking code generated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    example: ABC12345
+                  expires_at:
+                    type: string
+                    format: date-time
+
+components:
+  securitySchemes:
+    sessionAuth:
+      type: apiKey
+      in: cookie
+      name: connect.sid
+      description: Express session cookie
+
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Supabase JWT access token
+
+    discordHMAC:
+      type: apiKey
+      in: header
+      name: X-Discord-Signature
+      description: |
+        Discord bot HMAC authentication. Requires three headers:
+        - X-Discord-User-ID: Discord user ID
+        - X-Discord-Timestamp: Current timestamp in milliseconds
+        - X-Discord-Signature: HMAC-SHA256(userId|timestamp, DISCORD_BOT_SECRET)
+
+  schemas:
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          example: user_1234567890_abc123
+        username:
+          type: string
+          example: john_doe
+        name:
+          type: string
+          example: John Doe
+        email:
+          type: string
+          format: email
+          example: john@example.com
+        is_admin:
+          type: boolean
+          example: false
+        discord_id:
+          type: string
+          nullable: true
+          example: '123456789012345678'
+        created_at:
+          type: string
+          format: date-time
+
+    Project:
+      type: object
+      properties:
+        id:
+          type: string
+          example: proj_1234567890_abc123
+        name:
+          type: string
+          example: Website Redesign
+        description:
+          type: string
+          example: Complete overhaul of company website
+        color:
+          type: string
+          example: '#667eea'
+        owner_id:
+          type: string
+          example: user_1234567890_abc123
+        is_personal:
+          type: boolean
+          example: false
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        members:
+          type: array
+          items:
+            type: string
+          example: ['user_123', 'user_456']
+
+    Task:
+      type: object
+      properties:
+        id:
+          type: string
+          example: task_1234567890_abc123
+        name:
+          type: string
+          example: Design homepage mockup
+        description:
+          type: string
+          example: Create modern, responsive design
+        date:
+          type: string
+          format: date
+          example: '2025-12-31'
+        project_id:
+          type: string
+          example: proj_1234567890_abc123
+        assigned_to_id:
+          type: string
+          nullable: true
+          example: user_1234567890_xyz789
+        created_by_id:
+          type: string
+          example: user_1234567890_abc123
+        status:
+          type: string
+          enum: [pending, in-progress, completed]
+          example: pending
+        priority:
+          type: string
+          enum: [none, low, medium, high]
+          example: medium
+        archived:
+          type: boolean
+          example: false
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          example: Validation failed
+        type:
+          type: string
+          example: ValidationError
+
+  responses:
+    ValidationError:
+      description: Validation error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: Task name must be 1-200 characters
+            type: ValidationError
+
+    AuthenticationError:
+      description: Authentication required
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: Authentication required
+            type: AuthenticationError
+
+    PermissionError:
+      description: Access denied
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: Access denied
+            type: PermissionError
+
+    NotFoundError:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: Task not found
+            type: NotFoundError
+
+    ConflictError:
+      description: Resource conflict
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: Username already exists
+            type: ConflictError

@@ -8,6 +8,7 @@
  */
 
 const crypto = require('crypto');
+const { SECURITY, ERRORS } = require('./constants');
 
 /**
  * Verify Discord bot request authenticity using HMAC signature
@@ -24,7 +25,7 @@ function verifyDiscordRequest(headers, secret) {
 
         // Validate presence of required headers
         if (!discordUserId || !timestamp || !receivedSig) {
-            console.log('Discord auth failed: Missing required headers');
+            console.log(ERRORS.DISCORD_MISSING_HEADERS);
             return null;
         }
 
@@ -42,17 +43,16 @@ function verifyDiscordRequest(headers, secret) {
         }
 
         // Check timestamp freshness (prevent replay attacks)
-        // Allow 60 seconds in the past, 5 seconds in the future (clock skew)
         const now = Date.now();
         const age = now - timestampNum;
 
-        if (age > 60000) {
-            console.log(`Discord auth failed: Request too old (${age}ms)`);
+        if (age > SECURITY.DISCORD_HMAC_TIMESTAMP_WINDOW) {
+            console.log(`${ERRORS.DISCORD_REQUEST_TOO_OLD} (${age}ms)`);
             return null;
         }
 
-        if (age < -5000) {
-            console.log(`Discord auth failed: Timestamp too far in future (${age}ms)`);
+        if (age < -SECURITY.DISCORD_HMAC_FUTURE_TOLERANCE) {
+            console.log(`${ERRORS.DISCORD_REQUEST_FUTURE} (${age}ms)`);
             return null;
         }
 
@@ -65,7 +65,7 @@ function verifyDiscordRequest(headers, secret) {
             .digest('hex');
 
         // Validate signature length (64 hex chars = 32 bytes)
-        if (receivedSig.length !== 64) {
+        if (receivedSig.length !== SECURITY.DISCORD_SIGNATURE_LENGTH) {
             console.log('Discord auth failed: Invalid signature length');
             return null;
         }

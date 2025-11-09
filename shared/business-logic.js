@@ -11,6 +11,7 @@
 const { generateId, getCurrentTimestamp, sanitizeString } = require('./helpers');
 const { validateString, validatePriority, validateStatus } = require('./validators');
 const { ValidationError, PermissionError, NotFoundError } = require('./errors');
+const { VALIDATION, UI } = require('./constants');
 
 // ==================== TASK OPERATIONS ====================
 
@@ -32,13 +33,13 @@ async function createTask(dataService, userId, taskData) {
     }
 
     // Validate task name
-    if (!validateString(name, 1, 200)) {
-        throw new ValidationError('Task name must be 1-200 characters');
+    if (!validateString(name, VALIDATION.TASK_NAME_MIN, VALIDATION.TASK_NAME_MAX)) {
+        throw new ValidationError(`Task name must be ${VALIDATION.TASK_NAME_MIN}-${VALIDATION.TASK_NAME_MAX} characters`);
     }
 
     // Validate description (optional)
-    if (description && !validateString(description, 0, 2000)) {
-        throw new ValidationError('Description must be less than 2000 characters');
+    if (description && !validateString(description, 0, VALIDATION.TASK_DESCRIPTION_MAX)) {
+        throw new ValidationError(`Description must be less than ${VALIDATION.TASK_DESCRIPTION_MAX} characters`);
     }
 
     // Validate date format
@@ -73,8 +74,8 @@ async function createTask(dataService, userId, taskData) {
 
     const newTask = {
         id: generateId('task'),
-        name: sanitizeString(name, 200),
-        description: sanitizeString(description || '', 2000),
+        name: sanitizeString(name, VALIDATION.TASK_NAME_MAX),
+        description: sanitizeString(description || '', VALIDATION.TASK_DESCRIPTION_MAX),
         date: date,
         project_id: project_id,
         assigned_to_id: (assigned_to_id && assigned_to_id.trim() !== '') ? assigned_to_id : null,
@@ -118,13 +119,13 @@ async function updateTask(dataService, userId, taskId, updates) {
     const { name, description, date, assigned_to_id, status, priority, project_id } = updates;
 
     // Validate name if provided
-    if (name !== undefined && !validateString(name, 1, 200)) {
-        throw new ValidationError('Task name must be 1-200 characters');
+    if (name !== undefined && !validateString(name, VALIDATION.TASK_NAME_MIN, VALIDATION.TASK_NAME_MAX)) {
+        throw new ValidationError(`Task name must be ${VALIDATION.TASK_NAME_MIN}-${VALIDATION.TASK_NAME_MAX} characters`);
     }
 
     // Validate description if provided
-    if (description !== undefined && !validateString(description, 0, 2000)) {
-        throw new ValidationError('Description must be less than 2000 characters');
+    if (description !== undefined && !validateString(description, 0, VALIDATION.TASK_DESCRIPTION_MAX)) {
+        throw new ValidationError(`Description must be less than ${VALIDATION.TASK_DESCRIPTION_MAX} characters`);
     }
 
     // Validate date if provided
@@ -164,8 +165,8 @@ async function updateTask(dataService, userId, taskId, updates) {
 
     // Build update object
     const updateData = { updated_at: getCurrentTimestamp() };
-    if (name !== undefined) updateData.name = sanitizeString(name, 200);
-    if (description !== undefined) updateData.description = sanitizeString(description, 2000);
+    if (name !== undefined) updateData.name = sanitizeString(name, VALIDATION.TASK_NAME_MAX);
+    if (description !== undefined) updateData.description = sanitizeString(description, VALIDATION.TASK_DESCRIPTION_MAX);
     if (date !== undefined) updateData.date = date;
     if (assigned_to_id !== undefined) updateData.assigned_to_id = assigned_to_id.trim() !== '' ? assigned_to_id : null;
     if (status !== undefined) updateData.status = status;
@@ -222,20 +223,20 @@ async function createProject(dataService, userId, projectData) {
     }
 
     // Validate project name
-    if (!validateString(name, 1, 100)) {
-        throw new ValidationError('Project name must be 1-100 characters');
+    if (!validateString(name, VALIDATION.PROJECT_NAME_MIN, VALIDATION.PROJECT_NAME_MAX)) {
+        throw new ValidationError(`Project name must be ${VALIDATION.PROJECT_NAME_MIN}-${VALIDATION.PROJECT_NAME_MAX} characters`);
     }
 
     // Validate description (optional)
-    if (description && !validateString(description, 0, 1000)) {
-        throw new ValidationError('Description must be less than 1000 characters');
+    if (description && !validateString(description, 0, VALIDATION.PROJECT_DESCRIPTION_MAX)) {
+        throw new ValidationError(`Description must be less than ${VALIDATION.PROJECT_DESCRIPTION_MAX} characters`);
     }
 
     // Validate color
     let projectColor = color || pickRandomProjectColor();
     if (color) {
         const hex = String(color).toLowerCase().trim();
-        const isValidHex = /^#([0-9A-Fa-f]{6})$/.test(hex);
+        const isValidHex = VALIDATION.HEX_COLOR_REGEX.test(hex);
         if (!isValidHex) {
             throw new ValidationError('Invalid color. Use 6-digit hex like #f06a6a');
         }
@@ -244,8 +245,8 @@ async function createProject(dataService, userId, projectData) {
 
     const newProject = {
         id: generateId('proj'),
-        name: sanitizeString(name, 100),
-        description: sanitizeString(description || '', 1000),
+        name: sanitizeString(name, VALIDATION.PROJECT_NAME_MAX),
+        description: sanitizeString(description || '', VALIDATION.PROJECT_DESCRIPTION_MAX),
         color: projectColor,
         owner_id: userId,
         is_personal: false,
@@ -296,19 +297,19 @@ async function updateProject(dataService, userId, projectId, updates) {
     const { name, description, color } = updates;
 
     // Validate name if provided
-    if (name !== undefined && !validateString(name, 1, 100)) {
-        throw new ValidationError('Project name must be 1-100 characters');
+    if (name !== undefined && !validateString(name, VALIDATION.PROJECT_NAME_MIN, VALIDATION.PROJECT_NAME_MAX)) {
+        throw new ValidationError(`Project name must be ${VALIDATION.PROJECT_NAME_MIN}-${VALIDATION.PROJECT_NAME_MAX} characters`);
     }
 
     // Validate description if provided
-    if (description !== undefined && description !== null && !validateString(description, 0, 1000)) {
-        throw new ValidationError('Description must be less than 1000 characters');
+    if (description !== undefined && description !== null && !validateString(description, 0, VALIDATION.PROJECT_DESCRIPTION_MAX)) {
+        throw new ValidationError(`Description must be less than ${VALIDATION.PROJECT_DESCRIPTION_MAX} characters`);
     }
 
     // Validate color if provided
     if (color !== undefined) {
         const hex = String(color).toLowerCase().trim();
-        const isValidHex = /^#([0-9A-Fa-f]{6})$/.test(hex);
+        const isValidHex = VALIDATION.HEX_COLOR_REGEX.test(hex);
         if (!isValidHex) {
             throw new ValidationError('Invalid color. Use 6-digit hex like #f06a6a');
         }
@@ -316,8 +317,8 @@ async function updateProject(dataService, userId, projectId, updates) {
 
     // Build update object
     const updateData = { updated_at: getCurrentTimestamp() };
-    if (name !== undefined) updateData.name = sanitizeString(name, 100);
-    if (description !== undefined) updateData.description = sanitizeString(description, 1000);
+    if (name !== undefined) updateData.name = sanitizeString(name, VALIDATION.PROJECT_NAME_MAX);
+    if (description !== undefined) updateData.description = sanitizeString(description, VALIDATION.PROJECT_DESCRIPTION_MAX);
     if (color !== undefined) updateData.color = color.toLowerCase().trim();
 
     await dataService.updateProject(projectId, updateData);
@@ -383,8 +384,7 @@ async function isProjectMemberHelper(dataService, userId, projectId) {
  * @returns {string} Hex color code
  */
 function pickRandomProjectColor() {
-    const colors = ['#f06a6a', '#ffc82c', '#13ce66', '#667eea', '#764ba2', '#f093fb', '#4facfe', '#43e97b'];
-    return colors[Math.floor(Math.random() * colors.length)];
+    return UI.PROJECT_COLORS[Math.floor(Math.random() * UI.PROJECT_COLORS.length)];
 }
 
 module.exports = {
