@@ -694,7 +694,7 @@
           </div>
 
           <button type="button" class="btn btn-primary btn-full" id="linkDiscordBtn" onclick="linkDiscord()">
-            Generate Link Code
+            Generate Link
           </button>
         </div>
       </div>
@@ -776,7 +776,7 @@
     // Load Discord Status
     async function loadDiscordStatus() {
       try {
-        const resp = await authFetch('/api/auth/user/discord-handle');
+        const resp = await authFetch('/api/user/discord-handle');
         if (resp.ok) {
           const data = await resp.json();
           if (data.discord_handle) {
@@ -870,7 +870,7 @@
       linkBtn.textContent = 'Generating code...';
 
       try {
-        const resp = await authFetch('/api/auth/discord/generate-link-code', {
+        const resp = await authFetch('/api/discord/generate-link-code', {
           method: 'POST'
         });
         const data = await resp.json();
@@ -889,7 +889,7 @@
         const expiryMinutes = Math.floor(expiresIn / 60000);
         document.getElementById('discordExpiry').textContent = `Expires in ${expiryMinutes} minutes`;
 
-        linkBtn.textContent = 'Generate New Code';
+        linkBtn.textContent = 'Generate New Link';
         linkBtn.disabled = false;
 
         // Poll for link status
@@ -897,7 +897,7 @@
 
       } catch (error) {
         showError('discord', error.message);
-        linkBtn.textContent = 'Generate Link Code';
+        linkBtn.textContent = 'Generate Link';
         linkBtn.disabled = false;
       }
     }
@@ -909,7 +909,7 @@
 
       pollInterval = setInterval(async () => {
         try {
-          const resp = await authFetch('/api/auth/user/discord-handle');
+          const resp = await authFetch('/api/user/discord-handle');
           if (resp.ok) {
             const data = await resp.json();
             if (data.discord_handle) {
