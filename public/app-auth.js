@@ -1335,6 +1335,7 @@ function openProjectSettings(projectId) {
 
     document.getElementById('settingsProjectName').textContent = project.name;
     document.getElementById('settingsProjectOwner').textContent = owner ? (owner.username || owner.name) : 'Unknown';
+    document.getElementById('settingsProjectDescription').textContent = project.description || 'No description provided';
     // Show project color in Project Information
     const colorRowId = 'settingsProjectColor';
     let colorRowEl = document.getElementById(colorRowId);
@@ -1366,11 +1367,16 @@ function openProjectSettings(projectId) {
     const membersSectionEl = document.getElementById('settingsTeamMembersSection');
     const dangerZoneEl = document.getElementById('settingsDangerZone');
     const addMemberSection = document.querySelector('#projectSettingsModal .add-member-section');
+    const leaveProjectSection = document.getElementById('settingsLeaveProjectSection');
 
     if (editBtn) editBtn.style.display = isOwner && !project.is_personal ? '' : 'none';
     if (membersSectionEl) membersSectionEl.style.display = project.is_personal ? 'none' : '';
     if (dangerZoneEl) dangerZoneEl.style.display = isOwner && !project.is_personal ? '' : 'none';
     if (addMemberSection) addMemberSection.style.display = isOwner && !project.is_personal ? '' : 'none';
+
+    // Show "Leave Project" section for non-owners who are members (not personal projects)
+    const isMember = !project.is_personal && project.members && project.members.includes(currentUser.id);
+    if (leaveProjectSection) leaveProjectSection.style.display = (!isOwner && isMember) ? '' : 'none';
 
     // Render members (for non-personal)
     if (!project.is_personal) {
@@ -1501,6 +1507,52 @@ async function removeMember(userId) {
         // Re-enable button on error
         removeBtn.disabled = false;
         removeBtn.textContent = originalText;
+    }
+}
+
+// Leave project (for non-owners)
+async function leaveProject() {
+    if (!currentProjectForSettings || !currentUser) return;
+
+    if (!confirm('Are you sure you want to leave this project? You will lose access to all its tasks.')) {
+        return;
+    }
+
+    const leaveBtn = event.target;
+    const originalText = leaveBtn.textContent;
+
+    // Disable button
+    leaveBtn.disabled = true;
+    leaveBtn.textContent = 'Leaving...';
+
+    try {
+        const response = await authFetch(`${API_PROJECTS}/${currentProjectForSettings}/members/${currentUser.id}`, {
+            method: 'DELETE',
+            credentials: 'include'
+        });
+
+        if (!response.ok) throw new Error('Failed to leave project');
+
+        await loadProjects();
+
+        // Close modal and reset view
+        closeProjectSettingsModal();
+
+        // Switch to first available project or clear view
+        if (projects.length > 0) {
+            currentProjectId = projects[0].id;
+            loadTasks();
+        } else {
+            currentProjectId = null;
+            renderTasks();
+        }
+
+        showSuccess('Left project successfully');
+    } catch (error) {
+        showError('Failed to leave project');
+        // Re-enable button on error
+        leaveBtn.disabled = false;
+        leaveBtn.textContent = originalText;
     }
 }
 
@@ -1657,18 +1709,7 @@ function editProject(projectId) {
     document.getElementById('projectSubmitBtnText').textContent = 'Update Project';
 
     // No delete button in edit modal per new UI
-
-    // Show edit mode for members (current members + add dropdown)
-    document.getElementById('projectMembersCreateMode').style.display = 'none';
-    document.getElementById('projectMembersEditMode').style.display = 'block';
-    renderProjectMembersList(project);
-
-    // Populate add member dropdown
-    const memberIds = [project.owner_id, ...(project.members || [])];
-    const availableUsers = users.filter(u => !memberIds.includes(u.id));
-    const select = document.getElementById('projectNewMemberSelect');
-    select.innerHTML = '<option value="">Add team member...</option>' +
-        availableUsers.map(u => `<option value="${u.id}">${escapeHtml(u.name)}</option>`).join('');
+    // Member management removed from edit modal - now only in project settings
 
     document.getElementById('projectModal').classList.add('active');
 }
@@ -1682,44 +1723,11 @@ function editProject(projectId) {
 // deleteProjectFromDetails deprecated
 
 // Legacy leaveProjectFromDetails removed with Project Details UI.
+// Old leaveProject(projectId) function removed - now using the one in Project Settings section
 
-// Leave project
-async function leaveProject(projectId) {
-    try {
-        const project = projects.find(p => p.id === projectId);
-        if (!project) {
-            showError('Project not found');
-            return;
-        }
-
-        if (project.owner_id === currentUser.id) {
-            showError('Project owners cannot leave their own projects. Delete the project instead.');
-            return;
-        }
-
-        const response = await authFetch(`/api/projects/${projectId}/members/${currentUser.id}`, {
-            method: 'DELETE'
-        });
-
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.error || 'Failed to leave project');
-        }
-
-        // Close Project Settings if open
-        if (typeof closeProjectSettingsModal === 'function') {
-            try { closeProjectSettingsModal(); } catch(_) {}
-        }
-
-        showSuccess('Successfully left the project');
-        await loadProjects();
-        await loadTasks();
-        switchView('all');
-    } catch (error) {
-        showError(error.message);
-    }
-}
-
+// These functions are deprecated - member management moved to project settings modal only
+// Keeping commented for reference
+/*
 // Render project members list in edit modal
 function renderProjectMembersList(project) {
     const membersList = document.getElementById('projectMembersList');
@@ -1825,6 +1833,7 @@ async function removeProjectMember(userId) {
         removeBtn.textContent = originalText;
     }
 }
+*/
 
 // Delete project from edit modal removed per new UI
 
@@ -2263,8 +2272,8 @@ window.openUserSettings = openUserSettings;
 window.switchView = switchView;
 window.editTaskFromDetails = editTaskFromDetails;
 window.deleteTaskFromDetails = deleteTaskFromDetails;
-window.addProjectMember = addProjectMember;
-window.deleteProjectFromEdit = deleteProjectFromEdit;
+// window.addProjectMember - removed (deprecated function)
+// window.deleteProjectFromEdit - removed (deprecated function)
 
 const originalOpenProjectModal = openProjectModal;
 window.openProjectModal = function() {

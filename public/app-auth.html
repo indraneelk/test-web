@@ -319,17 +319,6 @@
                     </div>
                 </div>
 
-                <div id="projectMembersSection" class="form-group" style="display: none;">
-                    <label>Team Members</label>
-                    <div id="projectMembersList" class="members-list"></div>
-                    <div class="add-member-section">
-                        <select id="projectNewMemberSelect" class="form-select">
-                            <option value="">Add team member...</option>
-                        </select>
-                        <button type="button" class="btn btn-primary" onclick="addProjectMember()">Add</button>
-                    </div>
-                </div>
-
                 <div class="modal-footer">
                     <button type="submit" class="btn btn-primary">
                         <span id="projectSubmitBtnText">Create Project</span>
@@ -370,6 +359,10 @@
                         <span class="info-label">Color:</span>
                         <span class="info-value" id="settingsProjectColor"></span>
                     </div>
+                    <div class="info-row">
+                        <span class="info-label">Description:</span>
+                        <span class="info-value" id="settingsProjectDescription"></span>
+                    </div>
                 </div>
 
                 <div id="settingsTeamMembersSection" class="settings-section">
@@ -378,9 +371,15 @@
                         <select id="newMemberSelect" class="form-select">
                             <option value="">Add team member...</option>
                         </select>
-                        <button class="btn btn-primary" onclick="addMember()">Add Member</button>
+                        <button class="btn btn-primary" onclick="addMember()" style="background: #4facfe; border-color: #4facfe;">Add Member</button>
                     </div>
                     <div id="membersList" class="members-list"></div>
+                </div>
+
+                <div id="settingsLeaveProjectSection" class="settings-section" style="display: none;">
+                    <h3>Leave Project</h3>
+                    <p>You are a member of this project. You can leave at any time.</p>
+                    <button class="btn btn-danger" onclick="leaveProject()">Leave Project</button>
                 </div>
 
                 <div id="settingsDangerZone" class="settings-section danger-zone">
