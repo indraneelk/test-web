@@ -684,6 +684,12 @@ body {
         flex-shrink: 0; /* Prevent remove button from shrinking */
     }
 
+    /* Smaller member avatar on mobile */
+    .member-avatar {
+        width: 20px;
+        height: 20px;
+    }
+
     /* Mobile-specific styles for member buttons (already handled in main styles) */
 
     /* Mobile Tab Optimizations */
