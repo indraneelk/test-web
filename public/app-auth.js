@@ -1768,6 +1768,10 @@ async function deleteCurrentProject() {
 
         if (!response.ok) throw new Error('Failed to delete project');
 
+        // Reset button state before closing modal
+        deleteBtn.disabled = false;
+        deleteBtn.textContent = originalText;
+
         closeProjectSettingsModal();
         await Promise.all([loadProjects(), loadTasks()]);
 
