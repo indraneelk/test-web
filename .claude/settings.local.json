@@ -27,7 +27,11 @@
       "Bash(wrangler pages deploy:*)",
       "Bash(wrangler pages project create:*)",
       "Bash(wrangler pages project delete:*)",
-      "Bash(git checkout:*)"
+      "Bash(git checkout:*)",
+      "Bash(git merge:*)",
+      "Bash(git push:*)",
+      "Bash(cat:*)",
+      "mcp__cloudflare-bindings__d1_databases_list"
     ],
     "deny": [],
     "ask": []

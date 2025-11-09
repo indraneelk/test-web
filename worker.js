@@ -1309,6 +1309,120 @@ async function handleResendInvitation(request, env, email) {
     }
 }
 
+// Get all users (admin only)
+async function handleGetAllUsers(request, env) {
+    const user = await requireSuperAdmin(request, env);
+    if (!user) {
+        return errorResponse('Super admin access required', 403);
+    }
+
+    try {
+        const { results } = await env.DB.prepare(`
+            SELECT
+                id, username, name, email, initials, color, is_admin,
+                created_at, updated_at,
+                (SELECT COUNT(*) FROM tasks WHERE assigned_to_id = users.id) as task_count
+            FROM users
+            ORDER BY created_at DESC
+        `).all();
+
+        return jsonResponse({ users: results || [] });
+    } catch (error) {
+        console.error('Get all users error:', error);
+        return errorResponse('Failed to fetch users', 500);
+    }
+}
+
+// Delete user (admin only)
+async function handleDeleteUser(request, env, userId) {
+    const adminUser = await requireSuperAdmin(request, env);
+    if (!adminUser) {
+        return errorResponse('Super admin access required', 403);
+    }
+
+    try {
+        // Validate userId
+        if (!userId || typeof userId !== 'string') {
+            return errorResponse('Valid user ID is required', 400);
+        }
+
+        // Check if user exists
+        const userToDelete = await env.DB.prepare(
+            'SELECT id, username, email FROM users WHERE id = ?'
+        ).bind(userId).first();
+
+        if (!userToDelete) {
+            return errorResponse('User not found', 404);
+        }
+
+        // Prevent self-deletion
+        if (userToDelete.id === adminUser.id) {
+            return errorResponse('Cannot delete your own account', 400);
+        }
+
+        // Start transaction-like operations
+        // 1. Unassign all tasks assigned to this user
+        await env.DB.prepare(
+            'UPDATE tasks SET assigned_to_id = NULL WHERE assigned_to_id = ?'
+        ).bind(userId).run();
+
+        // 2. Get personal project IDs
+        const { results: personalProjects } = await env.DB.prepare(
+            'SELECT id FROM projects WHERE owner_id = ? AND is_personal = 1'
+        ).bind(userId).all();
+
+        // 3. Delete tasks in personal projects
+        if (personalProjects && personalProjects.length > 0) {
+            for (const project of personalProjects) {
+                await env.DB.prepare(
+                    'DELETE FROM tasks WHERE project_id = ?'
+                ).bind(project.id).run();
+            }
+
+            // 4. Delete personal projects
+            await env.DB.prepare(
+                'DELETE FROM projects WHERE owner_id = ? AND is_personal = 1'
+            ).bind(userId).run();
+        }
+
+        // 5. Delete user's Discord link if exists
+        await env.DB.prepare(
+            'DELETE FROM discord_links WHERE user_id = ?'
+        ).bind(userId).run();
+
+        // 6. Delete any invitations associated with this user
+        await env.DB.prepare(
+            'UPDATE invitations SET joined_user_id = NULL WHERE joined_user_id = ?'
+        ).bind(userId).run();
+
+        // 7. Finally, delete the user
+        await env.DB.prepare(
+            'DELETE FROM users WHERE id = ?'
+        ).bind(userId).run();
+
+        // Log the activity
+        await logActivity(
+            env.DB,
+            adminUser.id,
+            'user_deleted',
+            `Deleted user: ${userToDelete.username} (${userToDelete.email})`
+        );
+
+        return jsonResponse({
+            message: 'User deleted successfully',
+            deletedUser: {
+                id: userToDelete.id,
+                username: userToDelete.username,
+                email: userToDelete.email
+            }
+        });
+
+    } catch (error) {
+        console.error('Delete user error:', error);
+        return errorResponse('Failed to delete user', 500);
+    }
+}
+
 // ==================== MAIN REQUEST HANDLER ====================
 
 export default {
@@ -1437,6 +1551,15 @@ export default {
             if (path.match(/^\/api\/admin\/invitations\/[^/]+\/resend$/) && method === 'POST') {
                 const email = path.split('/')[4];
                 return await handleResendInvitation(request, env, email);
+            }
+
+            // Admin user management routes
+            if (path === '/api/admin/users' && method === 'GET') {
+                return await handleGetAllUsers(request, env);
+            }
+            if (path.match(/^\/api\/admin\/users\/[^/]+$/) && method === 'DELETE') {
+                const userId = path.split('/')[4];
+                return await handleDeleteUser(request, env, userId);
             }
 
             // 404 for unknown API routes

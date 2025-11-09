@@ -16,8 +16,20 @@
             <a href="/" class="back-link">← Back to App</a>
         </div>
 
-        <!-- Invite Form -->
-        <div class="invite-section">
+        <!-- View Tabs -->
+        <div class="view-tabs">
+            <button class="view-tab active" data-view="invitations" onclick="switchView('invitations')">
+                Invitations
+            </button>
+            <button class="view-tab" data-view="users" onclick="switchView('users')">
+                Manage Users
+            </button>
+        </div>
+
+        <!-- Invitations Section -->
+        <div id="invitationsSection">
+            <!-- Invite Form -->
+            <div class="invite-section">
             <h2>Send Invitation</h2>
             <form id="inviteForm">
                 <div class="input-group">
@@ -49,6 +61,21 @@
             <div id="invitationsList" class="invitations-list">
                 <!-- Populated by JavaScript -->
                 <div class="loading">Loading invitations...</div>
+            </div>
+        </div>
+        </div>
+
+        <!-- Users Section -->
+        <div id="usersSection" style="display: none;">
+            <div class="users-section">
+                <h2>Manage Users</h2>
+                <p class="section-description">
+                    View and manage all registered users. Deleting a user will unassign their tasks and delete their personal project folder.
+                </p>
+                <div id="usersList" class="users-list">
+                    <!-- Populated by JavaScript -->
+                    <div class="loading">Loading users...</div>
+                </div>
             </div>
         </div>
     </div>
