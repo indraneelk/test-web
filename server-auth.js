@@ -1175,7 +1175,7 @@ app.put('/api/tasks/:id', requireAuth, async (req, res) => {
             return res.status(403).json({ error: 'Access denied' });
         }
 
-        const { name, description, date, assigned_to_id, status, priority } = req.body;
+        const { name, description, date, assigned_to_id, status, priority, project_id } = req.body;
 
         // Validate name if provided
         if (name !== undefined && !validateString(name, 1, 200)) {
@@ -1207,9 +1207,23 @@ app.put('/api/tasks/:id', requireAuth, async (req, res) => {
             return res.status(400).json({ error: 'Invalid priority. Must be: none, low, medium, or high' });
         }
 
-        // If changing assigned user, verify they're in the project (only if assignee is provided and not empty)
-        if (assigned_to_id && assigned_to_id.trim() !== '' && !(await isProjectMember(assigned_to_id, task.project_id))) {
-            return res.status(400).json({ error: 'Assigned user is not a member of this project' });
+        // If changing assignee, verify they're in the correct project (old or new if provided)
+        const targetProjectId = project_id && project_id !== task.project_id ? project_id : task.project_id;
+        if (assigned_to_id && assigned_to_id.trim() !== '' && !(await isProjectMember(assigned_to_id, targetProjectId))) {
+            return res.status(400).json({ error: 'Assigned user is not a member of the target project' });
+        }
+
+        // If changing project, verify requester can access target project
+        if (project_id && project_id !== task.project_id) {
+            if (!(await isProjectMember(req.userId, project_id))) {
+                return res.status(403).json({ error: 'Access denied to target project' });
+            }
+            // If assignee unchanged, verify current assignee can belong to new project
+            if ((!assigned_to_id || assigned_to_id.trim() === '') && task.assigned_to_id) {
+                if (!(await isProjectMember(task.assigned_to_id, project_id))) {
+                    return res.status(400).json({ error: 'Current assignee is not a member of the target project' });
+                }
+            }
         }
 
         const oldStatus = task.status;
@@ -1225,6 +1239,9 @@ app.put('/api/tasks/:id', requireAuth, async (req, res) => {
             completed_at: (oldStatus !== 'completed' && newStatus === 'completed') ? new Date().toISOString() : task.completed_at,
             archived: task.archived !== undefined ? task.archived : false
         };
+        if (project_id && project_id !== task.project_id) {
+            updates.project_id = project_id;
+        }
 
         const updatedTask = await dataService.updateTask(req.params.id, updates);
 

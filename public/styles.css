@@ -681,6 +681,17 @@ body {
     background-color: #e63939;
 }
 
+/* Extra small button for inline actions on cards */
+.btn-xs {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+    line-height: 1;
+}
+
+.task-delete-btn {
+    margin-left: 0.5rem;
+}
+
 /* Content Area */
 .content-area {
     flex: 1;
@@ -1251,6 +1262,15 @@ label {
     gap: 1rem;
     padding: 1.5rem;
     border-top: 1px solid var(--border-color);
+}
+
+/* Split footer: left and right groups */
+.modal-footer.split {
+    justify-content: space-between;
+}
+.modal-footer.split .footer-right {
+    display: inline-flex;
+    gap: 1rem;
 }
 
 /* Custom Dropdown */

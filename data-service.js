@@ -421,18 +421,28 @@ class DataService {
 
     async updateTask(taskId, updates) {
         if (this.useD1) {
+            const fields = ['name','description','date','assigned_to_id','status','priority'];
+            const sets = ['name = ?','description = ?','date = ?','assigned_to_id = ?','status = ?','priority = ?'];
+            const values = [
+                updates.name,
+                updates.description,
+                updates.date,
+                updates.assigned_to_id,
+                updates.status,
+                (updates.priority || 'none')
+            ];
+            if (updates.project_id !== undefined) {
+                fields.push('project_id');
+                sets.push('project_id = ?');
+                values.push(updates.project_id);
+            }
+            sets.push('updated_at = ?');
+            values.push(new Date().toISOString());
+            values.push(taskId);
+
             await this.d1.query(
-                `UPDATE tasks SET name = ?, description = ?, date = ?, assigned_to_id = ?, status = ?, priority = ?, updated_at = ? WHERE id = ?`,
-                [
-                    updates.name,
-                    updates.description,
-                    updates.date,
-                    updates.assigned_to_id,
-                    updates.status,
-                    updates.priority || 'none',
-                    new Date().toISOString(),
-                    taskId
-                ]
+                `UPDATE tasks SET ${sets.join(', ')} WHERE id = ?`,
+                values
             );
             return await this.getTaskById(taskId);
         } else {

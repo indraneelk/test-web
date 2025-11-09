@@ -18,6 +18,29 @@ let taskToDelete = null;
 let currentProjectForSettings = null;
 let currentProjectDetailsId = null;
 
+// Date helpers (DD/MM/YYYY <-> ISO YYYY-MM-DD)
+function formatDateToDMY(iso) {
+    if (!iso) return '';
+    const [y, m, d] = String(iso).split('-');
+    if (!y || !m || !d) return '';
+    return `${d.padStart(2,'0')}/${m.padStart(2,'0')}/${y}`;
+}
+function parseDMYToISO(dmy) {
+    if (!dmy) return null;
+    const parts = String(dmy).replace(/[^0-9/]/g,'').split('/');
+    if (parts.length !== 3) return null;
+    let [dd, mm, yyyy] = parts;
+    if (!dd || !mm || !yyyy) return null;
+    if (yyyy.length !== 4) return null;
+    const d = parseInt(dd, 10), m = parseInt(mm, 10), y = parseInt(yyyy, 10);
+    if (!(d>=1 && d<=31) || !(m>=1 && m<=12) || !(y>=1900)) return null;
+    // Basic validity check using Date
+    const iso = `${y.toString().padStart(4,'0')}-${m.toString().padStart(2,'0')}-${d.toString().padStart(2,'0')}`;
+    const dt = new Date(iso + 'T00:00:00Z');
+    if (isNaN(dt.getTime())) return null;
+    return iso;
+}
+
 // API URLs
 const API_AUTH = '/api/auth';
 const API_USERS = '/api/users';
@@ -841,9 +864,12 @@ function openTaskModal() {
     document.getElementById('taskModalTitle').textContent = 'Create New Task';
     document.getElementById('taskSubmitBtnText').textContent = 'Create Task';
 
-    // Set default date
-    const today = new Date().toISOString().split('T')[0];
-    document.getElementById('taskDate').value = today;
+    // Set default date (DD/MM/YYYY)
+    const now = new Date();
+    const dd = String(now.getDate()).padStart(2,'0');
+    const mm = String(now.getMonth()+1).padStart(2,'0');
+    const yyyy = String(now.getFullYear());
+    document.getElementById('taskDate').value = `${dd}/${mm}/${yyyy}`;
 
     // Ensure priority default reflects in custom select UI
     const prioritySelect = document.getElementById('taskPriority');
@@ -913,7 +939,7 @@ function editTask(id) {
         document.getElementById('taskId').value = task.id;
         document.getElementById('taskName').value = task.name || '';
         document.getElementById('taskDescription').value = task.description || '';
-        document.getElementById('taskDate').value = task.date || '';
+        document.getElementById('taskDate').value = formatDateToDMY(task.date) || '';
         const prioSel = document.getElementById('taskPriority');
         if (prioSel) {
             prioSel.value = (typeof task.priority === 'string' ? task.priority : 'none').toLowerCase().trim();
@@ -1003,10 +1029,6 @@ function editTaskFromDetails() {
     if (!currentTaskDetailsId) return;
     const taskId = currentTaskDetailsId; // Store ID before closing modal
     closeTaskDetailsModal();
-
-    // Store the task ID to reopen details after save
-    window.taskToReopenDetails = taskId;
-
     editTask(taskId);
 }
 
@@ -1039,10 +1061,19 @@ async function handleTaskSubmit(e) {
         : (prioSelect ? prioSelect.value : 'none');
     const normalizedPriority = (typeof selectedPriority === 'string' ? selectedPriority : 'none').toLowerCase().trim();
 
+    // Convert UI date (DD/MM/YYYY) to ISO for API
+    const isoDate = parseDMYToISO(document.getElementById('taskDate').value);
+    if (!isoDate) {
+        showError('Please enter a valid date in DD/MM/YYYY format');
+        submitBtn.disabled = false;
+        submitBtnText.textContent = originalText;
+        return;
+    }
+
     const taskData = {
         name: document.getElementById('taskName').value,
         description: document.getElementById('taskDescription').value,
-        date: document.getElementById('taskDate').value,
+        date: isoDate,
         project_id: document.getElementById('taskProject').value,
         assigned_to_id: document.getElementById('taskAssignee').value,
         priority: normalizedPriority
@@ -1066,15 +1097,17 @@ async function handleTaskSubmit(e) {
         const result = await response.json();
 
         closeTaskModal();
+        // Also ensure details modal is closed and return to All Tasks view
+        closeTaskDetailsModal();
         await loadTasks();
-        updateUI();
-
-        // Reopen task details if editing from details modal
-        if (taskId && window.taskToReopenDetails === taskId) {
-            window.taskToReopenDetails = null;
-            // Small delay to ensure tasks are loaded
-            setTimeout(() => viewTaskDetails(taskId), 100);
+        if (typeof switchView === 'function') {
+            switchView('all');
+        } else {
+            updateUI();
         }
+
+        // Ensure both modals are closed to return to the main list view
+        closeTaskDetailsModal();
 
         // Success message (celebration only happens via checkbox)
         showSuccess(taskId ? 'Task updated successfully!' : 'Task created successfully!');
@@ -1177,8 +1210,7 @@ function openProjectModal() {
     document.getElementById('projectModalTitle').textContent = 'Create New Project';
     document.getElementById('projectSubmitBtnText').textContent = 'Create Project';
 
-    // Hide delete button when creating new project
-    document.getElementById('projectDeleteBtn').style.display = 'none';
+    // No delete button in create/edit modal per new UI
 
     // Show create mode for members (checkbox list)
     document.getElementById('projectMembersCreateMode').style.display = 'block';
@@ -1666,8 +1698,7 @@ function editProject(projectId) {
     document.getElementById('projectModalTitle').textContent = 'Edit Project';
     document.getElementById('projectSubmitBtnText').textContent = 'Update Project';
 
-    // Show delete button for editing
-    document.getElementById('projectDeleteBtn').style.display = 'block';
+    // No delete button in edit modal per new UI
 
     // Show edit mode for members (current members + add dropdown)
     document.getElementById('projectMembersCreateMode').style.display = 'none';
@@ -1903,47 +1934,7 @@ async function removeProjectMember(userId) {
     }
 }
 
-// Delete project from edit modal
-async function deleteProjectFromEdit() {
-    const projectId = document.getElementById('projectId').value;
-    if (!projectId) return;
-
-    if (!confirm('Are you sure you want to delete this project? All tasks will be deleted. This cannot be undone.')) {
-        return;
-    }
-
-    const deleteBtn = event.target;
-    const originalText = deleteBtn.textContent;
-
-    // Disable button
-    deleteBtn.disabled = true;
-    deleteBtn.textContent = 'Deleting...';
-
-    try {
-        const response = await authFetch(`${API_PROJECTS}/${projectId}`, {
-            method: 'DELETE'
-        });
-
-        if (!response.ok) throw new Error('Failed to delete project');
-
-        closeProjectModal();
-        await Promise.all([loadProjects(), loadTasks()]);
-
-        // Switch to all tasks view if we're viewing the deleted project
-        if (currentProjectId === projectId) {
-            switchView('all');
-        } else {
-            updateUI();
-        }
-
-        showSuccess('Project deleted successfully');
-    } catch (error) {
-        showError('Failed to delete project');
-        // Re-enable button on error
-        deleteBtn.disabled = false;
-        deleteBtn.textContent = originalText;
-    }
-}
+// Delete project from edit modal removed per new UI
 
 // CELEBRATION ANIMATION
 function celebrate() {

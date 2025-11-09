@@ -834,7 +834,7 @@ async function handleUpdateTask(request, env, taskId) {
         }
 
         const body = await request.json();
-        const { name, description, date, status, priority, archived, assigned_to_id } = body;
+        const { name, description, date, status, priority, archived, assigned_to_id, project_id } = body;
 
         const updates = [];
         const values = [];
@@ -866,10 +866,25 @@ async function handleUpdateTask(request, env, taskId) {
             values.push(archived ? 1 : 0);
         }
         if (assigned_to_id !== undefined) {
-            const allowed = await isProjectMember(env.DB, assigned_to_id, task.project_id);
+            const targetProjectId = project_id && project_id !== task.project_id ? project_id : task.project_id;
+            const allowed = await isProjectMember(env.DB, assigned_to_id, targetProjectId);
             if (!allowed) return errorResponse('Assignee must be a project member', 400);
             updates.push('assigned_to_id = ?');
             values.push(assigned_to_id);
+        }
+
+        if (project_id !== undefined && project_id !== task.project_id) {
+            // Verify user has access to the new project
+            const canAccess = await isProjectMember(env.DB, user.id, project_id);
+            if (!canAccess) return errorResponse('Access denied to target project', 403);
+            // Ensure current (or updated) assignee is a member of the new project
+            const finalAssignee = assigned_to_id !== undefined ? assigned_to_id : task.assigned_to_id;
+            if (finalAssignee) {
+                const assigneeAllowed = await isProjectMember(env.DB, finalAssignee, project_id);
+                if (!assigneeAllowed) return errorResponse('Assignee must be a member of target project', 400);
+            }
+            updates.push('project_id = ?');
+            values.push(project_id);
         }
 
         if (updates.length === 0) {
@@ -884,11 +899,9 @@ async function handleUpdateTask(request, env, taskId) {
             `UPDATE tasks SET ${updates.join(', ')} WHERE id = ?`
         ).bind(...values).run();
 
-        await logActivity(env.DB, user.id, 'task_updated', `Updated task "${name || task.name}"`, taskId, task.project_id);
-        await broadcastChange(env, 'task-updated', { taskId, projectId: task.project_id });
-
         const updatedTask = await env.DB.prepare('SELECT * FROM tasks WHERE id = ?').bind(taskId).first();
-
+        await logActivity(env.DB, user.id, 'task_updated', `Updated task "${name || task.name}"`, taskId, updatedTask.project_id);
+        await broadcastChange(env, 'task-updated', { taskId, projectId: updatedTask.project_id });
         return jsonResponse(updatedTask);
     } catch (error) {
         console.error('Update task error');
