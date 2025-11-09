@@ -31,7 +31,9 @@
       "Bash(git merge:*)",
       "Bash(git push:*)",
       "Bash(cat:*)",
-      "mcp__cloudflare-bindings__d1_databases_list"
+      "mcp__cloudflare-bindings__d1_databases_list",
+      "Bash(npx wrangler:*)",
+      "mcp__supabase__search_docs"
     ],
     "deny": [],
     "ask": []
