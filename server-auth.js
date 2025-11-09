@@ -29,7 +29,7 @@ app.use(helmet({
             scriptSrc: ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net"],
             scriptSrcAttr: ["'unsafe-inline'"],  // Allow onclick handlers
             imgSrc: ["'self'", "data:", "https:"],
-            connectSrc: ["'self'", "https://*.supabase.co"]  // Allow Supabase API calls
+            connectSrc: ["'self'", "https://*.supabase.co", "wss://*.supabase.co"]  // Allow Supabase API calls and WebSockets
         }
     },
     hsts: {

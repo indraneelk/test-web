@@ -85,10 +85,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     await loadData();
     // Plan B: Supabase Realtime subscription (optional)
     try {
-        const cfgResp = await fetch('/api/config/public');
-        if (cfgResp.ok && window.supabase) {
-            const cfg = await cfgResp.json();
-            const client = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey);
+        const client = await ensureSupabase();
+        if (client) {
             const ch = client.channel('task-updates');
             ch.on('broadcast', { event: 'task-created' }, () => loadData());
             ch.on('broadcast', { event: 'task-updated' }, () => loadData());
@@ -169,6 +167,14 @@ function setupEventListeners() {
     const userSettingsForm = document.getElementById('userSettingsForm');
     if (userSettingsForm) {
         userSettingsForm.addEventListener('submit', handleUserSettingsSubmit);
+    }
+
+    // Desktop avatar opens profile update
+    const desktopAvatar = document.getElementById('userAvatar');
+    if (desktopAvatar) {
+        desktopAvatar.addEventListener('click', () => {
+            window.location.href = '/profile-update.html';
+        });
     }
 
     // Project dropdown change listener for task modal

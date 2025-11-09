@@ -263,6 +263,9 @@ body {
     flex-wrap: nowrap;
 }
 
+/* Desktop avatar is clickable */
+.sidebar #userAvatar { cursor: pointer; }
+
 .search-input {
     padding: 0.625rem 1rem;
     border: 1px solid var(--border-color);

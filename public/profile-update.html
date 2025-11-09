@@ -28,14 +28,19 @@
   </style>
   <script src="/vendor/supabase.js"></script>
   <script>
+    // Singleton Supabase client to avoid multiple instances
+    let supaClient = null;
     async function ensureSupabase() {
+      if (supaClient) return supaClient;
       try {
         const cfgResp = await fetch('/api/config/public');
         if (!cfgResp.ok) return null;
         const cfg = await cfgResp.json();
-        if (window.supabase) return window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey);
+        if (window.supabase && cfg.supabaseUrl && cfg.supabaseAnonKey) {
+          supaClient = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey);
+        }
       } catch (_) {}
-      return null;
+      return supaClient;
     }
     async function getAccessToken() {
       try { const c = await ensureSupabase(); if (c) { const { data } = await c.auth.getSession(); if (data?.session?.access_token) return data.session.access_token; } } catch(_) {}
@@ -49,8 +54,7 @@
       let resp = await fetch(url, { ...options, headers, credentials: token ? undefined : 'include' });
       if (resp.status !== 401) return resp;
       try{
-        const cfg = await (await fetch('/api/config/public')).json();
-        const client = window.supabase?.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey);
+        const client = await ensureSupabase();
         if (client){
           await client.auth.refreshSession();
           const { data } = await client.auth.getSession();
