@@ -310,9 +310,15 @@ function createDataService(db) {
 // ==================== AUTHENTICATION MIDDLEWARE ====================
 
 async function authenticate(request, env) {
+    console.log('=== AUTHENTICATE DEBUG ===');
+    console.log('Request URL:', request.url);
+    console.log('Cookie header:', request.headers.get('Cookie'));
+    console.log('Authorization header:', request.headers.get('Authorization') ? 'present' : 'none');
+
     // Try Discord User ID first (from Discord bot) with HMAC signature verification
     const discordUserId = request.headers.get('X-Discord-User-ID');
     if (discordUserId) {
+        console.log('Discord auth path');
         // Verify HMAC signature to prevent impersonation attacks
         const headers = getHeadersFromWorkersRequest(request);
         const secret = env.DISCORD_BOT_SECRET;
@@ -325,7 +331,10 @@ async function authenticate(request, env) {
         }
 
         const user = await getUserByDiscordId(env.DB, verifiedUserId);
-        if (user) return user;
+        if (user) {
+            console.log('Discord auth success, user:', user.id);
+            return user;
+        }
         // If Discord ID provided but not found, return null (will trigger 401)
         return null;
     }
@@ -333,22 +342,40 @@ async function authenticate(request, env) {
     // Try Authorization: Bearer <access_token> (stateless)
     const auth = request.headers.get('Authorization');
     if (auth && auth.startsWith('Bearer ')) {
+        console.log('Bearer token auth path');
         const token = auth.slice(7);
         const claims = await verifySupabaseJWT(token, env);
+        console.log('JWT claims:', claims ? 'valid' : 'invalid');
         if (claims && claims.sub) {
             const user = await getUserById(env.DB, claims.sub);
-            if (user) return user;
+            if (user) {
+                console.log('Bearer auth success, user:', user.id);
+                return user;
+            } else {
+                console.log('Bearer token valid but user not found:', claims.sub);
+            }
         }
     }
+
     // Fallback to cookie session (if present)
     const token = getCookie(request, 'auth_token');
+    console.log('Cookie token:', token ? 'present' : 'none');
     if (token && env.SESSION_SECRET) {
+        console.log('Cookie auth path');
         const payload = await verifyJWT(token, env.SESSION_SECRET);
+        console.log('Cookie payload:', payload ? 'valid' : 'invalid');
         if (payload && payload.userId) {
             const user = await getUserById(env.DB, payload.userId);
-            if (user) return user;
+            if (user) {
+                console.log('Cookie auth success, user:', user.id);
+                return user;
+            } else {
+                console.log('Cookie valid but user not found:', payload.userId);
+            }
         }
     }
+
+    console.log('All auth methods failed');
     return null;
 }
 
@@ -446,7 +473,10 @@ async function handleSupabaseLogin(request, env) {
             }
         }
         const { password_hash, ...userWithoutPassword } = user;
-        return jsonResponse({ user: userWithoutPassword });
+
+        // Create auth cookie for session management
+        const cookie = await createAuthCookie(user.id, env);
+        return jsonResponse({ user: userWithoutPassword }, 200, { 'Set-Cookie': cookie }, request);
     } catch (error) {
         console.error('Supabase login error');
         return errorResponse('Login failed', 500);
@@ -510,7 +540,10 @@ async function handleSupabaseCallback(request, env) {
             await logActivity(env.DB, sub, 'project_created', 'Personal project created', null, personalProjectId);
         }
         const { password_hash, ...userWithoutPassword } = user;
-        return jsonResponse({ user: userWithoutPassword });
+
+        // Create auth cookie for session management
+        const cookie = await createAuthCookie(user.id, env);
+        return jsonResponse({ user: userWithoutPassword }, 200, { 'Set-Cookie': cookie }, request);
     } catch (error) {
         console.error('Supabase callback error');
         return errorResponse('Authentication failed', 500);
