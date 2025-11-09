@@ -449,44 +449,63 @@
                 <h2>Project Settings</h2>
                 <button class="close-btn" onclick="closeProjectSettingsModal()">&times;</button>
             </div>
+
+            <!-- Tab Navigation -->
+            <div class="modal-tabs">
+                <button class="tab-btn active" onclick="switchProjectSettingsTab('details')" data-tab="details">
+                    <span class="tab-icon">📋</span>
+                    <span class="tab-label">Project Details</span>
+                </button>
+                <button class="tab-btn" onclick="switchProjectSettingsTab('members')" data-tab="members">
+                    <span class="tab-icon">👥</span>
+                    <span class="tab-label">Members</span>
+                </button>
+            </div>
+
             <div class="modal-body">
+                <!-- Project Details Tab -->
+                <div class="tab-panel active" id="projectDetailsTab">
                     <div class="settings-section">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-                        <h3 style="margin: 0;">Project Information</h3>
-                        <button id="editProjectSettingsBtn" class="btn btn-primary" onclick="editProjectFromSettings()">Edit Project</button>
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                            <h3 style="margin: 0;">Project Information</h3>
+                            <button id="editProjectSettingsBtn" class="btn btn-primary" onclick="editProjectFromSettings()">Edit Project</button>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">Name:</span>
+                            <span class="info-value" id="settingsProjectName"></span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">Owner:</span>
+                            <span class="info-value" id="settingsProjectOwner"></span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">Color:</span>
+                            <span class="info-value" id="settingsProjectColor"></span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">Description:</span>
+                            <span class="info-value" id="settingsProjectDescription"></span>
+                        </div>
                     </div>
-                    <div class="info-row">
-                        <span class="info-label">Name:</span>
-                        <span class="info-value" id="settingsProjectName"></span>
-                    </div>
-                    <div class="info-row">
-                        <span class="info-label">Owner:</span>
-                        <span class="info-value" id="settingsProjectOwner"></span>
-                    </div>
-                    <div class="info-row">
-                        <span class="info-label">Color:</span>
-                        <span class="info-value" id="settingsProjectColor"></span>
-                    </div>
-                    <div class="info-row">
-                        <span class="info-label">Description:</span>
-                        <span class="info-value" id="settingsProjectDescription"></span>
+
+                    <!-- Delete button at bottom left -->
+                    <div class="tab-footer">
+                        <button class="btn btn-danger" onclick="deleteCurrentProject()">Delete Project</button>
                     </div>
                 </div>
 
-                <div id="settingsTeamMembersSection" class="settings-section">
-                    <h3>Project members</h3>
-                    <div class="add-member-section">
-                        <select id="newMemberSelect" class="form-select">
-                            <option value="">Add team member...</option>
-                        </select>
-                        <button class="btn btn-primary" onclick="addMember()" style="background: #4facfe; border-color: #4facfe;">Add Member</button>
+                <!-- Members Tab -->
+                <div class="tab-panel" id="projectMembersTab">
+                    <div id="settingsTeamMembersSection" class="settings-section">
+                        <h3>Team Members</h3>
+                        <div class="add-member-section">
+                            <select id="newMemberSelect" class="form-select">
+                                <option value="">Add team member...</option>
+                            </select>
+                            <button class="btn btn-primary" id="addMemberBtn" onclick="addMember()" style="background: #4facfe; border-color: #4facfe;">Add<span class="btn-text-full"> Member</span></button>
+                        </div>
+                        <div id="membersList" class="members-list"></div>
                     </div>
-                    <div id="membersList" class="members-list"></div>
-                </div>
-
-                <div id="settingsDangerZone" class="settings-section danger-zone">
-                    <h3>Danger Zone</h3>
-                    <button class="btn btn-danger" onclick="openProjectDeleteModal(currentProjectForSettings)">Delete Project</button>
                 </div>
             </div>
         </div>
