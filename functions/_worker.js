@@ -1515,9 +1515,9 @@ async function handleDeleteUser(request, env, userId) {
             ).bind(userId).run();
         }
 
-        // 5. Delete user's Discord link if exists
+        // 5. Remove user from project members
         await env.DB.prepare(
-            'DELETE FROM discord_links WHERE user_id = ?'
+            'DELETE FROM project_members WHERE user_id = ?'
         ).bind(userId).run();
 
         // 6. Delete any invitations associated with this user
