@@ -255,7 +255,9 @@ function createDataService(db) {
         deleteTask: async (taskId) => {
             await db.prepare('DELETE FROM tasks WHERE id = ?').bind(taskId).run();
         },
-        getProjectById,
+        getProjectById: async (projectId) => {
+            return await db.prepare('SELECT * FROM projects WHERE id = ?').bind(projectId).first();
+        },
         createProject: async (project) => {
             await db.prepare(
                 'INSERT INTO projects (id, name, description, color, owner_id, is_personal, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
@@ -1144,10 +1146,10 @@ async function handleCreateTask(request, env) {
 
         return jsonResponse(task, 201);
     } catch (error) {
+        console.error('Create task error:', error.message, error.stack);
         if (error instanceof ValidationError) return errorResponse(error.message, 400);
         if (error instanceof PermissionError) return errorResponse(error.message, 403);
         if (error instanceof NotFoundError) return errorResponse(error.message, 404);
-        console.error('Create task error:', error);
         return errorResponse('Failed to create task', 500);
     }
 }
