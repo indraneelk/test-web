@@ -272,7 +272,7 @@ function setupEventListeners() {
             closeTaskDetailsModal();
             closeTaskModal();
             closeProjectModal();
-            closeProjectDetailsModal();
+            // Project Details modal deprecated
             closeProjectSettingsModal();
             closeDeleteModal();
         }
@@ -1560,89 +1560,7 @@ async function deleteCurrentProject() {
     }
 }
 
-// VIEW PROJECT DETAILS
-function viewProjectDetails(projectId) {
-    const project = projects.find(p => p.id === projectId);
-    if (!project) {
-        return;
-    }
-
-    currentProjectDetailsId = projectId;
-
-    const owner = users.find(u => u.id === project.owner_id);
-    const projectTasks = tasks.filter(t => t.project_id === projectId);
-    const memberIds = project.members || [];
-    const members = users.filter(u => memberIds.includes(u.id));
-
-    document.getElementById('detailsProjectName').textContent = project.name;
-    document.getElementById('detailsProjectDescription').textContent = project.description || 'No description';
-    document.getElementById('detailsProjectOwner').textContent = owner ? (owner.username || owner.name) : 'Unknown';
-    document.getElementById('detailsProjectTasks').textContent = `${projectTasks.length} tasks`;
-    // Show project color
-    const color = project.color || '#f06a6a';
-    document.getElementById('detailsProjectColor').innerHTML = `<span class="project-color-dot project-color-dot-lg" style="background-color:${color};" title="Project color"></span>`;
-
-    // Render members
-    const membersContainer = document.getElementById('detailsProjectMembers');
-    if (members.length === 0) {
-        membersContainer.innerHTML = '<p style="color: var(--text-secondary); font-size: 0.875rem;">No team members yet</p>';
-    } else {
-        membersContainer.innerHTML = members.map(member => `
-            <div class="member-tag">${escapeHtml(member.name)}</div>
-        `).join('');
-    }
-
-    // Hide actions for personal project
-    const editBtn = document.getElementById('projectDetailsEditBtn');
-    const deleteBtn = document.getElementById('projectDetailsDeleteBtn');
-    const leaveBtn = document.getElementById('projectDetailsLeaveBtn');
-    const footerLeft = document.querySelector('#projectDetailsModal .modal-footer .footer-left');
-    const footerRight = document.querySelector('#projectDetailsModal .modal-footer .footer-right');
-
-    const isOwner = project.owner_id === currentUser.id || !!currentUser.is_admin;
-
-    // Reset visibility
-    if (leaveBtn) leaveBtn.style.display = 'none';
-    if (deleteBtn) deleteBtn.style.display = 'none';
-    if (editBtn) editBtn.style.display = 'none';
-
-    if (isOwner && !project.is_personal) {
-        if (editBtn) editBtn.style.display = '';
-        if (deleteBtn) deleteBtn.style.display = '';
-        // Ensure buttons are in their default containers
-        if (footerRight && editBtn && editBtn.parentElement !== footerRight) footerRight.appendChild(editBtn);
-        if (footerLeft && deleteBtn && deleteBtn.parentElement !== footerLeft) footerLeft.appendChild(deleteBtn);
-    } else {
-        // Non-owner: show Leave button bottom-left in grey
-        if (leaveBtn) {
-            leaveBtn.style.display = '';
-            if (footerLeft && leaveBtn.parentElement !== footerLeft) footerLeft.appendChild(leaveBtn);
-        }
-        // Keep edit/delete hidden for non-owner or personal projects
-    }
-
-    document.getElementById('projectDetailsModal').classList.add('active');
-}
-
-// Close project details modal
-function closeProjectDetailsModal() {
-    document.getElementById('projectDetailsModal').classList.remove('active');
-    currentProjectDetailsId = null;
-}
-
-// Edit project from details modal
-function editProjectFromDetails() {
-    if (!currentProjectDetailsId) return;
-    const projectId = currentProjectDetailsId;
-    closeProjectDetailsModal();
-    editProject(projectId);
-}
-
-// Delete project from details modal
-function deleteProjectFromDetails() {
-    if (!currentProjectDetailsId) return;
-    openProjectDeleteModal(currentProjectDetailsId);
-}
+// Legacy Project Details UI removed. All project management now uses Project Settings modal.
 
 function openProjectDeleteModal(projectId) {
     projectToDelete = projectId;
@@ -1674,7 +1592,9 @@ async function confirmDeleteProject() {
         closeProjectDeleteModal();
         // Also close settings/details modals if open
         try { closeProjectSettingsModal(); } catch(_) {}
-        try { closeProjectDetailsModal(); } catch(_) {}
+        if (typeof closeProjectDetailsModal === 'function') {
+            try { closeProjectDetailsModal(); } catch(_) {}
+        }
         // Refresh data and go back to All Tasks if needed
         await Promise.all([loadProjects(), loadTasks()]);
         if (currentProjectId === id) {
@@ -1753,83 +1673,15 @@ function editProject(projectId) {
     document.getElementById('projectModal').classList.add('active');
 }
 
-// View project info (read-only for non-owners)
-function viewProjectInfo(projectId) {
-    const project = projects.find(p => p.id === projectId);
-    if (!project) {
-        showError('Project not found');
-        return;
-    }
+// Legacy Project Details UI removed (use Project Settings)
 
-    currentProjectDetailsId = projectId;
+// closeProjectDetailsModal deprecated
 
-    const owner = users.find(u => u.id === project.owner_id);
-    const memberIds = project.members || [];
-    const members = users.filter(u => memberIds.includes(u.id));
-    const isOwner = project.owner_id === currentUser.id || currentUser.is_admin;
+// editProjectFromDetails deprecated
 
-    // Count tasks in this project
-    const projectTasks = tasks.filter(t => t.project_id === projectId);
+// deleteProjectFromDetails deprecated
 
-    // Populate modal
-    document.getElementById('detailsProjectName').textContent = project.name;
-    document.getElementById('detailsProjectDescription').textContent = project.description || 'No description';
-    document.getElementById('detailsProjectOwner').textContent = owner?.name || 'Unknown';
-    document.getElementById('detailsProjectTasks').textContent = `${projectTasks.length} task${projectTasks.length !== 1 ? 's' : ''}`;
-
-    // Show color dot
-    const colorHtml = `<span style="display: inline-block; width: 20px; height: 20px; background: ${project.color || '#f06a6a'}; border-radius: 4px; vertical-align: middle;"></span>`;
-    document.getElementById('detailsProjectColor').innerHTML = colorHtml;
-
-    // Show members
-    const membersContainer = document.getElementById('detailsProjectMembers');
-    if (members.length === 0) {
-        membersContainer.innerHTML = '<p style="color: var(--text-secondary); margin: 0;">No other members</p>';
-    } else {
-        membersContainer.innerHTML = members.map(m =>
-            `<span style="display: inline-block; padding: 0.25rem 0.75rem; background: var(--bg-secondary); border-radius: 0.25rem; margin: 0.25rem; font-size: 0.875rem;">${escapeHtml(m.name)}</span>`
-        ).join('');
-    }
-
-    // Show/hide buttons based on ownership
-    if (isOwner) {
-        document.getElementById('projectDetailsEditBtn').style.display = 'inline-block';
-        document.getElementById('projectDetailsDeleteBtn').style.display = 'inline-block';
-        document.getElementById('projectDetailsLeaveBtn').style.display = 'none';
-    } else {
-        document.getElementById('projectDetailsEditBtn').style.display = 'none';
-        document.getElementById('projectDetailsDeleteBtn').style.display = 'none';
-        document.getElementById('projectDetailsLeaveBtn').style.display = 'inline-block';
-    }
-
-    // Open the modal
-    document.getElementById('projectDetailsModal').classList.add('active');
-}
-
-// Close project details modal
-function closeProjectDetailsModal() {
-    document.getElementById('projectDetailsModal').classList.remove('active');
-    currentProjectDetailsId = null;
-}
-
-// Edit project from details modal
-function editProjectFromDetails() {
-    if (!currentProjectDetailsId) return;
-    closeProjectDetailsModal();
-    editProject(currentProjectDetailsId);
-}
-
-// Delete project from details modal
-function deleteProjectFromDetails() {
-    if (!currentProjectDetailsId) return;
-    deleteProject(currentProjectDetailsId);
-}
-
-// Leave project from details modal
-function leaveProjectFromDetails() {
-    if (!currentProjectDetailsId) return;
-    leaveProject(currentProjectDetailsId);
-}
+// Legacy leaveProjectFromDetails removed with Project Details UI.
 
 // Leave project
 async function leaveProject(projectId) {
@@ -1854,8 +1706,10 @@ async function leaveProject(projectId) {
             throw new Error(error.error || 'Failed to leave project');
         }
 
-        // Close modal if open
-        closeProjectDetailsModal();
+        // Close Project Settings if open
+        if (typeof closeProjectSettingsModal === 'function') {
+            try { closeProjectSettingsModal(); } catch(_) {}
+        }
 
         showSuccess('Successfully left the project');
         await loadProjects();
@@ -2388,7 +2242,6 @@ document.addEventListener('DOMContentLoaded', () => {
     setTimeout(initCustomSelects, 100);
 });
 
-// Re-initialize when modals open
 const originalOpenTaskModal = openTaskModal;
 window.openTaskModal = function() {
     originalOpenTaskModal();
@@ -2400,7 +2253,6 @@ window.closeTaskModal = closeTaskModal;
 window.closeTaskDetailsModal = closeTaskDetailsModal;
 window.closeUserSettings = closeUserSettings;
 window.closeProjectModal = closeProjectModal;
-window.closeProjectDetailsModal = closeProjectDetailsModal;
 window.closeProjectSettingsModal = closeProjectSettingsModal;
 window.closeDeleteModal = closeDeleteModal;
 

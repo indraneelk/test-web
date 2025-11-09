@@ -1104,6 +1104,23 @@ body {
     flex-direction: column;
 }
 
+/* Project Settings layout refinements */
+.settings-section { margin-bottom: 0.75rem; }
+.settings-section h3 { margin: 0 0 0.5rem 0; font-size: 1rem; }
+.info-row { display: flex; align-items: center; gap: 0.5rem; padding: 0.25rem 0; }
+.info-label { width: 90px; color: var(--text-secondary); font-weight: 600; font-size: 0.875rem; }
+.info-value { color: var(--text-primary); font-size: 0.95rem; }
+.add-member-section { display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.5rem; }
+.members-list { max-height: 240px; overflow-y: auto; border: 1px solid var(--border-color); border-radius: 0.5rem; padding: 0.5rem; background: var(--card-bg); }
+.member-item { display: flex; justify-content: space-between; align-items: center; padding: 0.5rem; border-bottom: 1px solid var(--border-color); }
+.member-item:last-child { border-bottom: none; }
+.member-info { display: flex; align-items: center; gap: 0.5rem; }
+.member-avatar { width: 28px; height: 28px; background: #e9ecef; border-radius: 50%; }
+.member-details { display: flex; flex-direction: column; }
+.member-name { font-size: 0.9375rem; font-weight: 600; }
+.member-role { font-size: 0.75rem; color: var(--text-secondary); }
+.member-actions button { padding: 0.25rem 0.5rem; font-size: 0.8rem; }
+
 .modal-small {
     max-width: 400px;
 }

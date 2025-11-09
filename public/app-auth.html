@@ -342,51 +342,7 @@
         </div>
     </div>
 
-    <!-- Project Details Modal -->
-    <div id="projectDetailsModal" class="modal">
-        <div class="modal-backdrop" onclick="closeProjectDetailsModal()"></div>
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2 id="projectDetailsTitle">Project Details</h2>
-                <button class="close-btn" onclick="closeProjectDetailsModal()">&times;</button>
-            </div>
-            <div class="modal-body">
-                <div class="details-section">
-                    <h3 id="detailsProjectName"></h3>
-                </div>
-
-                <div class="details-section">
-                    <label class="details-label">Description</label>
-                    <p id="detailsProjectDescription"></p>
-                </div>
-
-                <div class="details-row">
-                    <div class="details-section">
-                        <label class="details-label">Owner</label>
-                        <p id="detailsProjectOwner"></p>
-                    </div>
-                    <div class="details-section">
-                        <label class="details-label">Tasks</label>
-                        <p id="detailsProjectTasks"></p>
-                    </div>
-                </div>
-
-                <div class="details-section">
-                    <label class="details-label">Color</label>
-                    <p id="detailsProjectColor"></p>
-                </div>
-
-                <div class="details-section">
-                    <label class="details-label">Team Members</label>
-                    <div id="detailsProjectMembers"></div>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" id="projectDetailsEditBtn" class="btn btn-primary" onclick="editProjectFromDetails()">Edit Project</button>
-                <button type="button" id="projectDetailsDeleteBtn" class="btn btn-secondary" onclick="deleteProjectFromDetails()">Delete Project</button>
-            </div>
-        </div>
-    </div>
+    
 
     <!-- Project Settings Modal -->
     <div id="projectSettingsModal" class="modal">
@@ -417,14 +373,14 @@
                 </div>
 
                 <div id="settingsTeamMembersSection" class="settings-section">
-                    <h3>Team Members</h3>
-                    <div id="membersList" class="members-list"></div>
+                    <h3>Project members</h3>
                     <div class="add-member-section">
                         <select id="newMemberSelect" class="form-select">
                             <option value="">Add team member...</option>
                         </select>
                         <button class="btn btn-primary" onclick="addMember()">Add Member</button>
                     </div>
+                    <div id="membersList" class="members-list"></div>
                 </div>
 
                 <div id="settingsDangerZone" class="settings-section danger-zone">
