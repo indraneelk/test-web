@@ -9,7 +9,12 @@
     "dev": "node start.js",
     "server": "node server-auth.js",
     "discord": "node discord-bot.js",
-    "dev-all": "npm run server & npm run discord"
+    "dev-all": "npm run server & npm run discord",
+    "deploy:worker": "npx wrangler deploy --config wrangler-worker.toml",
+    "deploy:pages": "npx wrangler pages deploy public --project-name mmw-tm",
+    "deploy:discord": "npx wrangler deploy --config wrangler-discord.toml",
+    "deploy:all": "npm run deploy:worker && npm run deploy:pages",
+    "sync:shared": "cp -r shared/ functions/"
   },
   "keywords": [
     "task-manager",

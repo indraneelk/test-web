@@ -1,0 +1,22 @@
+name = "team-task-manager"
+main = "functions/_worker.js"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+
+# D1 Database binding
+[[d1_databases]]
+binding = "DB"
+database_name = "task-manager-db-v2"
+database_id = "6e646fd2-4e3c-4632-b7e7-55e224368b5f"
+
+# Environment variables (non-sensitive)
+[vars]
+ENVIRONMENT = "production"
+SUPABASE_URL = "https://oxbaswpyxryvygamgtsu.supabase.co"
+
+# Secrets (add these with: wrangler secret put <NAME> --config wrangler-worker.toml)
+# wrangler secret put SUPABASE_ANON_KEY --config wrangler-worker.toml
+# wrangler secret put SUPABASE_SERVICE_ROLE_KEY --config wrangler-worker.toml
+# wrangler secret put SUPABASE_JWT_SECRET --config wrangler-worker.toml
+# wrangler secret put SESSION_SECRET --config wrangler-worker.toml
+# wrangler secret put DISCORD_BOT_SECRET --config wrangler-worker.toml

@@ -1063,12 +1063,12 @@ function loadProjectMembers(projectId) {
     // For personal projects, disable the dropdown and auto-select the owner
     if (project.is_personal) {
         assigneeSelect.disabled = true;
-        assigneeSelect.innerHTML = projectMembers.map(u => `<option value="${u.id}">${escapeHtml(u.name)}</option>`).join('');
+        assigneeSelect.innerHTML = projectMembers.map(u => `<option value="${u.id}">${escapeHtml(u.username || u.name)}</option>`).join('');
         assigneeSelect.value = project.owner_id;
     } else {
         assigneeSelect.disabled = false;
         assigneeSelect.innerHTML = '<option value="">Select person...</option>' +
-            projectMembers.map(u => `<option value="${u.id}">${escapeHtml(u.name)}</option>`).join('');
+            projectMembers.map(u => `<option value="${u.id}">${escapeHtml(u.username || u.name)}</option>`).join('');
     }
 }
 

@@ -1,7 +1,7 @@
-name = "team-task-manager"
-main = "worker.js"
+name = "mmw-tm"
 compatibility_date = "2024-09-23"
 compatibility_flags = ["nodejs_compat"]
+pages_build_output_dir = "public"
 
 # D1 Database binding
 [[d1_databases]]
@@ -15,17 +15,9 @@ ENVIRONMENT = "production"
 SUPABASE_URL = "https://oxbaswpyxryvygamgtsu.supabase.co"
 
 # Secrets (add these with: wrangler secret put <NAME>)
-# Run these commands after creating the worker:
-# wrangler secret put SUPABASE_ANON_KEY
-# wrangler secret put SUPABASE_SERVICE_ROLE_KEY
-# wrangler secret put SUPABASE_JWT_SECRET
-# wrangler secret put SESSION_SECRET
-# wrangler secret put ANTHROPIC_API_KEY (optional, for Claude AI features)
-
-# Development environment (for local testing)
-[env.dev]
-name = "team-task-manager-dev"
-
-[env.dev.vars]
-ENVIRONMENT = "development"
-SUPABASE_URL = "https://oxbaswpyxryvygamgtsu.supabase.co"
+# For Pages, use: wrangler pages secret put <NAME> --project-name=mmw-tm
+# wrangler pages secret put SUPABASE_ANON_KEY
+# wrangler pages secret put SUPABASE_SERVICE_ROLE_KEY
+# wrangler pages secret put SUPABASE_JWT_SECRET
+# wrangler pages secret put SESSION_SECRET
+# wrangler pages secret put ANTHROPIC_API_KEY (optional, for Claude AI features)

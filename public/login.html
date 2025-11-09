@@ -286,9 +286,20 @@
             successMessage.style.display = 'none';
         }
 
-        // Check if already logged in
+        // Check if already logged in - wait for Supabase session first
         (async () => {
             try {
+                // Wait for Supabase to be ready
+                if (window.supabase) {
+                    const resp = await fetch('/api/config/public');
+                    const cfg = await resp.json();
+                    if (cfg.supabaseUrl && cfg.supabaseAnonKey) {
+                        const client = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey);
+                        // Ensure session is loaded before checking auth
+                        await client.auth.getSession();
+                    }
+                }
+
                 const response = await fetch('/api/auth/me', {
                     credentials: 'include'
                 });
