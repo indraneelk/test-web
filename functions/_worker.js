@@ -10,6 +10,27 @@ const businessLogic = require('./shared/business-logic');
 const { ValidationError, AuthenticationError, PermissionError, NotFoundError, ConflictError } = require('./shared/errors');
 const { verifyDiscordRequest, getHeadersFromWorkersRequest } = require('./shared/discord-auth');
 
+// Discord Interactions modules
+const {
+    InteractionType,
+    InteractionResponseType,
+    verifyDiscordRequest: verifyDiscordInteraction,
+    createResponse,
+    getOption
+} = require('./shared/discord-interactions');
+
+// Discord command handlers
+const {
+    handleTasksCommand,
+    handleCreateCommand,
+    handleCompleteCommand,
+    handleSummaryCommand,
+    handlePrioritiesCommand,
+    handleClaudeCommand,
+    handleLinkCommand,
+    handleHelpCommand
+} = require('./shared/discord-commands');
+
 // ==================== HELPER FUNCTIONS ====================
 
 // Basic rate limiting (KV optional; in-memory fallback)
@@ -1043,7 +1064,9 @@ async function handleDiscordCompleteTask(request, env, taskIdentifier) {
 }
 
 async function handleDiscordLink(request, env) {
+    console.log('[handleDiscordLink] Raw headers received:', Object.fromEntries([...request.headers]));
     const headers = getHeadersFromWorkersRequest(request);
+    console.log('[handleDiscordLink] Extracted headers:', headers);
     const discordUserId = verifyDiscordRequest(headers, env.DISCORD_BOT_SECRET);
 
     if (!discordUserId) {
@@ -1882,6 +1905,259 @@ async function handleDeleteUser(request, env, userId) {
     }
 }
 
+// ==================== DISCORD INTERACTIONS HANDLER ====================
+
+/**
+ * Handle Discord Interactions (slash commands) directly
+ * This replaces the need for a separate discord-bot worker
+ */
+async function handleDiscordInteraction(request, env) {
+    // Verify Discord signature
+    const isValid = await verifyDiscordInteraction(request, env.DISCORD_PUBLIC_KEY);
+    if (!isValid) {
+        return new Response('Invalid signature', { status: 401 });
+    }
+
+    const interaction = await request.json();
+
+    // Handle PING (Discord verification)
+    if (interaction.type === InteractionType.PING) {
+        return new Response(JSON.stringify({
+            type: InteractionResponseType.PONG
+        }), {
+            headers: { 'Content-Type': 'application/json' }
+        });
+    }
+
+    // Handle slash commands
+    if (interaction.type === InteractionType.APPLICATION_COMMAND) {
+        const { name, options } = interaction.data;
+        const discordUser = interaction.member?.user || interaction.user;
+        const discordUserId = discordUser?.id;
+        const discordUsername = discordUser?.global_name || discordUser?.username || discordUser?.display_name || `User#${discordUserId}`;
+
+        if (!discordUserId) {
+            return new Response(JSON.stringify(
+                createResponse('❌ Could not identify Discord user', true)
+            ), {
+                headers: { 'Content-Type': 'application/json' }
+            });
+        }
+
+        try {
+            // Get user from database
+            const user = await getUserByDiscordId(env.DB, discordUserId);
+
+            // Create a simple API wrapper for discord-commands.js handlers
+            // This directly accesses the database - no HMAC needed since we're internal
+            const fetchAPI = async (userId, method, path, body = null) => {
+                // Ensure user is linked
+                if (!user && !path.includes('/discord/link')) {
+                    throw new Error('Discord account not linked. Use /link command first.');
+                }
+
+                // Route to appropriate handler based on path - direct database access
+                if (path === '/discord/tasks' && method === 'GET') {
+                    const tasks = await env.DB.prepare(
+                        'SELECT * FROM tasks WHERE assigned_to_id = ? AND archived = 0 ORDER BY created_at DESC'
+                    ).bind(user.id).all();
+                    return { data: tasks.results || [] };
+                }
+
+                if (path === '/discord/tasks' && method === 'POST') {
+                    const { name, date, priority } = body;
+                    const taskId = generateId('task');
+                    const now = getCurrentTimestamp();
+
+                    // Get user's personal project
+                    const personalProject = await env.DB.prepare(
+                        'SELECT * FROM projects WHERE owner_id = ? AND name = ?'
+                    ).bind(user.id, 'Personal').first();
+
+                    await env.DB.prepare(
+                        'INSERT INTO tasks (id, name, description, status, priority, date, created_by_id, assigned_to_id, project_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+                    ).bind(taskId, name, '', 'pending', priority || 'none', date, user.id, user.id, personalProject.id, now, now).run();
+
+                    const task = await env.DB.prepare('SELECT * FROM tasks WHERE id = ?').bind(taskId).first();
+                    return { data: task };
+                }
+
+                if (path.match(/^\/discord\/tasks\/.*\/complete$/) && method === 'PUT') {
+                    const taskIdentifier = decodeURIComponent(path.split('/')[3]);
+
+                    // Find task by ID or name
+                    let task;
+                    if (taskIdentifier.startsWith('task-')) {
+                        task = await env.DB.prepare(
+                            'SELECT * FROM tasks WHERE id = ? AND assigned_to_id = ?'
+                        ).bind(taskIdentifier, user.id).first();
+                    } else {
+                        task = await env.DB.prepare(
+                            'SELECT * FROM tasks WHERE name LIKE ? AND assigned_to_id = ? AND status != ?'
+                        ).bind(`%${taskIdentifier}%`, user.id, 'completed').first();
+                    }
+
+                    if (!task) {
+                        throw new Error('Task not found or not assigned to you');
+                    }
+
+                    const now = getCurrentTimestamp();
+                    await env.DB.prepare(
+                        'UPDATE tasks SET status = ?, completed_at = ?, updated_at = ? WHERE id = ?'
+                    ).bind('completed', now, now, task.id).run();
+
+                    const updatedTask = await env.DB.prepare('SELECT * FROM tasks WHERE id = ?').bind(task.id).first();
+                    return { data: updatedTask };
+                }
+
+                if (path === '/discord/summary' && method === 'GET') {
+                    const allTasks = await env.DB.prepare(
+                        'SELECT * FROM tasks WHERE assigned_to_id = ? AND archived = 0'
+                    ).bind(user.id).all();
+
+                    const tasks = allTasks.results || [];
+                    const today = new Date().toISOString().split('T')[0];
+
+                    const ownedProjects = await env.DB.prepare(
+                        'SELECT COUNT(*) as count FROM projects WHERE owner_id = ?'
+                    ).bind(user.id).first();
+
+                    const memberProjects = await env.DB.prepare(
+                        'SELECT COUNT(*) as count FROM project_members WHERE user_id = ?'
+                    ).bind(user.id).first();
+
+                    return {
+                        data: {
+                            totalTasks: tasks.length,
+                            pendingTasks: tasks.filter(t => t.status === 'pending' || t.status === 'in-progress').length,
+                            completedTasks: tasks.filter(t => t.status === 'completed').length,
+                            overdueTasks: tasks.filter(t => t.date < today && t.status !== 'completed').length,
+                            totalProjects: (ownedProjects?.count || 0) + (memberProjects?.count || 0)
+                        }
+                    };
+                }
+
+                if (path === '/discord/priorities' && method === 'GET') {
+                    const highPriorityTasks = await env.DB.prepare(
+                        'SELECT * FROM tasks WHERE assigned_to_id = ? AND priority = ? AND archived = 0 ORDER BY date ASC'
+                    ).bind(user.id, 'high').all();
+                    return { data: highPriorityTasks.results || [] };
+                }
+
+                if (path === '/discord/link' && method === 'POST') {
+                    const { code, discordUserId } = body;
+
+                    // Find link code
+                    const linkCode = await env.DB.prepare(
+                        'SELECT * FROM discord_link_codes WHERE code = ? AND used = 0'
+                    ).bind(code).first();
+
+                    if (!linkCode) {
+                        throw new Error('Invalid or expired link code');
+                    }
+
+                    // Update user with Discord info
+                    await env.DB.prepare(
+                        'UPDATE users SET discord_user_id = ?, discord_handle = ? WHERE id = ?'
+                    ).bind(discordUserId, discordUsername, linkCode.user_id).run();
+
+                    // Mark code as used
+                    await env.DB.prepare(
+                        'UPDATE discord_link_codes SET used = 1 WHERE code = ?'
+                    ).bind(code).run();
+
+                    const linkedUser = await env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(linkCode.user_id).first();
+                    return { data: linkedUser };
+                }
+
+                throw new Error(`Unknown path: ${path}`);
+            };
+
+            let responseData;
+
+            // Route to appropriate command handler
+            switch (name) {
+                case 'tasks':
+                    responseData = await handleTasksCommand(fetchAPI, discordUserId);
+                    break;
+
+                case 'create':
+                    const createParams = {
+                        title: getOption(options, 'title'),
+                        due: getOption(options, 'due'),
+                        priority: getOption(options, 'priority')
+                    };
+                    responseData = await handleCreateCommand(fetchAPI, discordUserId, createParams);
+                    break;
+
+                case 'complete':
+                    const completeParams = {
+                        task: getOption(options, 'task')
+                    };
+                    responseData = await handleCompleteCommand(fetchAPI, discordUserId, completeParams);
+                    break;
+
+                case 'summary':
+                    responseData = await handleSummaryCommand(fetchAPI, discordUserId);
+                    break;
+
+                case 'priorities':
+                    responseData = await handlePrioritiesCommand(fetchAPI, discordUserId);
+                    break;
+
+                case 'claude':
+                    const claudeParams = {
+                        query: getOption(options, 'query')
+                    };
+                    responseData = await handleClaudeCommand(fetchAPI, discordUserId, claudeParams);
+                    break;
+
+                case 'link':
+                    const linkParams = {
+                        code: getOption(options, 'code')
+                    };
+                    responseData = await handleLinkCommand(fetchAPI, discordUserId, linkParams);
+                    break;
+
+                case 'help':
+                    responseData = await handleHelpCommand();
+                    break;
+
+                default:
+                    responseData = createResponse(`❌ Unknown command: ${name}`, true);
+            }
+
+            // Format response for Discord Interactions
+            const response = {
+                type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+                data: responseData
+            };
+
+            return new Response(JSON.stringify(response), {
+                headers: { 'Content-Type': 'application/json' }
+            });
+
+        } catch (error) {
+            console.error('Discord interaction error:', error);
+
+            // Return error message to user
+            return new Response(JSON.stringify({
+                type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+                data: createResponse(`❌ Error: ${error.message}`, true)
+            }), {
+                headers: { 'Content-Type': 'application/json' }
+            });
+        }
+    }
+
+    // Unknown interaction type
+    return new Response(JSON.stringify(
+        createResponse('❌ Unknown interaction type', true)
+    ), {
+        headers: { 'Content-Type': 'application/json' }
+    });
+}
+
 // ==================== MAIN REQUEST HANDLER ====================
 
 export default {
@@ -1904,6 +2180,11 @@ export default {
         // Handle CORS preflight
         if (method === 'OPTIONS') {
             return new Response(null, { headers: getCorsHeaders(request) });
+        }
+
+        // Discord Interactions endpoint (for slash commands)
+        if (path === '/api/interactions' && method === 'POST') {
+            return await handleDiscordInteraction(request, env);
         }
 
         try {

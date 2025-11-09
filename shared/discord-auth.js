@@ -18,6 +18,13 @@ const { SECURITY, ERRORS } = require('./constants');
  */
 function verifyDiscordRequest(headers, secret) {
     try {
+        console.log('[Discord Auth] Starting verification with headers:', {
+            hasUserId: !!headers['x-discord-user-id'],
+            hasTimestamp: !!headers['x-discord-timestamp'],
+            hasSignature: !!headers['x-discord-signature'],
+            hasSecret: !!secret
+        });
+
         // Extract headers
         const discordUserId = headers['x-discord-user-id'];
         const timestamp = headers['x-discord-timestamp'];
@@ -90,10 +97,11 @@ function verifyDiscordRequest(headers, secret) {
         }
 
         // ✅ All checks passed - request is authentic
+        console.log('[Discord Auth] ✅ Verification successful for user:', discordUserId);
         return discordUserId;
 
     } catch (error) {
-        console.error('Discord auth error:', error);
+        console.error('[Discord Auth] ❌ Verification error:', error);
         return null;
     }
 }
@@ -117,11 +125,15 @@ function getHeadersFromExpressRequest(req) {
  * @returns {Object} Headers object
  */
 function getHeadersFromWorkersRequest(request) {
-    return {
+    const headers = {
         'x-discord-user-id': request.headers.get('X-Discord-User-ID'),
+        'x-discord-username': request.headers.get('X-Discord-Username'),
         'x-discord-timestamp': request.headers.get('X-Discord-Timestamp'),
         'x-discord-signature': request.headers.get('X-Discord-Signature')
     };
+
+    console.log('[Main Worker] Extracted headers:', headers);
+    return headers;
 }
 
 module.exports = {

@@ -71,6 +71,13 @@ function createFetchAPI(env, discordUserId, discordUsername) {
             }
         };
 
+        console.log('[Discord Worker] Sending headers:', {
+            'X-Discord-User-ID': discordUserId,
+            'X-Discord-Username': discordUsername,
+            'X-Discord-Username-length': discordUsername?.length,
+            'X-Discord-Username-type': typeof discordUsername
+        });
+
         if (body) {
             options.body = JSON.stringify(body);
         }
@@ -134,6 +141,7 @@ async function handleDiscordInteraction(request, env) {
         const discordUser = interaction.member?.user || interaction.user;
         const discordUserId = discordUser?.id;
 
+        console.log('[Discord Worker] FULL INTERACTION:', JSON.stringify(interaction, null, 2));
         console.log('[Discord Worker] Discord user object:', JSON.stringify(discordUser));
         console.log('[Discord Worker] Username fields:', {
             username: discordUser?.username,
@@ -142,13 +150,18 @@ async function handleDiscordInteraction(request, env) {
         });
 
         // Try multiple possible username fields
-        // Priority: username (handle) > global_name (display name) > display_name
-        const discordUsername = discordUser?.username ||
-                              discordUser?.global_name ||
+        // Priority: global_name (display name/handle) > username > display_name
+        const discordUsername = discordUser?.global_name ||
+                              discordUser?.username ||
                               discordUser?.display_name ||
                               `User#${discordUserId}`;
 
-        console.log('[Discord Worker] Extracted username:', discordUsername);
+        console.log('[Discord Worker] Selected field:', {
+            isGlobalName: !!discordUser?.global_name,
+            isUsername: !discordUser?.global_name && !!discordUser?.username,
+            isFallback: !discordUser?.global_name && !discordUser?.username && !discordUser?.display_name,
+            extractedValue: discordUsername
+        });
 
         if (discordUsername.startsWith('User#')) {
             console.warn('[Discord Worker] ⚠️ Using fallback username format - Discord user object may be incomplete');
@@ -209,6 +222,15 @@ async function handleDiscordInteraction(request, env) {
                     const linkParams = {
                         code: getOption(options, 'code')
                     };
+
+                    // DEBUG: Show what we extracted
+                    console.log('[DEBUG LINK] User fields from Discord:', {
+                        username: discordUser?.username,
+                        global_name: discordUser?.global_name,
+                        discriminator: discordUser?.discriminator,
+                        selectedUsername: discordUsername
+                    });
+
                     responseData = await handleLinkCommand(fetchAPI, discordUserId, linkParams);
                     break;
 

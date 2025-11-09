@@ -151,7 +151,7 @@ async function handleLink(message, args) {
 
     const code = args[1].toUpperCase();
     const discordUserId = message.author.id;
-    const discordHandle = message.author.username;
+    const discordHandle = message.author.globalName || message.author.username;
 
     try {
         const response = await axios.post(`${API_BASE}/discord/verify-link-code`, {

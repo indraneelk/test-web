@@ -241,6 +241,10 @@ async function handleLinkCommand(fetchAPI, discordUserId, params) {
         discordUserId: discordUserId
     });
 
+    console.log('[handleLinkCommand] Full response:', JSON.stringify(response));
+    console.log('[handleLinkCommand] response.data:', response.data);
+    console.log('[handleLinkCommand] response.data.discord_handle:', response.data?.discord_handle);
+
     const linkedHandle = response.data?.discord_handle || 'your account';
 
     return {

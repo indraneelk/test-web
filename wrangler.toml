@@ -20,4 +20,5 @@ SUPABASE_URL = "https://oxbaswpyxryvygamgtsu.supabase.co"
 # wrangler pages secret put SUPABASE_SERVICE_ROLE_KEY
 # wrangler pages secret put SUPABASE_JWT_SECRET
 # wrangler pages secret put SESSION_SECRET
+# wrangler pages secret put DISCORD_PUBLIC_KEY
 # wrangler pages secret put ANTHROPIC_API_KEY (optional, for Claude AI features)
