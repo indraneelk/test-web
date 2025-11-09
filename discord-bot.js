@@ -2,14 +2,65 @@ require('dotenv').config();
 
 const { Client, GatewayIntentBits, Partials, EmbedBuilder } = require('discord.js');
 const axios = require('axios');
+const crypto = require('crypto');
 
 // Configuration
 const API_BASE = process.env.API_BASE_URL || 'http://localhost:3000/api';
 const DISCORD_TOKEN = process.env.DISCORD_BOT_TOKEN;
+const DISCORD_SECRET = process.env.DISCORD_BOT_SECRET;
 
 if (!DISCORD_TOKEN) {
     console.error('❌ DISCORD_BOT_TOKEN environment variable is required');
     process.exit(1);
+}
+
+if (!DISCORD_SECRET) {
+    console.error('❌ DISCORD_BOT_SECRET environment variable is required');
+    process.exit(1);
+}
+
+/**
+ * Generate HMAC signature for Discord bot authentication
+ * @param {string} discordUserId - Discord user ID
+ * @param {number} timestamp - Request timestamp
+ * @returns {string} HMAC signature
+ */
+function generateSignature(discordUserId, timestamp) {
+    const payload = `${discordUserId}|${timestamp}`;
+    return crypto
+        .createHmac('sha256', DISCORD_SECRET)
+        .update(payload)
+        .digest('hex');
+}
+
+/**
+ * Make authenticated API request with HMAC signature
+ * @param {string} discordUserId - Discord user ID
+ * @param {string} method - HTTP method
+ * @param {string} endpoint - API endpoint
+ * @param {Object} data - Request data (for POST/PUT)
+ * @returns {Promise} Axios response
+ */
+function authenticatedRequest(discordUserId, method, endpoint, data = null) {
+    const timestamp = Date.now().toString();
+    const signature = generateSignature(discordUserId, timestamp);
+
+    const config = {
+        method,
+        url: `${API_BASE}${endpoint}`,
+        headers: {
+            'X-Discord-User-ID': discordUserId,
+            'X-Discord-Timestamp': timestamp,
+            'X-Discord-Signature': signature,
+            'Content-Type': 'application/json'
+        }
+    };
+
+    if (data && (method === 'POST' || method === 'PUT')) {
+        config.data = data;
+    }
+
+    return axios(config);
 }
 
 // Create Discord client
@@ -69,7 +120,7 @@ client.on('messageCreate', async (message) => {
             case 'priorities':
                 await handlePriorities(message);
                 break;
-            case 'ask':
+            case 'claude':
                 await handleAsk(message, args);
                 break;
             case 'link':
@@ -130,9 +181,7 @@ async function handleTasks(message) {
     const discordUserId = message.author.id;
 
     try {
-        const response = await axios.get(`${API_BASE}/tasks`, {
-            headers: { 'X-Discord-User-ID': discordUserId }
-        });
+        const response = await authenticatedRequest(discordUserId, 'GET', '/tasks');
 
         const tasks = response.data;
 
@@ -182,9 +231,7 @@ async function handleSummary(message) {
     const thinking = await message.reply('🤔 Analyzing your tasks...');
 
     try {
-        const response = await axios.get(`${API_BASE}/claude/summary`, {
-            headers: { 'X-Discord-User-ID': discordUserId }
-        });
+        const response = await authenticatedRequest(discordUserId, 'GET', '/claude/summary');
 
         const embed = new EmbedBuilder()
             .setColor(0x13ce66)
@@ -213,9 +260,7 @@ async function handlePriorities(message) {
     const thinking = await message.reply('🤔 Analyzing task priorities...');
 
     try {
-        const response = await axios.get(`${API_BASE}/claude/priorities`, {
-            headers: { 'X-Discord-User-ID': discordUserId }
-        });
+        const response = await authenticatedRequest(discordUserId, 'GET', '/claude/priorities');
 
         const embed = new EmbedBuilder()
             .setColor(0xff4949)
@@ -237,20 +282,17 @@ async function handlePriorities(message) {
 async function handleAsk(message, args) {
     const discordUserId = message.author.id;
 
-    // Get question (everything after 'ask')
+    // Get question (everything after 'claude')
     const question = args.slice(1).join(' ');
 
     if (!question || question.length === 0) {
-        return message.reply('Usage: `ask <your question>`\nExample: `ask what tasks are overdue?`');
+        return message.reply('Usage: `claude <your question>`\nExample: `claude what tasks are overdue?`');
     }
 
     const thinking = await message.reply('🤔 Thinking...');
 
     try {
-        const response = await axios.post(`${API_BASE}/claude/ask`,
-            { question },
-            { headers: { 'X-Discord-User-ID': discordUserId } }
-        );
+        const response = await authenticatedRequest(discordUserId, 'POST', '/claude/ask', { question });
 
         // Split long responses
         const answer = response.data.answer;
@@ -309,8 +351,8 @@ async function handleCreate(message, args) {
             // For direct commands, we need to resolve project names and user emails to IDs
             // Fetch user's projects and all users
             const [projectsResp, usersResp] = await Promise.all([
-                axios.get(`${API_BASE}/projects`, { headers: { 'X-Discord-User-ID': discordUserId } }),
-                axios.get(`${API_BASE}/users`, { headers: { 'X-Discord-User-ID': discordUserId } })
+                authenticatedRequest(discordUserId, 'GET', '/projects'),
+                authenticatedRequest(discordUserId, 'GET', '/users')
             ]);
 
             const projects = projectsResp.data;
@@ -363,17 +405,14 @@ async function handleCreate(message, args) {
             };
         } else {
             // Use Claude to parse natural language
-            const parseResponse = await axios.post(`${API_BASE}/claude/parse-task`,
-                { input: taskInput },
-                { headers: { 'X-Discord-User-ID': discordUserId } }
-            );
+            const parseResponse = await authenticatedRequest(discordUserId, 'POST', '/claude/parse-task', { input: taskInput });
 
             const parsed = parseResponse.data;
 
             // If Claude didn't find a project, use first available
             let projectId = parsed.projectId;
             if (!projectId) {
-                const projectsResp = await axios.get(`${API_BASE}/projects`, { headers: { 'X-Discord-User-ID': discordUserId } });
+                const projectsResp = await authenticatedRequest(discordUserId, 'GET', '/projects');
                 const projects = projectsResp.data;
                 if (projects.length > 0) {
                     projectId = projects[0].id;
@@ -393,9 +432,7 @@ async function handleCreate(message, args) {
         }
 
         // Create the task
-        const response = await axios.post(`${API_BASE}/tasks`, taskData, {
-            headers: { 'X-Discord-User-ID': discordUserId }
-        });
+        const response = await authenticatedRequest(discordUserId, 'POST', '/tasks', taskData);
 
         const task = response.data;
 
@@ -447,9 +484,7 @@ async function handleUpdate(message, args) {
             return message.reply('❌ Invalid field. Use: status, priority, name, or due');
         }
 
-        const response = await axios.put(`${API_BASE}/tasks/${taskId}`, updateData, {
-            headers: { 'X-Discord-User-ID': discordUserId }
-        });
+        const response = await authenticatedRequest(discordUserId, 'PUT', `/tasks/${taskId}`, updateData);
 
         await message.reply(`✅ Task updated: ${field} set to "${value}"`);
     } catch (error) {
@@ -473,10 +508,7 @@ async function handleComplete(message, args) {
     const taskId = args[1];
 
     try {
-        const response = await axios.put(`${API_BASE}/tasks/${taskId}`,
-            { status: 'completed' },
-            { headers: { 'X-Discord-User-ID': discordUserId } }
-        );
+        const response = await authenticatedRequest(discordUserId, 'PUT', `/tasks/${taskId}`, { status: 'completed' });
 
         await message.reply(`✅ Task marked as completed!`);
     } catch (error) {
@@ -510,7 +542,7 @@ async function handleHelp(message) {
             },
             {
                 name: '💬 Ask Claude',
-                value: '`ask <question>` - Ask Claude anything about your tasks\nExamples:\n• `ask what should I focus on today?`\n• `ask which tasks are overdue?`\n• `ask summarize project X`'
+                value: '`claude <question>` - Ask Claude anything about your tasks\nExamples:\n• `claude what should I focus on today?`\n• `claude which tasks are overdue?`\n• `claude summarize project X`'
             },
             {
                 name: '📝 Create Task Examples',
