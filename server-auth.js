@@ -12,6 +12,10 @@ const claudeService = require('./claude-service');
 const dataService = require('./data-service');
 const supabaseService = require('./supabase-service');
 
+// Shared modules
+const { generateId, getCurrentTimestamp, sanitizeString, generateDiscordLinkCode, isHexColor } = require('./shared/helpers');
+const { validateString, validateEmail, validateUsername, validatePassword, validatePriority, validateStatus } = require('./shared/validators');
+
 const app = express();
 const PORT = process.env.PORT || 5001;
 
@@ -93,10 +97,6 @@ app.get('/vendor/supabase.js', (req, res) => {
 });
 
 // Helper functions
-const generateId = (prefix = 'id') => {
-    return `${prefix}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-};
-
 const logActivity = async (userId, action, details, taskId = null, projectId = null) => {
     await dataService.logActivity({
         id: generateId('activity'),
@@ -138,57 +138,6 @@ async function verifySupabaseJWT(token) {
     if (payload.exp && Date.now() / 1000 > payload.exp) throw new Error('Token expired');
     if (payload.iss && !String(payload.iss).includes(ref)) throw new Error('Invalid issuer');
     return payload; // { sub, email, user_metadata?, ... }
-}
-
-// Validation helpers
-const validateString = (str, minLength = 1, maxLength = 500) => {
-    if (typeof str !== 'string') return false;
-    const trimmed = str.trim();
-    return trimmed.length >= minLength && trimmed.length <= maxLength;
-};
-
-const validateEmail = (email) => {
-    if (!email) return true; // Email is optional
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    return emailRegex.test(email);
-};
-
-const validateUsername = (username) => {
-    if (typeof username !== 'string') return false;
-    const trimmed = username.trim();
-    // Username: 3-30 chars, alphanumeric and underscores only
-    return /^[a-zA-Z0-9_]{3,30}$/.test(trimmed);
-};
-
-const validatePassword = (password) => {
-    if (typeof password !== 'string') return false;
-    // Password: at least 8 characters with complexity requirements
-    if (password.length < 8) return false;
-
-    // Require at least 3 of: uppercase, lowercase, numbers, special chars
-    const hasUpperCase = /[A-Z]/.test(password);
-    const hasLowerCase = /[a-z]/.test(password);
-    const hasNumbers = /\d/.test(password);
-    const hasSpecialChar = /[!@#$%^&*(),.?":{}|<>]/.test(password);
-
-    const complexityCount = [hasUpperCase, hasLowerCase, hasNumbers, hasSpecialChar].filter(Boolean).length;
-    return complexityCount >= 3;
-};
-
-const sanitizeString = (str) => {
-    if (typeof str !== 'string') return '';
-    return str.trim().slice(0, 1000); // Limit length and trim
-};
-
-// Generate secure Discord link code
-function generateDiscordLinkCode() {
-    // Generate format: LINK-XXXXX (5 alphanumeric chars)
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    let code = 'LINK-';
-    for (let i = 0; i < 5; i++) {
-        code += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    return code;
 }
 
 // Rate Limiting

@@ -3,48 +3,11 @@
 
 import { jwtVerify, SignJWT, createRemoteJWKSet } from 'jose';
 
+// Shared modules
+const { generateId, getCurrentTimestamp, sanitizeString, generateDiscordLinkCode, isHexColor } = require('./shared/helpers');
+const { validateString, validateEmail, validateUsername, validatePassword, validatePriority, validateStatus } = require('./shared/validators');
+
 // ==================== HELPER FUNCTIONS ====================
-
-function generateId(prefix = 'id') {
-    return `${prefix}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-}
-
-function getCurrentTimestamp() {
-    return new Date().toISOString();
-}
-
-// Input validation and sanitization
-function sanitizeString(str, maxLen = 1000) {
-    if (typeof str !== 'string') return '';
-    const s = str.trim();
-    return s.length > maxLen ? s.slice(0, maxLen) : s;
-}
-
-function generateDiscordLinkCode() {
-    // Generate format: LINK-XXXXX (5 alphanumeric chars)
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    let code = 'LINK-';
-    for (let i = 0; i < 5; i++) {
-        code += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    return code;
-}
-
-function isHexColor(str) {
-    return typeof str === 'string' && /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(str.trim());
-}
-
-function validatePriority(v) {
-    if (v == null) return true;
-    const s = String(v).toLowerCase().trim();
-    return ['none', 'low', 'medium', 'high'].includes(s);
-}
-
-function validateStatus(v) {
-    if (v == null) return true;
-    const s = String(v).toLowerCase().trim();
-    return ['pending', 'in-progress', 'completed'].includes(s);
-}
 
 // Basic rate limiting (KV optional; in-memory fallback)
 const memoryBuckets = new Map();
