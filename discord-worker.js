@@ -133,7 +133,26 @@ async function handleDiscordInteraction(request, env) {
         const { name, options } = interaction.data;
         const discordUser = interaction.member?.user || interaction.user;
         const discordUserId = discordUser?.id;
-        const discordUsername = discordUser?.username || `User#${discordUserId}`;
+
+        console.log('[Discord Worker] Discord user object:', JSON.stringify(discordUser));
+        console.log('[Discord Worker] Username fields:', {
+            username: discordUser?.username,
+            global_name: discordUser?.global_name,
+            display_name: discordUser?.display_name
+        });
+
+        // Try multiple possible username fields
+        // Priority: username (handle) > global_name (display name) > display_name
+        const discordUsername = discordUser?.username ||
+                              discordUser?.global_name ||
+                              discordUser?.display_name ||
+                              `User#${discordUserId}`;
+
+        console.log('[Discord Worker] Extracted username:', discordUsername);
+
+        if (discordUsername.startsWith('User#')) {
+            console.warn('[Discord Worker] ⚠️ Using fallback username format - Discord user object may be incomplete');
+        }
 
         if (!discordUserId) {
             return new Response(JSON.stringify(

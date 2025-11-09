@@ -241,11 +241,13 @@ async function handleLinkCommand(fetchAPI, discordUserId, params) {
         discordUserId: discordUserId
     });
 
+    const linkedHandle = response.data?.discord_handle || 'your account';
+
     return {
         embeds: [{
             color: 0x13ce66,
             title: '✅ Discord Account Linked',
-            description: 'Your Discord account has been successfully linked!\nYou can now use all bot commands.',
+            description: `Successfully linked to **${linkedHandle}**!\nYou can now use all bot commands.`,
             timestamp: new Date().toISOString()
         }]
     };

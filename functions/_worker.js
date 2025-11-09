@@ -927,25 +927,39 @@ async function handleVerifyDiscordLinkCode(request, env) {
 
 // Discord Bot API Handlers (called from discord-worker)
 async function handleDiscordGetTasks(request, env) {
-    const headers = getHeadersFromWorkersRequest(request);
-    const discordUserId = verifyDiscordRequest(headers, env.DISCORD_BOT_SECRET);
+    try {
+        console.log('[handleDiscordGetTasks] Starting...');
+        const headers = getHeadersFromWorkersRequest(request);
+        const discordUserId = verifyDiscordRequest(headers, env.DISCORD_BOT_SECRET);
 
-    if (!discordUserId) {
-        return errorResponse('Unauthorized Discord request', 401);
+        console.log('[handleDiscordGetTasks] Verified Discord User ID:', discordUserId);
+
+        if (!discordUserId) {
+            console.log('[handleDiscordGetTasks] No Discord User ID - unauthorized');
+            return errorResponse('Unauthorized Discord request', 401);
+        }
+
+        // Get user by Discord ID
+        const user = await getUserByDiscordId(env.DB, discordUserId);
+        console.log('[handleDiscordGetTasks] Found user:', user ? { id: user.id, discord_handle: user.discord_handle } : null);
+
+        if (!user) {
+            console.log('[handleDiscordGetTasks] User not found for Discord ID:', discordUserId);
+            return errorResponse('Discord account not linked. Use /link command first.', 404);
+        }
+
+        // Get tasks assigned to this user
+        const tasks = await env.DB.prepare(
+            'SELECT * FROM tasks WHERE assigned_to_id = ? AND archived = 0 ORDER BY created_at DESC'
+        ).bind(user.id).all();
+
+        console.log('[handleDiscordGetTasks] Retrieved tasks:', tasks.results ? tasks.results.length : 0);
+
+        return jsonResponse({ data: tasks.results || [] });
+    } catch (error) {
+        console.error('[handleDiscordGetTasks] Error:', error);
+        return errorResponse(`Internal server error: ${error.message}`, 500);
     }
-
-    // Get user by Discord ID
-    const user = await getUserByDiscordId(env.DB, discordUserId);
-    if (!user) {
-        return errorResponse('Discord account not linked. Use /link command first.', 404);
-    }
-
-    // Get user's tasks
-    const tasks = await env.DB.prepare(
-        'SELECT * FROM tasks WHERE user_id = ? ORDER BY created_at DESC'
-    ).bind(user.id).all();
-
-    return jsonResponse({ data: tasks.results || [] });
 }
 
 async function handleDiscordCreateTask(request, env) {
@@ -981,8 +995,8 @@ async function handleDiscordCreateTask(request, env) {
     const now = getCurrentTimestamp();
 
     await env.DB.prepare(
-        'INSERT INTO tasks (id, name, description, status, priority, date, user_id, project_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-    ).bind(taskId, name, '', 'pending', priority || 'none', date, user.id, personalProject.id, now, now).run();
+        'INSERT INTO tasks (id, name, description, status, priority, date, created_by_id, assigned_to_id, project_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    ).bind(taskId, name, '', 'pending', priority || 'none', date, user.id, user.id, personalProject.id, now, now).run();
 
     const task = await env.DB.prepare('SELECT * FROM tasks WHERE id = ?').bind(taskId).first();
     return jsonResponse({ data: task });
@@ -1002,15 +1016,15 @@ async function handleDiscordCompleteTask(request, env, taskIdentifier) {
         return errorResponse('Discord account not linked. Use /link command first.', 404);
     }
 
-    // Find task by ID or name
+    // Find task by ID or name (check if assigned to user)
     let task;
     if (taskIdentifier.startsWith('task-')) {
         task = await env.DB.prepare(
-            'SELECT * FROM tasks WHERE id = ? AND user_id = ?'
+            'SELECT * FROM tasks WHERE id = ? AND assigned_to_id = ?'
         ).bind(taskIdentifier, user.id).first();
     } else {
         task = await env.DB.prepare(
-            'SELECT * FROM tasks WHERE name LIKE ? AND user_id = ? AND status != ?'
+            'SELECT * FROM tasks WHERE name LIKE ? AND assigned_to_id = ? AND status != ?'
         ).bind(`%${taskIdentifier}%`, user.id, 'completed').first();
     }
 
@@ -1074,6 +1088,18 @@ async function handleDiscordLink(request, env) {
     // Get Discord username from header (passed by discord-worker)
     const discordUsername = headers['x-discord-username'] || `User#${discordUserId}`;
 
+    console.log('[handleDiscordLink] Linking user:', {
+        userId: linkCode.user_id,
+        discordUserId,
+        discordUsername,
+        fromHeader: headers['x-discord-username'],
+        usingFallback: !headers['x-discord-username']
+    });
+
+    if (discordUsername.startsWith('User#')) {
+        console.warn('[handleDiscordLink] ⚠️ Using fallback username - X-Discord-Username header may be missing or empty');
+    }
+
     // Mark code as used
     await env.DB.prepare('UPDATE discord_link_codes SET used = 1 WHERE id = ?')
         .bind(linkCode.id).run();
@@ -1092,6 +1118,88 @@ async function handleDiscordLink(request, env) {
             discord_handle: user.discord_handle
         }
     });
+}
+
+async function handleDiscordSummary(request, env) {
+    try {
+        const headers = getHeadersFromWorkersRequest(request);
+        const discordUserId = verifyDiscordRequest(headers, env.DISCORD_BOT_SECRET);
+
+        if (!discordUserId) {
+            return errorResponse('Unauthorized Discord request', 401);
+        }
+
+        const user = await getUserByDiscordId(env.DB, discordUserId);
+        if (!user) {
+            return errorResponse('Discord account not linked. Use /link command first.', 404);
+        }
+
+        // Get all tasks assigned to this user
+        const allTasks = await env.DB.prepare(
+            'SELECT * FROM tasks WHERE assigned_to_id = ? AND archived = 0'
+        ).bind(user.id).all();
+
+        const tasks = allTasks.results || [];
+        const totalTasks = tasks.length;
+        const pendingTasks = tasks.filter(t => t.status === 'pending' || t.status === 'in-progress').length;
+        const completedTasks = tasks.filter(t => t.status === 'completed').length;
+
+        // Count overdue tasks (tasks with date < today and not completed)
+        const today = new Date().toISOString().split('T')[0];
+        const overdueTasks = tasks.filter(t =>
+            t.date < today && t.status !== 'completed'
+        ).length;
+
+        // Get total projects user has access to
+        const ownedProjects = await env.DB.prepare(
+            'SELECT COUNT(*) as count FROM projects WHERE owner_id = ?'
+        ).bind(user.id).first();
+
+        const memberProjects = await env.DB.prepare(
+            'SELECT COUNT(*) as count FROM project_members WHERE user_id = ?'
+        ).bind(user.id).first();
+
+        const totalProjects = (ownedProjects?.count || 0) + (memberProjects?.count || 0);
+
+        return jsonResponse({
+            data: {
+                totalTasks,
+                pendingTasks,
+                completedTasks,
+                overdueTasks,
+                totalProjects
+            }
+        });
+    } catch (error) {
+        console.error('[handleDiscordSummary] Error:', error);
+        return errorResponse(`Internal server error: ${error.message}`, 500);
+    }
+}
+
+async function handleDiscordPriorities(request, env) {
+    try {
+        const headers = getHeadersFromWorkersRequest(request);
+        const discordUserId = verifyDiscordRequest(headers, env.DISCORD_BOT_SECRET);
+
+        if (!discordUserId) {
+            return errorResponse('Unauthorized Discord request', 401);
+        }
+
+        const user = await getUserByDiscordId(env.DB, discordUserId);
+        if (!user) {
+            return errorResponse('Discord account not linked. Use /link command first.', 404);
+        }
+
+        // Get high priority tasks assigned to this user
+        const highPriorityTasks = await env.DB.prepare(
+            'SELECT * FROM tasks WHERE assigned_to_id = ? AND priority = ? AND archived = 0 ORDER BY date ASC'
+        ).bind(user.id, 'high').all();
+
+        return jsonResponse({ data: highPriorityTasks.results || [] });
+    } catch (error) {
+        console.error('[handleDiscordPriorities] Error:', error);
+        return errorResponse(`Internal server error: ${error.message}`, 500);
+    }
 }
 
 // Project Handlers
