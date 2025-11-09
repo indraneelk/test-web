@@ -149,6 +149,11 @@ function clearCookie(name) {
     return `${name}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Strict`;
 }
 
+async function createAuthCookie(userId, env) {
+    const token = await createJWT({ userId }, env.SESSION_SECRET || 'fallback-secret', '24h');
+    return setCookie('auth_token', token, { maxAge: 86400 });
+}
+
 // Plan B: Supabase Realtime Broadcast Helper
 async function broadcastChange(env, eventType, payload) {
     try {
