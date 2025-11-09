@@ -344,6 +344,19 @@ async function handleSupabaseCallback(request, env) {
             ).bind(sub, username, 'supabase', name, email || null, initials, 0, now, now).run();
             user = await getUserById(env.DB, sub);
             await logActivity(env.DB, sub, 'user_created', `User ${name} created via magic link`);
+
+            // Create personal project for new user
+            const personalProjectId = generateId('project');
+            await env.DB.prepare(
+                'INSERT INTO projects (id, name, description, color, owner_id, is_personal, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+            ).bind(personalProjectId, 'My Tasks', 'Personal tasks and notes', '#667eea', sub, 1, now, now).run();
+
+            // Add user as member of their personal project
+            await env.DB.prepare(
+                'INSERT INTO project_members (project_id, user_id, role, added_at) VALUES (?, ?, ?, ?)'
+            ).bind(personalProjectId, sub, 'owner', now).run();
+
+            await logActivity(env.DB, sub, 'project_created', 'Personal project created', null, personalProjectId);
         }
         const { password_hash, ...userWithoutPassword } = user;
         return jsonResponse({ user: userWithoutPassword });
