@@ -66,9 +66,9 @@ class ClaudeService extends EventEmitter {
      */
     async healthCheck() {
         try {
-            // Make a minimal API call to verify connectivity
+            // Make a minimal API call to verify connectivity using latest Haiku model
             const response = await this.client.messages.create({
-                model: 'claude-3-5-sonnet-20241022',
+                model: 'claude-haiku-4-5-20251001',
                 max_tokens: 10,
                 messages: [{
                     role: 'user',

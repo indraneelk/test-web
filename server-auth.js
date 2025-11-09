@@ -840,17 +840,11 @@ app.get('/api/user/discord-handle', requireAuth, async (req, res) => {
 // Generate Discord link code (for logged-in users)
 app.post('/api/discord/generate-link-code', requireAuth, async (req, res) => {
     try {
-        const db = dataService.db;
-
         // Clean up expired codes for this user first
-        const now = new Date().toISOString();
-        await db.run('DELETE FROM discord_link_codes WHERE user_id = ? AND expires_at < ?', [req.userId, now]);
+        await dataService.deleteExpiredDiscordLinkCodes(req.userId);
 
         // Check if user already has a valid unused code
-        const existingCode = await db.get(
-            'SELECT code, expires_at FROM discord_link_codes WHERE user_id = ? AND used = 0 AND expires_at > ?',
-            [req.userId, now]
-        );
+        const existingCode = await dataService.getValidDiscordLinkCodeForUser(req.userId);
 
         if (existingCode) {
             const expiresAt = new Date(existingCode.expires_at);
@@ -866,7 +860,7 @@ app.post('/api/discord/generate-link-code', requireAuth, async (req, res) => {
         let attempts = 0;
         while (attempts < 10) {
             code = generateDiscordLinkCode();
-            const existing = await db.get('SELECT id FROM discord_link_codes WHERE code = ?', [code]);
+            const existing = await dataService.getDiscordLinkCodeByCode(code);
             if (!existing) break;
             attempts++;
         }
@@ -879,10 +873,13 @@ app.post('/api/discord/generate-link-code', requireAuth, async (req, res) => {
         const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
         const createdAt = new Date().toISOString();
 
-        await db.run(
-            'INSERT INTO discord_link_codes (code, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)',
-            [code, req.userId, expiresAt, createdAt]
-        );
+        await dataService.createDiscordLinkCode({
+            code,
+            user_id: req.userId,
+            expires_at: expiresAt,
+            used: 0,
+            created_at: createdAt
+        });
 
         res.json({
             code,
@@ -898,12 +895,8 @@ app.post('/api/discord/generate-link-code', requireAuth, async (req, res) => {
 app.get('/api/discord/link-status/:code', requireAuth, async (req, res) => {
     try {
         const { code } = req.params;
-        const db = dataService.db;
 
-        const linkCode = await db.get(
-            'SELECT used, expires_at FROM discord_link_codes WHERE code = ? AND user_id = ?',
-            [code, req.userId]
-        );
+        const linkCode = await dataService.getDiscordLinkCodeForUser(code, req.userId);
 
         if (!linkCode) {
             return res.status(404).json({ error: 'Code not found' });
@@ -945,14 +938,10 @@ app.post('/api/discord/verify-link-code', async (req, res) => {
             return res.status(400).json({ error: 'Invalid Discord User ID format' });
         }
 
-        const db = dataService.db;
         const now = new Date().toISOString();
 
         // Find the link code
-        const linkCode = await db.get(
-            'SELECT id, user_id, expires_at, used FROM discord_link_codes WHERE code = ?',
-            [code]
-        );
+        const linkCode = await dataService.getDiscordLinkCodeByCode(code);
 
         if (!linkCode) {
             return res.status(404).json({ error: 'Invalid code' });
@@ -973,7 +962,7 @@ app.post('/api/discord/verify-link-code', async (req, res) => {
         }
 
         // Mark code as used
-        await db.run('UPDATE discord_link_codes SET used = 1 WHERE id = ?', [linkCode.id]);
+        await dataService.markDiscordLinkCodeAsUsed(code);
 
         // Update user with Discord info
         await dataService.updateUserDiscordHandle(linkCode.user_id, discordHandle, discordUserId);

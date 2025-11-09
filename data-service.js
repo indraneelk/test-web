@@ -25,6 +25,7 @@ class DataService {
             this.TASKS_FILE = path.join(this.DATA_DIR, 'tasks.json');
             this.ACTIVITY_FILE = path.join(this.DATA_DIR, 'activity.json');
             this.INVITATIONS_FILE = path.join(this.DATA_DIR, 'invitations.json');
+            this.DISCORD_LINK_CODES_FILE = path.join(this.DATA_DIR, 'discord-link-codes.json');
             this.initializeJSONFiles();
         }
     }
@@ -73,6 +74,9 @@ class DataService {
         }
         if (!fs.existsSync(this.INVITATIONS_FILE)) {
             this.writeJSON(this.INVITATIONS_FILE, []);
+        }
+        if (!fs.existsSync(this.DISCORD_LINK_CODES_FILE)) {
+            this.writeJSON(this.DISCORD_LINK_CODES_FILE, []);
         }
     }
 
@@ -646,6 +650,110 @@ class DataService {
                 invitations[index] = { ...invitations[index], ...updates };
                 this.writeJSON(this.INVITATIONS_FILE, invitations);
             }
+        }
+    }
+
+    // ==================== DISCORD LINK CODE OPERATIONS ====================
+
+    async createDiscordLinkCode(codeData) {
+        if (this.useD1) {
+            await this.d1.query(
+                'INSERT INTO discord_link_codes (code, user_id, expires_at, used, created_at) VALUES (?, ?, ?, ?, ?)',
+                [
+                    codeData.code,
+                    codeData.user_id,
+                    codeData.expires_at,
+                    codeData.used ? 1 : 0,
+                    codeData.created_at
+                ]
+            );
+        } else {
+            const codes = this.readJSON(this.DISCORD_LINK_CODES_FILE);
+            codes.push(codeData);
+            this.writeJSON(this.DISCORD_LINK_CODES_FILE, codes);
+        }
+    }
+
+    async getDiscordLinkCodeByCode(code) {
+        if (this.useD1) {
+            const result = await this.d1.query(
+                'SELECT * FROM discord_link_codes WHERE code = ?',
+                [code]
+            );
+            return result.results?.[0] || null;
+        } else {
+            const codes = this.readJSON(this.DISCORD_LINK_CODES_FILE);
+            return codes.find(c => c.code === code) || null;
+        }
+    }
+
+    async getDiscordLinkCodeForUser(code, userId) {
+        if (this.useD1) {
+            const result = await this.d1.query(
+                'SELECT used, expires_at FROM discord_link_codes WHERE code = ? AND user_id = ?',
+                [code, userId]
+            );
+            return result.results?.[0] || null;
+        } else {
+            const codes = this.readJSON(this.DISCORD_LINK_CODES_FILE);
+            return codes.find(c => c.code === code && c.user_id === userId) || null;
+        }
+    }
+
+    async deleteExpiredDiscordLinkCodes(userId) {
+        const now = new Date().toISOString();
+        if (this.useD1) {
+            await this.d1.query(
+                'DELETE FROM discord_link_codes WHERE user_id = ? AND expires_at < ?',
+                [userId, now]
+            );
+        } else {
+            const codes = this.readJSON(this.DISCORD_LINK_CODES_FILE);
+            const filtered = codes.filter(c => !(c.user_id === userId && c.expires_at < now));
+            this.writeJSON(this.DISCORD_LINK_CODES_FILE, filtered);
+        }
+    }
+
+    async getValidDiscordLinkCodeForUser(userId) {
+        const now = new Date().toISOString();
+        if (this.useD1) {
+            const result = await this.d1.query(
+                'SELECT code, expires_at FROM discord_link_codes WHERE user_id = ? AND used = 0 AND expires_at > ?',
+                [userId, now]
+            );
+            return result.results?.[0] || null;
+        } else {
+            const codes = this.readJSON(this.DISCORD_LINK_CODES_FILE);
+            return codes.find(c => c.user_id === userId && c.used === 0 && c.expires_at > now) || null;
+        }
+    }
+
+    async markDiscordLinkCodeAsUsed(code) {
+        if (this.useD1) {
+            await this.d1.query(
+                'UPDATE discord_link_codes SET used = 1 WHERE code = ?',
+                [code]
+            );
+        } else {
+            const codes = this.readJSON(this.DISCORD_LINK_CODES_FILE);
+            const codeObj = codes.find(c => c.code === code);
+            if (codeObj) {
+                codeObj.used = 1;
+                this.writeJSON(this.DISCORD_LINK_CODES_FILE, codes);
+            }
+        }
+    }
+
+    async deleteDiscordLinkCode(code) {
+        if (this.useD1) {
+            await this.d1.query(
+                'DELETE FROM discord_link_codes WHERE code = ?',
+                [code]
+            );
+        } else {
+            const codes = this.readJSON(this.DISCORD_LINK_CODES_FILE);
+            const filtered = codes.filter(c => c.code !== code);
+            this.writeJSON(this.DISCORD_LINK_CODES_FILE, filtered);
         }
     }
 }
