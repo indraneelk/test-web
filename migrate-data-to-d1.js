@@ -15,7 +15,7 @@ const { execSync } = require('child_process');
 
 const DATA_DIR = path.join(__dirname, 'data');
 const OUTPUT_SQL = path.join(__dirname, 'migrations/006_migrate_json_data.sql');
-const DB_NAME = 'task-manager-db';
+const DB_NAME = 'task-manager-db-v2';
 
 // Helper to escape SQL strings
 function sqlEscape(str) {
