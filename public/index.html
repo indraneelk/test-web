@@ -488,8 +488,10 @@
                         </div>
                     </div>
 
-                    <!-- Delete button at bottom left -->
-                    <div class="tab-footer">
+                    <!-- Danger Zone -->
+                    <div class="tab-footer danger-zone">
+                        <h3>⚠️ Danger Zone</h3>
+                        <p class="danger-zone-description">Once you delete a project, there is no going back. Please be certain.</p>
                         <button class="btn btn-danger" onclick="deleteCurrentProject()">Delete Project</button>
                     </div>
                 </div>
@@ -502,7 +504,7 @@
                             <select id="newMemberSelect" class="form-select">
                                 <option value="">Add team member...</option>
                             </select>
-                            <button class="btn btn-primary" id="addMemberBtn" onclick="addMember()" style="background: #4facfe; border-color: #4facfe;">Add<span class="btn-text-full"> Member</span></button>
+                            <button class="btn btn-primary" id="addMemberBtn" onclick="addMember()">Add<span class="btn-text-full"> Member</span></button>
                         </div>
                         <div id="membersList" class="members-list"></div>
                     </div>

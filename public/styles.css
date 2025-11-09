@@ -1270,8 +1270,22 @@ body {
 .info-row { display: flex; align-items: center; gap: 0.5rem; padding: 0.25rem 0; }
 .info-label { width: 90px; color: var(--text-secondary); font-weight: 600; font-size: 0.875rem; }
 .info-value { color: var(--text-primary); font-size: 0.95rem; }
-.add-member-section { display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.5rem; }
-.add-member-section .form-select { flex: 1; }
+.add-member-section { display: flex; gap: 0.75rem; align-items: center; margin-bottom: 1rem; }
+.add-member-section .form-select {
+    flex: 0 1 auto;
+    min-width: 180px;
+    max-width: 300px;
+    width: auto;
+}
+.add-member-section .btn-primary {
+    background: #2563eb;
+    border-color: #2563eb;
+    white-space: nowrap;
+}
+.add-member-section .btn-primary:hover {
+    background: #1d4ed8;
+    border-color: #1d4ed8;
+}
 .members-list { max-height: 240px; overflow-y: auto; border: 1px solid var(--border-color); border-radius: 0.5rem; padding: 0.5rem; background: var(--card-bg); }
 .member-item { display: flex; justify-content: space-between; align-items: center; padding: 0.5rem; border-bottom: 1px solid var(--border-color); }
 .member-item:last-child { border-bottom: none; }
@@ -1707,6 +1721,28 @@ label {
 /* Responsive Design - All mobile styles consolidated at 768px breakpoint above */
 
 /* Loading State */
+.tab-footer.danger-zone {
+    background: rgba(239, 68, 68, 0.08);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    border-radius: 0.5rem;
+    padding: 1.25rem;
+    margin-top: 2rem;
+}
+
+.tab-footer.danger-zone h3 {
+    margin: 0 0 0.5rem 0;
+    font-size: 1rem;
+    color: #dc2626;
+    font-weight: 600;
+}
+
+.danger-zone-description {
+    margin: 0 0 1rem 0;
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    line-height: 1.5;
+}
+
 .settings-section.danger-zone {
     display: flex;
     align-items: center;
