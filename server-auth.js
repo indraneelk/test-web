@@ -24,6 +24,9 @@ const { errorHandler, asyncHandler } = require('./shared/error-handler');
 const app = express();
 const PORT = process.env.PORT || SERVER.DEFAULT_PORT;
 
+// Configuration
+const ADMIN_EMAIL = 'indraneel.kasmalkar@gmail.com';
+
 // CORS Configuration
 const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS
     ? process.env.ALLOWED_ORIGINS.split(',')
@@ -249,14 +252,14 @@ const requireAdmin = async (req, res, next) => {
     }
 };
 
-// Super admin check - only for Indraneel.kasmalkar@gmail.com
+// Super admin check
 const requireSuperAdmin = async (req, res, next) => {
     if (!req.session || !req.session.userId) {
         return res.status(401).json({ error: 'Authentication required' });
     }
     try {
         const user = await dataService.getUserById(req.session.userId);
-        if (!user || user.email !== 'Indraneel.kasmalkar@gmail.com') {
+        if (!user || !user.email || user.email.toLowerCase() !== ADMIN_EMAIL) {
             return res.status(403).json({ error: 'Super admin access required' });
         }
         req.user = user; // Attach user to request

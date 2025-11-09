@@ -24,6 +24,8 @@ async function checkAdminAccess() {
             return false;
         }
 
+        // Show admin content only after access is verified
+        document.querySelector('.admin-container').style.display = 'block';
         return true;
     } catch (error) {
         console.error('Auth check failed:', error);
