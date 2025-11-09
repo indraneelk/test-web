@@ -16,7 +16,9 @@
       "Bash(node migrate.js:*)",
       "Bash(git commit:*)",
       "mcp__supabase__list_projects",
-      "mcp__supabase__execute_sql"
+      "mcp__supabase__execute_sql",
+      "Bash(git push)",
+      "Bash(open:*)"
     ],
     "deny": [],
     "ask": []
