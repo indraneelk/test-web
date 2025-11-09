@@ -1261,11 +1261,11 @@ async function handleSendInvitation(request, env) {
             ).bind(now, 'pending', normalizedEmail).run();
         }
 
-        // Send magic link via Supabase OTP API
+        // Send signup invitation via Supabase (triggers "Confirm signup" email)
         const origin = request.headers.get('Origin') || 'https://mmw-tm.pages.dev';
         const redirectTo = `${origin}/auth/callback.html`;
 
-        const supabaseResponse = await fetch(`${env.SUPABASE_URL}/auth/v1/otp`, {
+        const supabaseResponse = await fetch(`${env.SUPABASE_URL}/auth/v1/signup`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -1273,16 +1273,43 @@ async function handleSendInvitation(request, env) {
             },
             body: JSON.stringify({
                 email: normalizedEmail,
+                password: crypto.randomUUID(), // Random password (user won't use it - they'll use magic links)
                 options: {
-                    emailRedirectTo: redirectTo
+                    emailRedirectTo: redirectTo,
+                    data: {
+                        invited: true
+                    }
                 }
             })
         });
 
         if (!supabaseResponse.ok) {
             const errorData = await supabaseResponse.text();
-            console.error('Supabase OTP error:', errorData);
-            throw new Error('Failed to send magic link email');
+            console.error('Supabase signup error:', errorData);
+
+            // Check if user already exists
+            if (errorData.includes('already registered')) {
+                // User exists, send them a magic link instead
+                const otpResponse = await fetch(`${env.SUPABASE_URL}/auth/v1/otp`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'apikey': env.SUPABASE_ANON_KEY
+                    },
+                    body: JSON.stringify({
+                        email: normalizedEmail,
+                        options: {
+                            emailRedirectTo: redirectTo
+                        }
+                    })
+                });
+
+                if (!otpResponse.ok) {
+                    throw new Error('User already exists but failed to send login link');
+                }
+            } else {
+                throw new Error('Failed to send invitation email');
+            }
         }
 
         await logActivity(env.DB, user.id, 'invitation_sent', `Invitation sent to ${normalizedEmail}`);
@@ -1370,7 +1397,7 @@ async function handleResendInvitation(request, env, email) {
             'UPDATE invitations SET magic_link_sent_at = ?, status = ? WHERE email = ?'
         ).bind(now, 'pending', normalizedEmail).run();
 
-        // Resend magic link via Supabase OTP API
+        // Resend invitation - use magic link for existing users
         const origin = request.headers.get('Origin') || 'https://mmw-tm.pages.dev';
         const redirectTo = `${origin}/auth/callback.html`;
 
@@ -1391,7 +1418,7 @@ async function handleResendInvitation(request, env, email) {
         if (!supabaseResponse.ok) {
             const errorData = await supabaseResponse.text();
             console.error('Supabase OTP error:', errorData);
-            throw new Error('Failed to send magic link email');
+            throw new Error('Failed to resend invitation email');
         }
 
         await logActivity(env.DB, user.id, 'invitation_resent', `Invitation resent to ${normalizedEmail}`);
