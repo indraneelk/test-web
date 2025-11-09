@@ -1,5 +1,24 @@
 // Authentication-enabled Task Manager Frontend
 
+// Loading Spinner Control
+function updateLoadingText(text) {
+    const subtextEl = document.getElementById('loadingSubtext');
+    if (subtextEl) subtextEl.textContent = text;
+}
+
+function hideLoadingSpinner() {
+    const overlay = document.getElementById('loadingOverlay');
+    if (overlay) {
+        overlay.classList.add('hidden');
+        // Remove from DOM after animation completes
+        setTimeout(() => {
+            if (overlay.parentNode) {
+                overlay.parentNode.removeChild(overlay);
+            }
+        }, 300);
+    }
+}
+
 // State
 let currentUser = null;
 let tasks = [];
@@ -101,12 +120,22 @@ async function authFetch(url, options = {}) {
 
 // Initialize app
 document.addEventListener('DOMContentLoaded', async () => {
+    // Spinner is already visible with "Checking authentication" text
     const isAuthenticated = await checkAuth();
     if (!isAuthenticated) {
-        return; // Stop execution if not authenticated
+        // User will be redirected to login, spinner will disappear with page navigation
+        return;
     }
+
+    // Update spinner text for data loading phase
+    updateLoadingText('Loading projects and tasks...');
+
     setupEventListeners();
     await loadData();
+
+    // Hide spinner after data is loaded
+    hideLoadingSpinner();
+
     initMobileUI();
     // Plan B: Supabase Realtime subscription (optional)
     try {

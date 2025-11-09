@@ -7,7 +7,7 @@ const session = require('express-session');
 const cookieParser = require('cookie-parser');
 const crypto = require('crypto');
 const helmet = require('helmet');
-const rateLimit = require('express-rate-limit');
+const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
 const claudeService = require('./claude-service');
 const dataService = require('./data-service');
 const supabaseService = require('./supabase-service');
@@ -18,14 +18,16 @@ const { validateString, validateEmail, validateUsername, validatePassword, valid
 const businessLogic = require('./shared/business-logic');
 const { ValidationError, AuthenticationError, PermissionError, NotFoundError, ConflictError } = require('./shared/errors');
 const { verifyDiscordRequest, getHeadersFromExpressRequest } = require('./shared/discord-auth');
+const { SERVER, SECURITY, ERRORS, HTTP } = require('./shared/constants');
+const { errorHandler, asyncHandler } = require('./shared/error-handler');
 
 const app = express();
-const PORT = process.env.PORT || 5001;
+const PORT = process.env.PORT || SERVER.DEFAULT_PORT;
 
 // CORS Configuration
 const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS
     ? process.env.ALLOWED_ORIGINS.split(',')
-    : ['http://localhost:5001', 'http://127.0.0.1:5001'];
+    : SERVER.DEFAULT_ALLOWED_ORIGINS;
 
 // Security headers
 app.use(helmet({
@@ -145,8 +147,8 @@ async function verifySupabaseJWT(token) {
 
 // Rate Limiting
 const authLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 5, // 5 requests per window
+    windowMs: SECURITY.LOGIN_RATE_LIMIT_WINDOW_MS,
+    max: SECURITY.LOGIN_RATE_LIMIT_MAX_REQUESTS,
     message: { error: 'Too many login attempts, please try again later' },
     standardHeaders: true,
     legacyHeaders: false,
@@ -162,15 +164,11 @@ const magicLinkLimiter = rateLimit({
     keyGenerator: (req /*, res*/) => {
         try {
             const email = (req.body && typeof req.body.email === 'string') ? req.body.email.toLowerCase().trim() : '';
-            return email || 'unknown';
+            const ip = ipKeyGenerator(req);
+            return `${email}|${ip}`;
         } catch {
-            return 'unknown';
+            return ipKeyGenerator(req);
         }
-    },
-    // Disable IP fallback since we're rate limiting by email only
-    skip: (req) => {
-        // Skip if no email provided (will be caught by validation anyway)
-        return !(req.body && req.body.email);
     }
 });
 
@@ -186,8 +184,8 @@ const requireAuth = async (req, res, next) => {
 
         if (!verifiedUserId) {
             // Invalid signature or missing headers
-            return res.status(401).json({
-                error: 'Invalid Discord authentication. Request signature verification failed.'
+            return res.status(HTTP.UNAUTHORIZED).json({
+                error: ERRORS.DISCORD_INVALID_SIGNATURE
             });
         }
 
@@ -198,8 +196,8 @@ const requireAuth = async (req, res, next) => {
                 req.user = user;
                 return next();
             } else {
-                return res.status(403).json({
-                    error: 'Discord account not linked. Please link your Discord account on the website.'
+                return res.status(HTTP.FORBIDDEN).json({
+                    error: ERRORS.DISCORD_NOT_LINKED
                 });
             }
         } catch (error) {
@@ -1632,6 +1630,9 @@ if (process.env.ANTHROPIC_API_KEY) {
     console.log('⚠️  Claude AI not configured. Claude features will be disabled.');
     console.log('   Add ANTHROPIC_API_KEY to .env to enable AI features.\n');
 }
+
+// Global Error Handler - must be defined after all routes
+app.use(errorHandler);
 
 // Start server
 app.listen(PORT, () => {
