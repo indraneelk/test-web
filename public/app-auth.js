@@ -298,14 +298,6 @@ function initMobileUI() {
         });
     }
 
-    // Mobile profile settings button
-    const mobileProfileSettingsBtn = document.getElementById('mobileProfileSettingsBtn');
-    if (mobileProfileSettingsBtn) {
-        mobileProfileSettingsBtn.addEventListener('click', () => {
-            window.location.href = '/profile-update.html';
-        });
-    }
-
     // Mobile user avatar click
     const mobileUserAvatar = document.getElementById('mobileUserAvatar');
     if (mobileUserAvatar) {
