@@ -639,8 +639,16 @@ body {
     }
 
     .add-member-section .form-select {
-        flex: 1;
-        min-width: 0; /* Allow shrinking below content size */
+        flex: 0 1 auto;
+        min-width: 140px;
+        max-width: none; /* Allow expansion when dropdown is opened */
+        width: auto;
+        font-size: 0.875rem;
+    }
+
+    .add-member-section .btn-primary {
+        flex-shrink: 0;
+        padding: 0.625rem 0.875rem;
         font-size: 0.875rem;
     }
 
