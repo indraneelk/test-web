@@ -14,7 +14,7 @@ const {
     createResponse,
     createEmbedResponse,
     getOption
-} = require('./shared/discord-interactions');
+} = require('./functions/shared/discord-interactions');
 
 const {
     handleTasksCommand,
@@ -25,7 +25,7 @@ const {
     handleClaudeCommand,
     handleLinkCommand,
     handleHelpCommand
-} = require('./shared/discord-commands');
+} = require('./functions/shared/discord-commands');
 
 /**
  * Create API fetch wrapper for Discord commands

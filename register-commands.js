@@ -6,7 +6,7 @@
  */
 
 require('dotenv').config();
-const { COMMANDS } = require('./shared/discord-interactions');
+const { COMMANDS } = require('./functions/shared/discord-interactions');
 
 const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
 const APPLICATION_ID = process.env.DISCORD_APPLICATION_ID;

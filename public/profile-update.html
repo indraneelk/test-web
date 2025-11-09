@@ -877,18 +877,24 @@
         if (!resp.ok) throw new Error(data.error || 'Failed to generate link code');
 
         const code = data.code;
-        const expiresIn = data.expiresIn;
+        const expiresAt = data.expiresAt; // Absolute timestamp when code expires
+
+        // Clear Discord status (since we just unlinked)
+        statusEl.innerHTML = '<div class="info-value">Not linked</div>';
+
+        // Update button to show "Link Discord" instead of "Relink"
+        linkBtn.textContent = 'Link Discord';
 
         // Show code section
         document.getElementById('discordCodeSection').style.display = 'block';
         document.getElementById('discordCode').textContent = code;
 
-        // Calculate expiry time
-        const expiryDate = new Date(Date.now() + expiresIn);
-        const expiryMinutes = Math.floor(expiresIn / 60000);
-        document.getElementById('discordExpiry').textContent = `Expires in ${expiryMinutes} minutes`;
+        // Calculate time remaining
+        const now = Date.now();
+        const msRemaining = expiresAt - now;
+        const minutesRemaining = Math.floor(msRemaining / (60 * 1000));
+        document.getElementById('discordExpiry').textContent = `Expires in ${minutesRemaining} minutes`;
 
-        linkBtn.textContent = 'Generate New Link';
         linkBtn.disabled = false;
 
         // Poll for link status

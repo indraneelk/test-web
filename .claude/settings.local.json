@@ -38,7 +38,10 @@
       "mcp__cloudflare-bindings__workers_get_worker",
       "mcp__cloudflare-docs__search_cloudflare_documentation",
       "Bash(npm run deploy:worker:*)",
-      "Bash(npm run deploy:pages:*)"
+      "Bash(npm run deploy:pages:*)",
+      "Bash(node register-commands.js:*)",
+      "Bash(timeout 10 npx wrangler:*)",
+      "Bash(node:*)"
     ],
     "deny": [],
     "ask": []

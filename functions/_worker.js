@@ -800,24 +800,14 @@ async function handleGenerateDiscordLinkCode(request, env) {
         return errorResponse('Authentication required', 401);
     }
 
-    // Clean up expired codes for this user first
-    const now = getCurrentTimestamp();
-    await env.DB.prepare('DELETE FROM discord_link_codes WHERE user_id = ? AND expires_at < ?')
-        .bind(user.id, now).run();
+    // Unlink existing Discord account first (for relink functionality)
+    await env.DB.prepare('UPDATE users SET discord_handle = NULL, discord_user_id = NULL, discord_verified = 0 WHERE id = ?')
+        .bind(user.id).run();
 
-    // Check if user already has a valid unused code
-    const existing = await env.DB.prepare(
-        'SELECT code, expires_at FROM discord_link_codes WHERE user_id = ? AND used = 0 AND expires_at > ?'
-    ).bind(user.id, now).first();
-
-    if (existing) {
-        const expiresAt = new Date(existing.expires_at);
-        const secondsRemaining = Math.floor((expiresAt - new Date()) / 1000);
-        return jsonResponse({
-            code: existing.code,
-            expiresIn: secondsRemaining
-        });
-    }
+    // Delete ALL existing codes for this user (regardless of expiry)
+    // This ensures regenerate always creates a fresh code
+    await env.DB.prepare('DELETE FROM discord_link_codes WHERE user_id = ?')
+        .bind(user.id).run();
 
     // Generate new code
     let code;
@@ -835,7 +825,8 @@ async function handleGenerateDiscordLinkCode(request, env) {
     }
 
     // Code expires in 5 minutes
-    const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+    const expiryTimestamp = Date.now() + (5 * 60 * 1000); // 5 minutes from now
+    const expiresAt = new Date(expiryTimestamp).toISOString();
     const createdAt = getCurrentTimestamp();
 
     await env.DB.prepare(
@@ -844,7 +835,7 @@ async function handleGenerateDiscordLinkCode(request, env) {
 
     return jsonResponse({
         code,
-        expiresIn: 300 // 5 minutes in seconds
+        expiresAt: expiryTimestamp // Return the actual expiry timestamp in ms
     });
 }
 
@@ -932,6 +923,108 @@ async function handleVerifyDiscordLinkCode(request, env) {
         success: true,
         message: 'Discord account linked successfully'
     });
+}
+
+// Discord Bot API Handlers (called from discord-worker)
+async function handleDiscordGetTasks(request, env) {
+    const headers = getHeadersFromWorkersRequest(request);
+    const discordUserId = verifyDiscordRequest(headers, env.DISCORD_BOT_SECRET);
+
+    if (!discordUserId) {
+        return errorResponse('Unauthorized Discord request', 401);
+    }
+
+    // Get user by Discord ID
+    const user = await getUserByDiscordId(env.DB, discordUserId);
+    if (!user) {
+        return errorResponse('Discord account not linked. Use /link command first.', 404);
+    }
+
+    // Get user's tasks
+    const tasks = await env.DB.prepare(
+        'SELECT * FROM tasks WHERE user_id = ? ORDER BY created_at DESC'
+    ).bind(user.id).all();
+
+    return jsonResponse({ data: tasks.results || [] });
+}
+
+async function handleDiscordCreateTask(request, env) {
+    const headers = getHeadersFromWorkersRequest(request);
+    const discordUserId = verifyDiscordRequest(headers, env.DISCORD_BOT_SECRET);
+
+    if (!discordUserId) {
+        return errorResponse('Unauthorized Discord request', 401);
+    }
+
+    // Get user by Discord ID
+    const user = await getUserByDiscordId(env.DB, discordUserId);
+    if (!user) {
+        return errorResponse('Discord account not linked. Use /link command first.', 404);
+    }
+
+    const { name, date, priority } = await request.json();
+
+    if (!name || !date) {
+        return errorResponse('Task name and date are required', 400);
+    }
+
+    // Get user's personal project
+    const personalProject = await env.DB.prepare(
+        'SELECT id FROM projects WHERE owner_id = ? AND is_personal = 1'
+    ).bind(user.id).first();
+
+    if (!personalProject) {
+        return errorResponse('Personal project not found', 404);
+    }
+
+    const taskId = generateId('task');
+    const now = getCurrentTimestamp();
+
+    await env.DB.prepare(
+        'INSERT INTO tasks (id, name, description, status, priority, date, user_id, project_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    ).bind(taskId, name, '', 'pending', priority || 'none', date, user.id, personalProject.id, now, now).run();
+
+    const task = await env.DB.prepare('SELECT * FROM tasks WHERE id = ?').bind(taskId).first();
+    return jsonResponse({ data: task });
+}
+
+async function handleDiscordCompleteTask(request, env, taskIdentifier) {
+    const headers = getHeadersFromWorkersRequest(request);
+    const discordUserId = verifyDiscordRequest(headers, env.DISCORD_BOT_SECRET);
+
+    if (!discordUserId) {
+        return errorResponse('Unauthorized Discord request', 401);
+    }
+
+    // Get user by Discord ID
+    const user = await getUserByDiscordId(env.DB, discordUserId);
+    if (!user) {
+        return errorResponse('Discord account not linked. Use /link command first.', 404);
+    }
+
+    // Find task by ID or name
+    let task;
+    if (taskIdentifier.startsWith('task-')) {
+        task = await env.DB.prepare(
+            'SELECT * FROM tasks WHERE id = ? AND user_id = ?'
+        ).bind(taskIdentifier, user.id).first();
+    } else {
+        task = await env.DB.prepare(
+            'SELECT * FROM tasks WHERE name LIKE ? AND user_id = ? AND status != ?'
+        ).bind(`%${taskIdentifier}%`, user.id, 'completed').first();
+    }
+
+    if (!task) {
+        return errorResponse('Task not found', 404);
+    }
+
+    const now = getCurrentTimestamp();
+    await env.DB.prepare(
+        'UPDATE tasks SET status = ?, updated_at = ? WHERE id = ?'
+    ).bind('completed', now, task.id).run();
+
+    const updatedTask = await env.DB.prepare('SELECT * FROM tasks WHERE id = ?').bind(task.id).first();
+    return jsonResponse({ data: updatedTask });
 }
 
 // Project Handlers
@@ -1677,6 +1770,18 @@ export default {
             }
             if (path === '/api/discord/verify-link-code' && method === 'POST') {
                 return await handleVerifyDiscordLinkCode(request, env);
+            }
+
+            // Discord Bot API routes (called by discord-worker)
+            if (path === '/api/discord/tasks' && method === 'GET') {
+                return await handleDiscordGetTasks(request, env);
+            }
+            if (path === '/api/discord/tasks' && method === 'POST') {
+                return await handleDiscordCreateTask(request, env);
+            }
+            if (path.match(/^\/api\/discord\/tasks\/[^/]+\/complete$/) && method === 'PUT') {
+                const taskIdentifier = decodeURIComponent(path.split('/')[4]);
+                return await handleDiscordCompleteTask(request, env, taskIdentifier);
             }
 
             // Project routes
