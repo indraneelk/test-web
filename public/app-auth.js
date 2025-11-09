@@ -211,7 +211,7 @@ function updateUserInfo() {
 
     // Show admin link for super admin
     const adminLink = document.getElementById('adminLink');
-    if (adminLink && currentUser.email === 'Indraneel.kasmalkar@gmail.com') {
+    if (adminLink && currentUser.email && currentUser.email.toLowerCase() === 'indraneel.kasmalkar@gmail.com') {
         adminLink.style.display = 'flex';
     }
 }
