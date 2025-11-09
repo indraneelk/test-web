@@ -1261,27 +1261,27 @@ async function handleSendInvitation(request, env) {
             ).bind(now, 'pending', normalizedEmail).run();
         }
 
-        // Send magic link via Supabase Admin API
+        // Send magic link via Supabase OTP API
         const origin = request.headers.get('Origin') || 'https://mmw-tm.pages.dev';
         const redirectTo = `${origin}/auth/callback.html`;
 
-        const supabaseResponse = await fetch(`${env.SUPABASE_URL}/auth/v1/invite`, {
+        const supabaseResponse = await fetch(`${env.SUPABASE_URL}/auth/v1/otp`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
-                'apikey': env.SUPABASE_SERVICE_ROLE_KEY
+                'apikey': env.SUPABASE_ANON_KEY
             },
             body: JSON.stringify({
                 email: normalizedEmail,
-                data: {},
-                redirectTo
+                options: {
+                    emailRedirectTo: redirectTo
+                }
             })
         });
 
         if (!supabaseResponse.ok) {
             const errorData = await supabaseResponse.text();
-            console.error('Supabase invite error:', errorData);
+            console.error('Supabase OTP error:', errorData);
             throw new Error('Failed to send magic link email');
         }
 
@@ -1370,27 +1370,27 @@ async function handleResendInvitation(request, env, email) {
             'UPDATE invitations SET magic_link_sent_at = ?, status = ? WHERE email = ?'
         ).bind(now, 'pending', normalizedEmail).run();
 
-        // Resend magic link via Supabase Admin API
+        // Resend magic link via Supabase OTP API
         const origin = request.headers.get('Origin') || 'https://mmw-tm.pages.dev';
         const redirectTo = `${origin}/auth/callback.html`;
 
-        const supabaseResponse = await fetch(`${env.SUPABASE_URL}/auth/v1/invite`, {
+        const supabaseResponse = await fetch(`${env.SUPABASE_URL}/auth/v1/otp`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
-                'apikey': env.SUPABASE_SERVICE_ROLE_KEY
+                'apikey': env.SUPABASE_ANON_KEY
             },
             body: JSON.stringify({
                 email: normalizedEmail,
-                data: {},
-                redirectTo
+                options: {
+                    emailRedirectTo: redirectTo
+                }
             })
         });
 
         if (!supabaseResponse.ok) {
             const errorData = await supabaseResponse.text();
-            console.error('Supabase invite error:', errorData);
+            console.error('Supabase OTP error:', errorData);
             throw new Error('Failed to send magic link email');
         }
 
