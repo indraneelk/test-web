@@ -1568,6 +1568,19 @@ async function handleDeleteUser(request, env, userId) {
         ).bind(userId).run();
 
         // 6. Delete any invitations associated with this user
+        // Delete invitations sent TO this user's email
+        if (userToDelete.email) {
+            await env.DB.prepare(
+                'DELETE FROM invitations WHERE email = ?'
+            ).bind(userToDelete.email).run();
+        }
+
+        // Delete invitations sent BY this user
+        await env.DB.prepare(
+            'DELETE FROM invitations WHERE invited_by_user_id = ?'
+        ).bind(userId).run();
+
+        // Nullify joined_user_id for invitations this user accepted
         await env.DB.prepare(
             'UPDATE invitations SET joined_user_id = NULL WHERE joined_user_id = ?'
         ).bind(userId).run();
