@@ -798,6 +798,17 @@ app.put('/api/user/discord-handle', requireAuth, async (req, res) => {
             return res.status(400).json({ error: 'Discord handle and user ID are required' });
         }
 
+        // Validate Discord User ID format (17-19 digit number)
+        if (!/^\d{17,19}$/.test(discordUserId)) {
+            return res.status(400).json({ error: 'Invalid Discord User ID format. Must be a 17-19 digit number.' });
+        }
+
+        // Validate Discord handle (alphanumeric, underscores, periods, 2-32 chars, optional discriminator)
+        const handleWithoutDiscriminator = discordHandle.replace(/#\d{4}$/, '');
+        if (!/^[a-zA-Z0-9_.]{2,32}$/.test(handleWithoutDiscriminator)) {
+            return res.status(400).json({ error: 'Invalid Discord handle format' });
+        }
+
         // Check if Discord user ID is already taken by another user
         const existingUser = await dataService.getUserByDiscordId(discordUserId);
         if (existingUser && existingUser.id !== req.userId) {

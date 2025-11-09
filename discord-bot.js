@@ -330,18 +330,65 @@ async function handleCreate(message, args) {
             const titleMatch = taskInput.match(/"([^"]+)"/);
             const title = titleMatch ? titleMatch[1] : taskInput.split('--')[0].trim();
 
-            const projectMatch = taskInput.match(/--project\s+(\S+)/i);
+            const projectMatch = taskInput.match(/--project\s+(.+?)(?:\s+--|$)/i);
             const dueMatch = taskInput.match(/--due\s+(\S+)/i);
             const priorityMatch = taskInput.match(/--priority\s+(\S+)/i);
             const assignMatch = taskInput.match(/--assign\s+(\S+)/i);
+
+            // For direct commands, we need to resolve project names and user emails to IDs
+            // Fetch user's projects and all users
+            const [projectsResp, usersResp] = await Promise.all([
+                axios.get(`${API_BASE}/projects`, { headers: { Cookie: session } }),
+                axios.get(`${API_BASE}/users`, { headers: { Cookie: session } })
+            ]);
+
+            const projects = projectsResp.data;
+            const users = usersResp.data;
+
+            // Resolve project name to ID
+            let projectId = null;
+            if (projectMatch) {
+                const projectName = projectMatch[1].trim();
+                const project = projects.find(p =>
+                    p.name.toLowerCase() === projectName.toLowerCase()
+                );
+                if (project) {
+                    projectId = project.id;
+                } else {
+                    return await thinking.edit(`❌ Project "${projectName}" not found. Available projects: ${projects.map(p => p.name).join(', ')}`);
+                }
+            }
+
+            // Resolve user email to ID
+            let assignedToId = null;
+            if (assignMatch) {
+                const email = assignMatch[1].trim();
+                const user = users.find(u =>
+                    u.email && u.email.toLowerCase() === email.toLowerCase()
+                );
+                if (user) {
+                    assignedToId = user.id;
+                } else {
+                    return await thinking.edit(`❌ User "${email}" not found`);
+                }
+            }
+
+            // If no project specified, use first available (usually personal project)
+            if (!projectId && projects.length > 0) {
+                projectId = projects[0].id;
+            }
+
+            if (!projectId) {
+                return await thinking.edit('❌ No project specified and no projects available. Please specify --project <name>');
+            }
 
             taskData = {
                 name: title,
                 description: '',
                 date: dueMatch ? dueMatch[1] : new Date().toISOString().split('T')[0],
                 priority: priorityMatch ? priorityMatch[1] : 'none',
-                project_name: projectMatch ? projectMatch[1] : null,
-                assigned_to_email: assignMatch ? assignMatch[1] : null
+                project_id: projectId,
+                assigned_to_id: assignedToId
             };
         } else {
             // Use Claude to parse natural language
@@ -351,12 +398,25 @@ async function handleCreate(message, args) {
             );
 
             const parsed = parseResponse.data;
+
+            // If Claude didn't find a project, use first available
+            let projectId = parsed.projectId;
+            if (!projectId) {
+                const projectsResp = await axios.get(`${API_BASE}/projects`, { headers: { Cookie: session } });
+                const projects = projectsResp.data;
+                if (projects.length > 0) {
+                    projectId = projects[0].id;
+                } else {
+                    return await thinking.edit('❌ No projects available. Please create a project first.');
+                }
+            }
+
             taskData = {
                 name: parsed.title,
                 description: parsed.description || '',
                 date: parsed.dueDate,
                 priority: parsed.priority,
-                project_id: parsed.projectId,
+                project_id: projectId,
                 assigned_to_id: parsed.assignedToId
             };
         }

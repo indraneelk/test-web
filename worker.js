@@ -582,6 +582,17 @@ async function handleUpdateDiscordHandle(request, env) {
         return errorResponse('Discord handle and user ID are required', 400);
     }
 
+    // Validate Discord User ID format (17-19 digit number)
+    if (!/^\d{17,19}$/.test(discordUserId)) {
+        return errorResponse('Invalid Discord User ID format. Must be a 17-19 digit number.', 400);
+    }
+
+    // Validate Discord handle (alphanumeric, underscores, periods, 2-32 chars, optional discriminator)
+    const handleWithoutDiscriminator = discordHandle.replace(/#\d{4}$/, '');
+    if (!/^[a-zA-Z0-9_.]{2,32}$/.test(handleWithoutDiscriminator)) {
+        return errorResponse('Invalid Discord handle format', 400);
+    }
+
     // Check if Discord user ID is already taken by another user
     const { results } = await env.DB.prepare(
         'SELECT id FROM users WHERE discord_user_id = ? AND id != ?'
