@@ -179,6 +179,12 @@ function updateUserInfo() {
             mobileAvatar.style.backgroundColor = currentUser.color;
         }
     }
+
+    // Show admin link for super admin
+    const adminLink = document.getElementById('adminLink');
+    if (adminLink && currentUser.email === 'Indraneel.kasmalkar@gmail.com') {
+        adminLink.style.display = 'flex';
+    }
 }
 
 // Logout

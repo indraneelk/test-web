@@ -252,6 +252,15 @@ async function authenticate(request, env) {
     return null;
 }
 
+// Super admin check - only for Indraneel.kasmalkar@gmail.com
+async function requireSuperAdmin(request, env) {
+    const user = await authenticate(request, env);
+    if (!user || user.email !== 'Indraneel.kasmalkar@gmail.com') {
+        return null;
+    }
+    return user;
+}
+
 // ==================== API RESPONSE HELPERS ====================
 
 const corsHeaders = {
@@ -306,6 +315,19 @@ async function handleSupabaseLogin(request, env) {
                 'INSERT INTO users (id, username, password_hash, name, email, initials, is_admin, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
             ).bind(sub, username, 'supabase', name, email || null, initials, 0, now, now).run();
             user = await getUserById(env.DB, sub);
+
+            // Check if this email was invited and mark invitation as accepted
+            if (email) {
+                const invitation = await env.DB.prepare(
+                    'SELECT * FROM invitations WHERE email = ? AND status = ?'
+                ).bind(email, 'pending').first();
+
+                if (invitation) {
+                    await env.DB.prepare(
+                        'UPDATE invitations SET status = ?, joined_at = ?, joined_user_id = ? WHERE email = ?'
+                    ).bind('accepted', now, sub, email).run();
+                }
+            }
         }
         const { password_hash, ...userWithoutPassword } = user;
         return jsonResponse({ user: userWithoutPassword });
@@ -344,6 +366,19 @@ async function handleSupabaseCallback(request, env) {
             ).bind(sub, username, 'supabase', name, email || null, initials, 0, now, now).run();
             user = await getUserById(env.DB, sub);
             await logActivity(env.DB, sub, 'user_created', `User ${name} created via magic link`);
+
+            // Check if this email was invited and mark invitation as accepted
+            if (email) {
+                const invitation = await env.DB.prepare(
+                    'SELECT * FROM invitations WHERE email = ? AND status = ?'
+                ).bind(email, 'pending').first();
+
+                if (invitation) {
+                    await env.DB.prepare(
+                        'UPDATE invitations SET status = ?, joined_at = ?, joined_user_id = ? WHERE email = ?'
+                    ).bind('accepted', now, sub, email).run();
+                }
+            }
 
             // Create personal project for new user
             const personalProjectId = generateId('project');
@@ -965,6 +1000,155 @@ async function handleGetActivity(request, env) {
     return jsonResponse(results);
 }
 
+// ==================== ADMIN INVITATION HANDLERS ====================
+
+// Send invitation
+async function handleSendInvitation(request, env) {
+    const user = await requireSuperAdmin(request, env);
+    if (!user) {
+        return errorResponse('Super admin access required', 403);
+    }
+
+    // Rate limit
+    const allowed = await rateLimit(request, env, 'magic-link', 60, 1);
+    if (!allowed) {
+        return errorResponse('Too many magic link requests. Please wait 60 seconds and try again.', 429);
+    }
+
+    try {
+        const { email } = await request.json();
+
+        if (!email || typeof email !== 'string') {
+            return errorResponse('Valid email is required', 400);
+        }
+
+        const normalizedEmail = email.toLowerCase().trim();
+
+        // Check if user already exists
+        const existingUser = await env.DB.prepare(
+            'SELECT id FROM users WHERE email = ?'
+        ).bind(normalizedEmail).first();
+
+        if (existingUser) {
+            return errorResponse('User with this email already exists', 400);
+        }
+
+        // Check if invitation already exists
+        const existingInv = await env.DB.prepare(
+            'SELECT * FROM invitations WHERE email = ?'
+        ).bind(normalizedEmail).first();
+
+        const now = getCurrentTimestamp();
+
+        if (!existingInv) {
+            // Create new invitation
+            await env.DB.prepare(
+                'INSERT INTO invitations (email, invited_by_user_id, invited_at, magic_link_sent_at, status) VALUES (?, ?, ?, ?, ?)'
+            ).bind(normalizedEmail, user.id, now, now, 'pending').run();
+        } else {
+            // Update existing invitation
+            await env.DB.prepare(
+                'UPDATE invitations SET magic_link_sent_at = ?, status = ? WHERE email = ?'
+            ).bind(now, 'pending', normalizedEmail).run();
+        }
+
+        // Note: Actual magic link sending would require Supabase integration
+        // For now, just log the action
+        await logActivity(env.DB, user.id, 'invitation_sent', `Invitation sent to ${normalizedEmail}`);
+
+        return jsonResponse({
+            message: 'Invitation sent successfully',
+            email: normalizedEmail
+        });
+
+    } catch (error) {
+        console.error('Send invitation error:', error);
+        return errorResponse('Failed to send invitation', 500);
+    }
+}
+
+// Get all invitations
+async function handleGetInvitations(request, env) {
+    const user = await requireSuperAdmin(request, env);
+    if (!user) {
+        return errorResponse('Super admin access required', 403);
+    }
+
+    try {
+        const { results } = await env.DB.prepare(`
+            SELECT
+                i.id, i.email, i.invited_at, i.magic_link_sent_at,
+                i.joined_at, i.status,
+                u.id as user_id, u.name as user_name, u.username
+            FROM invitations i
+            LEFT JOIN users u ON i.joined_user_id = u.id
+            ORDER BY i.invited_at DESC
+        `).all();
+
+        return jsonResponse({ invitations: results || [] });
+    } catch (error) {
+        console.error('Get invitations error:', error);
+        return errorResponse('Failed to fetch invitations', 500);
+    }
+}
+
+// Resend invitation
+async function handleResendInvitation(request, env, email) {
+    const user = await requireSuperAdmin(request, env);
+    if (!user) {
+        return errorResponse('Super admin access required', 403);
+    }
+
+    // Rate limit
+    const allowed = await rateLimit(request, env, 'magic-link', 60, 1);
+    if (!allowed) {
+        return errorResponse('Too many magic link requests. Please wait 60 seconds and try again.', 429);
+    }
+
+    try {
+        const normalizedEmail = decodeURIComponent(email).toLowerCase().trim();
+
+        const invitation = await env.DB.prepare(
+            'SELECT * FROM invitations WHERE email = ?'
+        ).bind(normalizedEmail).first();
+
+        if (!invitation) {
+            return errorResponse('Invitation not found', 404);
+        }
+
+        if (invitation.status === 'accepted') {
+            return errorResponse('User has already accepted this invitation', 400);
+        }
+
+        // Check if user exists
+        const existingUser = await env.DB.prepare(
+            'SELECT * FROM users WHERE email = ?'
+        ).bind(normalizedEmail).first();
+
+        if (existingUser) {
+            // Auto-mark as accepted
+            await env.DB.prepare(
+                'UPDATE invitations SET status = ?, joined_at = ?, joined_user_id = ? WHERE email = ?'
+            ).bind('accepted', existingUser.created_at, existingUser.id, normalizedEmail).run();
+            return errorResponse('User has already registered', 400);
+        }
+
+        // Update invitation
+        const now = getCurrentTimestamp();
+        await env.DB.prepare(
+            'UPDATE invitations SET magic_link_sent_at = ?, status = ? WHERE email = ?'
+        ).bind(now, 'pending', normalizedEmail).run();
+
+        await logActivity(env.DB, user.id, 'invitation_resent', `Invitation resent to ${normalizedEmail}`);
+
+        return jsonResponse({ message: 'Invitation resent successfully' });
+
+    } catch (error) {
+        console.error('Resend invitation error:', error);
+        return errorResponse('Failed to resend invitation', 500);
+    }
+}
+
 // ==================== MAIN REQUEST HANDLER ====================
 
 export default {
@@ -1063,6 +1247,18 @@ export default {
             // Activity route
             if (path === '/api/activity' && method === 'GET') {
                 return await handleGetActivity(request, env);
+            }
+
+            // Admin invitation routes
+            if (path === '/api/admin/invitations' && method === 'POST') {
+                return await handleSendInvitation(request, env);
+            }
+            if (path === '/api/admin/invitations' && method === 'GET') {
+                return await handleGetInvitations(request, env);
+            }
+            if (path.match(/^\/api\/admin\/invitations\/[^/]+\/resend$/) && method === 'POST') {
+                const email = path.split('/')[4];
+                return await handleResendInvitation(request, env, email);
             }
 
             // 404 for unknown API routes

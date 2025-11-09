@@ -252,6 +252,23 @@ const requireAdmin = async (req, res, next) => {
     }
 };
 
+// Super admin check - only for Indraneel.kasmalkar@gmail.com
+const requireSuperAdmin = async (req, res, next) => {
+    if (!req.session || !req.session.userId) {
+        return res.status(401).json({ error: 'Authentication required' });
+    }
+    try {
+        const user = await dataService.getUserById(req.session.userId);
+        if (!user || user.email !== 'Indraneel.kasmalkar@gmail.com') {
+            return res.status(403).json({ error: 'Super admin access required' });
+        }
+        req.user = user; // Attach user to request
+        next();
+    } catch (error) {
+        return res.status(500).json({ error: 'Authentication check failed' });
+    }
+};
+
 // Check if user is project member or owner
 const isProjectMember = async (userId, projectId) => {
     try {
@@ -495,6 +512,18 @@ app.post('/api/auth/profile-setup', authLimiter, async (req, res) => {
         };
 
         await dataService.createUser(newUser);
+
+        // Check if this email was invited and mark invitation as accepted
+        if (email) {
+            const invitation = await dataService.getInvitationByEmail(email);
+            if (invitation && invitation.status === 'pending') {
+                await dataService.updateInvitation(email, {
+                    status: 'accepted',
+                    joined_at: newUser.created_at,
+                    joined_user_id: newUser.id
+                });
+            }
+        }
 
         // Create personal project for the new user
         const personalProject = {
@@ -1452,6 +1481,135 @@ app.get('/api/claude/priorities', requireAuth, async (req, res) => {
 app.get('/api/claude/status', requireAuth, (req, res) => {
     const stats = claudeService.getStats();
     res.json(stats);
+});
+
+// ==================== ADMIN INVITATION ROUTES ====================
+
+// Send invitation
+app.post('/api/admin/invitations', requireSuperAdmin, magicLinkLimiter, async (req, res) => {
+    try {
+        const { email } = req.body;
+
+        // Validate email
+        if (!validateEmail(email) || !email) {
+            return res.status(400).json({ error: 'Valid email is required' });
+        }
+
+        const normalizedEmail = email.toLowerCase().trim();
+
+        // Check if user already exists
+        const existingUser = await dataService.getUserByEmail(normalizedEmail);
+        if (existingUser) {
+            return res.status(400).json({ error: 'User with this email already exists' });
+        }
+
+        // Check if invitation already exists
+        let invitation = await dataService.getInvitationByEmail(normalizedEmail);
+
+        if (!invitation) {
+            // Create new invitation
+            invitation = {
+                id: generateId('inv'),
+                email: normalizedEmail,
+                invited_by_user_id: req.user.id,
+                invited_at: new Date().toISOString(),
+                magic_link_sent_at: new Date().toISOString(),
+                status: 'pending'
+            };
+            await dataService.createInvitation(invitation);
+        } else {
+            // Update existing invitation
+            await dataService.updateInvitation(normalizedEmail, {
+                magic_link_sent_at: new Date().toISOString(),
+                status: 'pending' // Reset to pending if was expired
+            });
+        }
+
+        // Send magic link via Supabase
+        if (!supabaseService.isEnabled()) {
+            return res.status(501).json({
+                error: 'Supabase is not configured. Magic links require Supabase authentication.'
+            });
+        }
+
+        const redirectTo = `${process.env.ALLOWED_ORIGINS?.split(',')[0]}/profile-setup.html`;
+        await supabaseService.sendMagicLink(normalizedEmail, redirectTo);
+
+        await logActivity(req.user.id, 'invitation_sent', `Invitation sent to ${normalizedEmail}`);
+
+        res.json({
+            message: 'Invitation sent successfully',
+            email: normalizedEmail
+        });
+
+    } catch (error) {
+        console.error('Send invitation error:', error);
+        res.status(500).json({
+            error: 'Failed to send invitation',
+            details: error.message
+        });
+    }
+});
+
+// Get all invitations
+app.get('/api/admin/invitations', requireSuperAdmin, async (req, res) => {
+    try {
+        const invitations = await dataService.getInvitations();
+        res.json({ invitations });
+    } catch (error) {
+        console.error('Get invitations error:', error);
+        res.status(500).json({ error: 'Failed to fetch invitations' });
+    }
+});
+
+// Resend invitation
+app.post('/api/admin/invitations/:email/resend', requireSuperAdmin, magicLinkLimiter, async (req, res) => {
+    try {
+        const email = req.params.email.toLowerCase().trim();
+
+        const invitation = await dataService.getInvitationByEmail(email);
+        if (!invitation) {
+            return res.status(404).json({ error: 'Invitation not found' });
+        }
+
+        if (invitation.status === 'accepted') {
+            return res.status(400).json({ error: 'User has already accepted this invitation' });
+        }
+
+        // Check if user exists (shouldn't if invitation is pending)
+        const existingUser = await dataService.getUserByEmail(email);
+        if (existingUser) {
+            // Auto-mark as accepted
+            await dataService.updateInvitation(email, {
+                status: 'accepted',
+                joined_at: existingUser.created_at,
+                joined_user_id: existingUser.id
+            });
+            return res.status(400).json({ error: 'User has already registered' });
+        }
+
+        // Send magic link
+        if (!supabaseService.isEnabled()) {
+            return res.status(501).json({ error: 'Supabase not configured' });
+        }
+
+        const redirectTo = `${process.env.ALLOWED_ORIGINS?.split(',')[0]}/profile-setup.html`;
+        await supabaseService.sendMagicLink(email, redirectTo);
+
+        // Update invitation
+        await dataService.updateInvitation(email, {
+            magic_link_sent_at: new Date().toISOString(),
+            status: 'pending'
+        });
+
+        await logActivity(req.user.id, 'invitation_resent', `Invitation resent to ${email}`);
+
+        res.json({ message: 'Invitation resent successfully' });
+
+    } catch (error) {
+        console.error('Resend invitation error:', error);
+        res.status(500).json({ error: 'Failed to resend invitation' });
+    }
 });
 
 // Serve frontend

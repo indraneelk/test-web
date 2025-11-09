@@ -24,6 +24,7 @@ class DataService {
             this.PROJECTS_FILE = path.join(this.DATA_DIR, 'projects.json');
             this.TASKS_FILE = path.join(this.DATA_DIR, 'tasks.json');
             this.ACTIVITY_FILE = path.join(this.DATA_DIR, 'activity.json');
+            this.INVITATIONS_FILE = path.join(this.DATA_DIR, 'invitations.json');
             this.initializeJSONFiles();
         }
     }
@@ -69,6 +70,9 @@ class DataService {
         }
         if (!fs.existsSync(this.ACTIVITY_FILE)) {
             this.writeJSON(this.ACTIVITY_FILE, []);
+        }
+        if (!fs.existsSync(this.INVITATIONS_FILE)) {
+            this.writeJSON(this.INVITATIONS_FILE, []);
         }
     }
 
@@ -503,6 +507,107 @@ class DataService {
         } else {
             const activities = this.readJSON(this.ACTIVITY_FILE);
             return activities.slice(-50).reverse();
+        }
+    }
+
+    // ==================== INVITATION OPERATIONS ====================
+
+    async createInvitation(invitationData) {
+        if (this.useD1) {
+            await this.d1.query(
+                'INSERT INTO invitations (email, invited_by_user_id, invited_at, magic_link_sent_at, status) VALUES (?, ?, ?, ?, ?)',
+                [
+                    invitationData.email,
+                    invitationData.invited_by_user_id,
+                    invitationData.invited_at,
+                    invitationData.magic_link_sent_at,
+                    invitationData.status
+                ]
+            );
+        } else {
+            const invitations = this.readJSON(this.INVITATIONS_FILE);
+            invitations.push(invitationData);
+            this.writeJSON(this.INVITATIONS_FILE, invitations);
+        }
+    }
+
+    async getInvitations() {
+        if (this.useD1) {
+            const result = await this.d1.query(`
+                SELECT
+                    i.id, i.email, i.invited_at, i.magic_link_sent_at,
+                    i.joined_at, i.status,
+                    u.id as user_id, u.name as user_name, u.username
+                FROM invitations i
+                LEFT JOIN users u ON i.joined_user_id = u.id
+                ORDER BY i.invited_at DESC
+            `);
+            return result.results || [];
+        } else {
+            const invitations = this.readJSON(this.INVITATIONS_FILE);
+            const users = this.readJSON(this.USERS_FILE);
+            // Join data manually
+            return invitations.map(inv => {
+                const user = users.find(u => u.id === inv.joined_user_id);
+                return {
+                    ...inv,
+                    user_id: user?.id,
+                    user_name: user?.name,
+                    username: user?.username
+                };
+            }).sort((a, b) => new Date(b.invited_at) - new Date(a.invited_at));
+        }
+    }
+
+    async getInvitationByEmail(email) {
+        if (this.useD1) {
+            const result = await this.d1.query(
+                'SELECT * FROM invitations WHERE email = ?',
+                [email]
+            );
+            return result.results?.[0] || null;
+        } else {
+            const invitations = this.readJSON(this.INVITATIONS_FILE);
+            return invitations.find(inv => inv.email === email) || null;
+        }
+    }
+
+    async updateInvitation(email, updates) {
+        if (this.useD1) {
+            const setClauses = [];
+            const values = [];
+
+            if (updates.magic_link_sent_at !== undefined) {
+                setClauses.push('magic_link_sent_at = ?');
+                values.push(updates.magic_link_sent_at);
+            }
+            if (updates.status !== undefined) {
+                setClauses.push('status = ?');
+                values.push(updates.status);
+            }
+            if (updates.joined_at !== undefined) {
+                setClauses.push('joined_at = ?');
+                values.push(updates.joined_at);
+            }
+            if (updates.joined_user_id !== undefined) {
+                setClauses.push('joined_user_id = ?');
+                values.push(updates.joined_user_id);
+            }
+
+            if (setClauses.length === 0) return;
+
+            values.push(email);
+            await this.d1.query(
+                `UPDATE invitations SET ${setClauses.join(', ')} WHERE email = ?`,
+                values
+            );
+        } else {
+            const invitations = this.readJSON(this.INVITATIONS_FILE);
+            const index = invitations.findIndex(inv => inv.email === email);
+            if (index !== -1) {
+                invitations[index] = { ...invitations[index], ...updates };
+                this.writeJSON(this.INVITATIONS_FILE, invitations);
+            }
         }
     }
 }

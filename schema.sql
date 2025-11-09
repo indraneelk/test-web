@@ -98,6 +98,24 @@ CREATE INDEX IF NOT EXISTS idx_activity_task_id ON activity_log(task_id);
 CREATE INDEX IF NOT EXISTS idx_activity_project_id ON activity_log(project_id);
 CREATE INDEX IF NOT EXISTS idx_activity_timestamp ON activity_log(timestamp);
 
+-- Create invitations table for admin panel
+CREATE TABLE IF NOT EXISTS invitations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    email TEXT NOT NULL UNIQUE,
+    invited_by_user_id TEXT NOT NULL,
+    invited_at TEXT NOT NULL DEFAULT (datetime('now')),
+    magic_link_sent_at TEXT,
+    joined_at TEXT,
+    joined_user_id TEXT,
+    status TEXT NOT NULL DEFAULT 'pending',
+    FOREIGN KEY (invited_by_user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (joined_user_id) REFERENCES users(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_invitations_email ON invitations(email);
+CREATE INDEX IF NOT EXISTS idx_invitations_status ON invitations(status);
+CREATE INDEX IF NOT EXISTS idx_invitations_invited_by ON invitations(invited_by_user_id);
+
 -- Insert default admin user (password: admin123 - change this!)
 -- Password hash is bcrypt hash of "admin123"
 INSERT OR IGNORE INTO users (id, username, password_hash, name, email, is_admin)
