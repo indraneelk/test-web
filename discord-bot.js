@@ -196,22 +196,27 @@ async function handleTasks(message) {
         const embed = new EmbedBuilder()
             .setColor(0x4f46e5)
             .setTitle('📋 Your Tasks')
+            .setDescription(`Here's an overview of all your tasks\n\u200b`)
             .addFields(
-                { name: '⏳ Pending', value: `${pending.length} tasks` },
-                { name: '✅ Completed', value: `${completed.length} tasks` }
-            )
-            .setTimestamp();
+                { name: '⏳ Pending', value: `**${pending.length}** tasks` },
+                { name: '✅ Completed', value: `**${completed.length}** tasks` }
+            );
+
+        // Add spacing
+        embed.addFields({ name: '\u200b', value: '\u200b' });
 
         // Add sample tasks
         const sampleTasks = tasks.slice(0, 5);
         if (sampleTasks.length > 0) {
             embed.addFields({
-                name: 'Recent Tasks',
+                name: '📌 Recent Tasks',
                 value: sampleTasks.map(t =>
-                    `${t.status === 'completed' ? '✅' : '⏳'} **${t.name}**\n└ Due: ${t.date}`
-                ).join('\n\n')
+                    `${t.status === 'completed' ? '✅' : '⏳'} **${t.name}**\n   Due: ${t.date}\n\u200b`
+                ).join('\n')
             });
         }
+
+        embed.setTimestamp();
 
         await message.reply({ embeds: [embed] });
     } catch (error) {
@@ -234,11 +239,11 @@ async function handleSummary(message) {
         const embed = new EmbedBuilder()
             .setColor(0x13ce66)
             .setTitle('📊 Task Summary')
-            .setDescription(response.data.summary)
-            .addFields({
-                name: 'Total Tasks',
-                value: `${response.data.taskCount}`
-            })
+            .setDescription(`${response.data.summary}\n\u200b`)
+            .addFields(
+                { name: '\u200b', value: '\u200b' },
+                { name: '📈 Total Tasks', value: `**${response.data.taskCount}** tasks` }
+            )
             .setTimestamp();
 
         await thinking.edit({ content: null, embeds: [embed] });
@@ -275,44 +280,77 @@ async function handlePriorities(message) {
     }
 }
 
-// Ask Claude a question
+// Ask Claude a question (with smart task detection)
 async function handleAsk(message, args) {
     const discordUserId = message.author.id;
 
-    // Get question (everything after 'claude')
-    const question = args.slice(1).join(' ');
+    // Get input (everything after 'claude')
+    const input = args.slice(1).join(' ');
 
-    if (!question || question.length === 0) {
-        return message.reply('Usage: `claude <your question>`\nExample: `claude what tasks are overdue?`');
+    if (!input || input.length === 0) {
+        return message.reply('Usage: `claude <your question or command>`\nExamples:\n- `claude what tasks are overdue?`\n- `claude create a task to fix the login bug`\n- `claude change the priority of login bug to high`');
     }
 
     const thinking = await message.reply('🤔 Thinking...');
 
     try {
-        const response = await authenticatedRequest(discordUserId, 'POST', '/claude/ask', { question });
+        const response = await authenticatedRequest(discordUserId, 'POST', '/claude/smart', { input });
 
-        // Split long responses
-        const answer = response.data.answer;
-
-        if (answer.length <= 2000) {
+        if (response.data.type === 'task_created') {
+            // Task was created
+            const task = response.data.task;
             const embed = new EmbedBuilder()
-                .setColor(0x4f46e5)
-                .setTitle('🤖 Claude\'s Answer')
-                .setDescription(answer)
-                .setFooter({ text: `Question: ${question}` })
+                .setColor(0x13ce66)
+                .setTitle('✅ Task Created via Claude')
+                .setDescription(`${response.data.message}\n\u200b`)
+                .addFields(
+                    { name: '📝 Title', value: task.name },
+                    { name: '📅 Due Date', value: task.date },
+                    { name: '⭐ Priority', value: task.priority || 'none' }
+                )
+                .setTimestamp();
+
+            await thinking.edit({ content: null, embeds: [embed] });
+        } else if (response.data.type === 'task_updated') {
+            // Task was updated
+            const task = response.data.task;
+            const embed = new EmbedBuilder()
+                .setColor(0xfbbf24)
+                .setTitle('✏️ Task Updated via Claude')
+                .setDescription(`${response.data.message}\n\u200b`)
+                .addFields(
+                    { name: '📝 Title', value: task.name },
+                    { name: '📅 Due Date', value: task.date },
+                    { name: '⭐ Priority', value: task.priority || 'none' },
+                    { name: '📊 Status', value: task.status }
+                )
                 .setTimestamp();
 
             await thinking.edit({ content: null, embeds: [embed] });
         } else {
-            // Split into chunks for long responses
-            await thinking.edit(`🤖 **Claude's Answer:**\n\n${answer.slice(0, 1900)}...`);
+            // Question was answered
+            const answer = response.data.answer;
+
+            if (answer.length <= 2000) {
+                const embed = new EmbedBuilder()
+                    .setColor(0x4f46e5)
+                    .setTitle('🤖 Claude\'s Answer')
+                    .setDescription(`${answer}\n\u200b`)
+                    .setFooter({ text: `Input: ${input}` })
+                    .setTimestamp();
+
+                await thinking.edit({ content: null, embeds: [embed] });
+            } else {
+                // Split into chunks for long responses
+                await thinking.edit(`🤖 **Claude's Answer:**\n\n${answer.slice(0, 1900)}...`);
+            }
         }
     } catch (error) {
-        console.error('Ask error:', error);
+        console.error('Claude smart request error:', error);
         if (error.response?.status === 403 || error.response?.status === 401) {
             return await thinking.edit('❌ Please link your Discord account on the website first. Go to Settings and add your Discord handle.');
         }
-        await thinking.edit('❌ Failed to get answer. Claude service may not be ready.');
+        await thinking.edit('❌ Failed to process request. Claude service may not be ready.');
     }
 }
 
@@ -435,11 +473,12 @@ async function handleCreate(message, args) {
 
         const embed = new EmbedBuilder()
             .setColor(0x13ce66)
-            .setTitle('✅ Task Created')
+            .setTitle('✅ Task Created Successfully')
+            .setDescription(`Your new task has been added\n\u200b`)
             .addFields(
-                { name: 'Title', value: task.name },
-                { name: 'Due Date', value: task.date },
-                { name: 'Priority', value: task.priority || 'none' }
+                { name: '📝 Title', value: task.name },
+                { name: '📅 Due Date', value: task.date },
+                { name: '⭐ Priority', value: task.priority || 'none' }
             )
             .setTimestamp();
 
@@ -538,8 +577,8 @@ async function handleHelp(message) {
                 value: '`create <description>` - Create a new task (natural language or flags)\n`update <task-id> <field> <value>` - Update a task\n`complete <task-id>` - Mark task as complete'
             },
             {
-                name: '💬 Ask Claude',
-                value: '`claude <question>` - Ask Claude anything about your tasks\nExamples:\n• `claude what should I focus on today?`\n• `claude which tasks are overdue?`\n• `claude summarize project X`'
+                name: '💬 Ask Claude (Smart Assistant)',
+                value: '`claude <question or command>` - Ask questions, create tasks, or edit tasks naturally\n\n**Questions:**\n• `claude what should I focus on today?`\n• `claude which tasks are overdue?`\n\n**Create tasks:**\n• `claude create a task to fix the login bug`\n• `claude add a new task for testing, due tomorrow`\n\n**Edit tasks:**\n• `claude change the priority of login bug to high`\n• `claude move the testing task due date to next week`'
             },
             {
                 name: '📝 Create Task Examples',

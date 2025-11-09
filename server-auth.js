@@ -1491,6 +1491,135 @@ app.post('/api/claude/parse-task', requireAuth, async (req, res) => {
     }
 });
 
+// Smart Claude endpoint - detects intent and either answers or creates tasks
+app.post('/api/claude/smart', requireAuth, async (req, res) => {
+    try {
+        const { input } = req.body;
+
+        if (!input) {
+            return res.status(400).json({ error: 'Input is required' });
+        }
+
+        // Validate input length
+        if (!validateString(input, 1, 500)) {
+            return res.status(400).json({ error: 'Input must be 1-500 characters' });
+        }
+
+        const userId = req.userId;
+
+        // Get user's data
+        const tasks = await dataService.getTasks();
+        const projects = await dataService.getProjects();
+        const users = await dataService.getUsers();
+
+        // Filter to user's accessible data
+        const userProjectIds = [];
+        for (const p of projects) {
+            if (p.owner_id === userId || await isProjectMember(userId, p.id)) {
+                userProjectIds.push(p.id);
+            }
+        }
+
+        const userTasks = tasks.filter(t => userProjectIds.includes(t.project_id));
+        const userProjects = projects.filter(p => userProjectIds.includes(p.id));
+
+        // Use smart request to detect intent
+        const result = await claudeService.smartRequest(input, userTasks, userProjects, users);
+
+        if (result.type === 'task') {
+            // Create the task
+            const taskData = result.taskData;
+
+            // Determine project
+            let projectId = taskData.projectId;
+            if (!projectId && userProjects.length > 0) {
+                projectId = userProjects[0].id; // Default to first accessible project
+            }
+
+            if (!projectId) {
+                return res.status(400).json({ error: 'No accessible project found to create task' });
+            }
+
+            // Create task
+            const task = {
+                id: generateId('tsk'),
+                name: taskData.title,
+                description: taskData.description,
+                date: taskData.dueDate,
+                priority: taskData.priority,
+                status: 'pending',
+                project_id: projectId,
+                assigned_to_id: taskData.assignedToId,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+            };
+
+            await dataService.createTask(task);
+
+            res.json({
+                type: 'task_created',
+                task: task,
+                message: `Task "${task.name}" created successfully`
+            });
+        } else if (result.type === 'edit') {
+            // Edit the task
+            const editData = result.editData;
+
+            // Get the task to verify it exists and user has access
+            const task = userTasks.find(t => t.id === editData.taskId);
+            if (!task) {
+                return res.status(404).json({ error: 'Task not found or access denied' });
+            }
+
+            // Apply updates with validation
+            const updateData = { ...editData.updates };
+
+            // Validate and sanitize updates
+            if (updateData.name && !validateString(updateData.name, 1, 200)) {
+                return res.status(400).json({ error: 'Task name must be 1-200 characters' });
+            }
+            if (updateData.description && !validateString(updateData.description, 0, 2000)) {
+                return res.status(400).json({ error: 'Description must be 0-2000 characters' });
+            }
+            if (updateData.priority && !['none', 'low', 'medium', 'high'].includes(updateData.priority)) {
+                return res.status(400).json({ error: 'Invalid priority value' });
+            }
+            if (updateData.status && !['pending', 'in-progress', 'completed'].includes(updateData.status)) {
+                return res.status(400).json({ error: 'Invalid status value' });
+            }
+
+            // Add updated_at timestamp
+            updateData.updated_at = new Date().toISOString();
+
+            // Update the task
+            await dataService.updateTask(editData.taskId, updateData);
+
+            // Get updated task
+            const updatedTask = await dataService.getTask(editData.taskId);
+
+            res.json({
+                type: 'task_updated',
+                task: updatedTask,
+                message: `Task "${editData.taskName}" updated successfully`
+            });
+        } else {
+            // Return the answer
+            res.json({
+                type: 'answer',
+                answer: result.answer,
+                input: input,
+                timestamp: new Date().toISOString()
+            });
+        }
+    } catch (error) {
+        console.error('Claude smart request error:', error);
+        res.status(500).json({
+            error: 'Failed to process request',
+            details: error.message
+        });
+    }
+});
+
 // ==================== ADMIN INVITATION ROUTES ====================
 
 // Send invitation

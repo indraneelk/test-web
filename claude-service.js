@@ -110,7 +110,7 @@ class ClaudeService extends EventEmitter {
             }];
 
             const options = {
-                model: 'claude-3-5-sonnet-20241022',
+                model: 'claude-sonnet-4-5-20250929',
                 max_tokens: 2048,
                 messages: messages
             };
@@ -308,6 +308,168 @@ Return ONLY valid JSON, no other text.`;
         } catch (error) {
             console.error('Failed to parse task request:', error);
             throw new Error('Failed to parse task creation request. Please try being more specific.');
+        }
+    }
+
+    /**
+     * Smart request handler - detects intent and either answers questions, creates tasks, or edits tasks
+     * Returns { type: 'question', answer: string } or { type: 'task', taskData: object } or { type: 'edit', editData: object }
+     */
+    async smartRequest(userInput, tasks, projects, users) {
+        const systemPrompt = `You are an intent classifier. Analyze the user's input and determine if they want to:
+1. Create a task (keywords: create, add, make, new task, etc.)
+2. Edit/update a task (keywords: change, update, modify, edit, set, move, etc.)
+3. Ask a question (anything else)
+
+Return ONLY a JSON object with this structure:
+{
+  "intent": "create_task" or "edit_task" or "question"
+}
+
+Examples:
+"create a task to fix the login bug" -> {"intent": "create_task"}
+"what tasks are overdue?" -> {"intent": "question"}
+"change the due date of the login bug to tomorrow" -> {"intent": "edit_task"}
+"update the priority of testing task to high" -> {"intent": "edit_task"}
+"show me my priorities" -> {"intent": "question"}
+
+Return ONLY valid JSON, no other text.`;
+
+        try {
+            const response = await this.sendMessage(userInput, systemPrompt);
+
+            // Parse the intent
+            let jsonStr = response.trim();
+            if (jsonStr.startsWith('```json')) {
+                jsonStr = jsonStr.replace(/```json\n?/g, '').replace(/```\n?$/g, '');
+            } else if (jsonStr.startsWith('```')) {
+                jsonStr = jsonStr.replace(/```\n?/g, '').replace(/```\n?$/g, '');
+            }
+
+            const intent = JSON.parse(jsonStr);
+
+            if (intent.intent === 'create_task') {
+                // Parse the task creation request
+                const taskData = await this.parseTaskRequest(userInput, projects, users);
+                return {
+                    type: 'task',
+                    taskData: taskData
+                };
+            } else if (intent.intent === 'edit_task') {
+                // Parse the task edit request
+                const editData = await this.parseTaskEditRequest(userInput, tasks, projects, users);
+                return {
+                    type: 'edit',
+                    editData: editData
+                };
+            } else {
+                // Answer the question
+                const answer = await this.ask(userInput, tasks, projects, users);
+                return {
+                    type: 'question',
+                    answer: answer
+                };
+            }
+        } catch (error) {
+            console.error('Smart request error:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Parse natural language task edit request
+     * Converts input like "change the due date of the login bug task to tomorrow"
+     * into structured edit data with task identification
+     */
+    async parseTaskEditRequest(userInput, tasks, projects, users) {
+        const taskList = tasks.map(t => {
+            const project = projects.find(p => p.id === t.project_id);
+            const assignee = users.find(u => u.id === t.assigned_to_id);
+            return {
+                id: t.id,
+                name: t.name,
+                description: t.description,
+                status: t.status,
+                date: t.date,
+                priority: t.priority,
+                project: project?.name || 'Unknown',
+                assignedTo: assignee?.name || 'Unassigned'
+            };
+        });
+        const projectList = projects.map(p => ({ id: p.id, name: p.name }));
+        const userList = users.map(u => ({ id: u.id, name: u.name, email: u.email }));
+
+        const systemPrompt = `You are a task edit parser. Analyze the user's request to edit a task.
+
+Available tasks:
+${JSON.stringify(taskList, null, 2)}
+
+Available projects:
+${JSON.stringify(projectList, null, 2)}
+
+Available users:
+${JSON.stringify(userList, null, 2)}
+
+Identify which task the user wants to edit and what changes they want to make.
+Return ONLY a JSON object with this structure:
+{
+  "taskId": "id of the task to edit, or null if cannot identify uniquely",
+  "confidence": "high|medium|low",
+  "matchedTaskName": "the task name that was matched",
+  "updates": {
+    "name": "new name if mentioned, otherwise null",
+    "description": "new description if mentioned, otherwise null",
+    "date": "new due date in YYYY-MM-DD format if mentioned, otherwise null",
+    "priority": "new priority (none|low|medium|high) if mentioned, otherwise null",
+    "status": "new status (pending|in-progress|completed) if mentioned, otherwise null",
+    "projectId": "new project id if mentioned, otherwise null",
+    "assignedToId": "new assignee user id if mentioned, otherwise null"
+  },
+  "errorMessage": "if cannot identify task uniquely or no task matches, explain why"
+}
+
+Rules for task identification:
+- Match task by name (case-insensitive, partial match OK if unique)
+- If multiple tasks match, set confidence to "low" and list matches in errorMessage
+- If no tasks match, set taskId to null and explain in errorMessage
+- For date keywords: "tomorrow" = tomorrow's date, "next week" = 7 days from now, "today" = today
+- Only set confidence to "high" if you're certain about the task match
+
+Return ONLY valid JSON, no other text.`;
+
+        try {
+            const response = await this.sendMessage(userInput, systemPrompt);
+
+            let jsonStr = response.trim();
+            if (jsonStr.startsWith('```json')) {
+                jsonStr = jsonStr.replace(/```json\n?/g, '').replace(/```\n?$/g, '');
+            } else if (jsonStr.startsWith('```')) {
+                jsonStr = jsonStr.replace(/```\n?/g, '').replace(/```\n?$/g, '');
+            }
+
+            const parsed = JSON.parse(jsonStr);
+
+            // If task couldn't be identified, throw error with helpful message
+            if (!parsed.taskId || parsed.confidence === 'low') {
+                throw new Error(parsed.errorMessage || 'Could not identify which task to edit. Please be more specific about the task name.');
+            }
+
+            // Remove null values from updates
+            const updates = {};
+            for (const [key, value] of Object.entries(parsed.updates)) {
+                if (value !== null && value !== undefined) {
+                    updates[key] = value;
+                }
+            }
+
+            return {
+                taskId: parsed.taskId,
+                taskName: parsed.matchedTaskName,
+                updates: updates
+            };
+        } catch (error) {
+            console.error('Failed to parse task edit request:', error);
+            throw error;
         }
     }
 
