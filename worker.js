@@ -112,7 +112,7 @@ function getCookie(request, name) {
 }
 
 function setCookie(name, value, options = {}) {
-    const { maxAge = 86400, httpOnly = true, secure = true, sameSite = 'Strict', path = '/' } = options;
+    const { maxAge = 86400, httpOnly = true, secure = true, sameSite = 'Lax', path = '/' } = options;
 
     let cookie = `${name}=${encodeURIComponent(value)}; Path=${path}; Max-Age=${maxAge}; SameSite=${sameSite}`;
     if (httpOnly) cookie += '; HttpOnly';
@@ -122,7 +122,7 @@ function setCookie(name, value, options = {}) {
 }
 
 function clearCookie(name) {
-    return `${name}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Strict`;
+    return `${name}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax`;
 }
 
 async function createAuthCookie(userId, env) {
@@ -363,14 +363,30 @@ async function requireSuperAdmin(request, env) {
 
 // ==================== API RESPONSE HELPERS ====================
 
-const corsHeaders = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Cookie',
-    'Access-Control-Allow-Credentials': 'true'
-};
+function getCorsHeaders(request) {
+    const origin = request.headers.get('Origin');
+    const allowedOrigins = [
+        'http://localhost:5001',
+        'http://127.0.0.1:5001',
+        'https://mmw-tm.pages.dev',
+        'https://team-task-manager.moovmyway.workers.dev'
+    ];
 
-function jsonResponse(data, status = 200, headers = {}) {
+    const allowOrigin = allowedOrigins.includes(origin) ? origin : allowedOrigins[2];
+
+    return {
+        'Access-Control-Allow-Origin': allowOrigin,
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, Cookie',
+        'Access-Control-Allow-Credentials': 'true'
+    };
+}
+
+function jsonResponse(data, status = 200, headers = {}, request = null) {
+    const corsHeaders = request ? getCorsHeaders(request) : {
+        'Access-Control-Allow-Origin': 'https://mmw-tm.pages.dev',
+        'Access-Control-Allow-Credentials': 'true'
+    };
     return new Response(JSON.stringify(data), {
         status,
         headers: { ...corsHeaders, 'Content-Type': 'application/json', ...headers }
@@ -1433,7 +1449,7 @@ export default {
 
         // Handle CORS preflight
         if (method === 'OPTIONS') {
-            return new Response(null, { headers: corsHeaders });
+            return new Response(null, { headers: getCorsHeaders(request) });
         }
 
         try {
