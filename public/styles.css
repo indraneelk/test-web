@@ -631,6 +631,50 @@ body {
     .empty-state p {
         font-size: 0.875rem;
     }
+
+    /* Project Settings - Add Member Section Mobile Optimization */
+    .add-member-section {
+        flex-wrap: nowrap;
+        gap: 0.5rem;
+    }
+
+    .add-member-section .form-select {
+        flex: 1;
+        min-width: 0; /* Allow shrinking below content size */
+        font-size: 0.875rem;
+    }
+
+    /* Shorten "Add Member" to "Add" on mobile */
+    .add-member-section .btn-text-full {
+        display: none;
+    }
+
+    #addMemberBtn {
+        white-space: nowrap;
+        padding: 0.625rem 0.875rem;
+    }
+
+    /* Member list items - prevent name overflow */
+    .member-item {
+        gap: 0.5rem;
+    }
+
+    .member-info {
+        flex: 1;
+        min-width: 0; /* Allow shrinking */
+        overflow: hidden;
+    }
+
+    .member-name {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        max-width: 100%;
+    }
+
+    .member-actions {
+        flex-shrink: 0; /* Prevent remove button from shrinking */
+    }
 }
 
 .search-input {
@@ -1143,6 +1187,7 @@ body {
 .info-label { width: 90px; color: var(--text-secondary); font-weight: 600; font-size: 0.875rem; }
 .info-value { color: var(--text-primary); font-size: 0.95rem; }
 .add-member-section { display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.5rem; }
+.add-member-section .form-select { flex: 1; }
 .members-list { max-height: 240px; overflow-y: auto; border: 1px solid var(--border-color); border-radius: 0.5rem; padding: 0.5rem; background: var(--card-bg); }
 .member-item { display: flex; justify-content: space-between; align-items: center; padding: 0.5rem; border-bottom: 1px solid var(--border-color); }
 .member-item:last-child { border-bottom: none; }
