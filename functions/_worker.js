@@ -504,44 +504,20 @@ async function handleSupabaseCallback(request, env) {
 
         const { sub, email, user_metadata } = payload;
         let user = await getUserById(env.DB, sub);
+
         if (!user) {
-            const now = getCurrentTimestamp();
-            const name = user_metadata?.name || email?.split('@')[0] || 'User';
-            const initials = name.substring(0, 2).toUpperCase();
-            const username = (email?.split('@')[0] || 'user').toLowerCase();
-            await env.DB.prepare(
-                'INSERT INTO users (id, username, password_hash, name, email, initials, is_admin, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
-            ).bind(sub, username, 'supabase', name, email || null, initials, 0, now, now).run();
-            user = await getUserById(env.DB, sub);
-            await logActivity(env.DB, sub, 'user_created', `User ${name} created via magic link`);
-
-            // Check if this email was invited and mark invitation as accepted
-            if (email) {
-                const invitation = await env.DB.prepare(
-                    'SELECT * FROM invitations WHERE email = ? AND status = ?'
-                ).bind(email, 'pending').first();
-
-                if (invitation) {
-                    await env.DB.prepare(
-                        'UPDATE invitations SET status = ?, joined_at = ?, joined_user_id = ? WHERE email = ?'
-                    ).bind('accepted', now, sub, email).run();
-                }
-            }
-
-            // Create personal project for new user
-            const personalProjectId = generateId('project');
-            const personalProjectName = `${username}-Personal`;
-            await env.DB.prepare(
-                'INSERT INTO projects (id, name, description, color, owner_id, is_personal, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-            ).bind(personalProjectId, personalProjectName, 'Personal tasks and notes', '#667eea', sub, 1, now, now).run();
-
-            // Add user as member of their personal project
-            await env.DB.prepare(
-                'INSERT INTO project_members (project_id, user_id, role, added_at) VALUES (?, ?, ?, ?)'
-            ).bind(personalProjectId, sub, 'owner', now).run();
-
-            await logActivity(env.DB, sub, 'project_created', 'Personal project created', null, personalProjectId);
+            // New user - needs profile setup
+            return jsonResponse({
+                needsProfileSetup: true,
+                supabaseUser: {
+                    id: sub,
+                    email,
+                    name: user_metadata?.name || email?.split('@')[0] || 'User'
+                },
+                access_token // Send back the token for profile setup
+            });
         }
+
         const { password_hash, ...userWithoutPassword } = user;
 
         // Create auth cookie for session management
@@ -550,6 +526,77 @@ async function handleSupabaseCallback(request, env) {
     } catch (error) {
         console.error('Supabase callback error');
         return errorResponse('Authentication failed', 500);
+    }
+}
+
+async function handleProfileSetup(request, env) {
+    try {
+        const body = await request.json();
+        const { access_token, username, name } = body;
+
+        if (!access_token || !username || !name) {
+            return errorResponse('Access token, username, and name are required', 400);
+        }
+
+        // Verify the Supabase token
+        const payload = await verifySupabaseJWT(access_token, env);
+        if (!payload) {
+            return errorResponse('Invalid token', 401);
+        }
+
+        const { sub, email } = payload;
+
+        // Check if user already exists
+        const existingUser = await getUserById(env.DB, sub);
+        if (existingUser) {
+            return errorResponse('User already exists', 400);
+        }
+
+        // Create the user
+        const now = getCurrentTimestamp();
+        const initials = name.substring(0, 2).toUpperCase();
+        await env.DB.prepare(
+            'INSERT INTO users (id, username, password_hash, name, email, initials, is_admin, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+        ).bind(sub, username.toLowerCase(), 'supabase', name, email || null, initials, 0, now, now).run();
+
+        const user = await getUserById(env.DB, sub);
+        await logActivity(env.DB, sub, 'user_created', `User ${name} created via profile setup`);
+
+        // Check if this email was invited and mark invitation as accepted
+        if (email) {
+            const invitation = await env.DB.prepare(
+                'SELECT * FROM invitations WHERE email = ? AND status = ?'
+            ).bind(email, 'pending').first();
+
+            if (invitation) {
+                await env.DB.prepare(
+                    'UPDATE invitations SET status = ?, joined_at = ?, joined_user_id = ? WHERE email = ?'
+                ).bind('accepted', now, sub, email).run();
+            }
+        }
+
+        // Create personal project for new user
+        const personalProjectId = generateId('project');
+        const personalProjectName = `${username}-Personal`;
+        await env.DB.prepare(
+            'INSERT INTO projects (id, name, description, color, owner_id, is_personal, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+        ).bind(personalProjectId, personalProjectName, 'Personal tasks and notes', '#667eea', sub, 1, now, now).run();
+
+        // Add user as member of their personal project
+        await env.DB.prepare(
+            'INSERT INTO project_members (project_id, user_id, role, added_at) VALUES (?, ?, ?, ?)'
+        ).bind(personalProjectId, sub, 'owner', now).run();
+
+        await logActivity(env.DB, sub, 'project_created', 'Personal project created', null, personalProjectId);
+
+        const { password_hash, ...userWithoutPassword } = user;
+
+        // Create auth cookie for session management
+        const cookie = await createAuthCookie(user.id, env);
+        return jsonResponse({ user: userWithoutPassword }, 200, { 'Set-Cookie': cookie }, request);
+    } catch (error) {
+        console.error('Profile setup error:', error);
+        return errorResponse('Failed to complete profile setup', 500);
     }
 }
 
@@ -1573,6 +1620,9 @@ export default {
             }
             if (path === '/api/auth/supabase-callback' && method === 'POST') {
                 return await handleSupabaseCallback(request, env);
+            }
+            if (path === '/api/auth/profile-setup' && method === 'POST') {
+                return await handleProfileSetup(request, env);
             }
             if (path === '/api/auth/logout' && method === 'POST') {
                 return await handleLogout(request, env);

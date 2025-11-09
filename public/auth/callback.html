@@ -147,7 +147,7 @@
                     updateStatus('Setting up your profile...');
 
                     // Store temp data for profile setup
-                    sessionStorage.setItem('supabase_temp_token', data.tempToken);
+                    sessionStorage.setItem('supabase_access_token', data.access_token);
                     sessionStorage.setItem('supabase_user_data', JSON.stringify(data.supabaseUser));
 
                     setTimeout(() => {

@@ -500,7 +500,7 @@
                 }
             } catch (_) {}
             // Not authenticated → check magic-link artifacts
-            tempToken = sessionStorage.getItem('supabase_temp_token');
+            tempToken = sessionStorage.getItem('supabase_access_token');
             const userData = JSON.parse(sessionStorage.getItem('supabase_user_data') || '{}');
             if (!tempToken || !userData.email) {
                 window.location.href = '/magic-link.html';
@@ -795,7 +795,7 @@
 
                 if (response.ok) {
                     if (!isUpdateMode) {
-                        sessionStorage.removeItem('supabase_temp_token');
+                        sessionStorage.removeItem('supabase_access_token');
                         sessionStorage.removeItem('supabase_user_data');
                         // Ensure any legacy token storage is cleared
                         sessionStorage.removeItem('sb_at');
