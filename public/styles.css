@@ -1255,7 +1255,7 @@ body {
 .member-details { display: flex; flex-direction: column; }
 .member-name { font-size: 0.9375rem; font-weight: 600; }
 .member-role { font-size: 0.75rem; color: var(--text-secondary); }
-.member-actions button { padding: 0.25rem 0.5rem; font-size: 0.8rem; }
+/* member-actions button styles moved to specific button classes */
 
 /* Tab Navigation for Project Settings Modal */
 .modal-tabs {
