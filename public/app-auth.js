@@ -1558,7 +1558,7 @@ function renderMembersList(project) {
                     </div>
                 </div>
                 <div class=\"member-actions\">
-                    ${showLeaveButton ? `<button class="btn btn-danger" onclick=\"leaveProject()\">Leave</button>` : ''}
+                    ${showLeaveButton ? `<button class="leave-project-btn" onclick=\"leaveProject()\"><span class="leave-text">Leave</span><span class="leave-icon"></span></button>` : ''}
                     ${showRemoveButton ? `<button class="remove-member-btn" onclick=\"removeMember('${member.id}')\"><span class="remove-text">Remove</span><span class="remove-icon"></span></button>` : ''}
                 </div>
             </div>

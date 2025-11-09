@@ -685,7 +685,8 @@ body {
     }
 
     /* Mobile: Show circle-X icon instead of "Remove" text */
-    .remove-member-btn {
+    .remove-member-btn,
+    .leave-project-btn {
         padding: 0;
         width: 28px;
         height: 28px;
@@ -696,11 +697,13 @@ body {
         background: var(--danger-color, #ff4949);
     }
 
-    .remove-member-btn .remove-text {
-        display: none; /* Hide "Remove" text on mobile */
+    .remove-member-btn .remove-text,
+    .leave-project-btn .leave-text {
+        display: none; /* Hide text on mobile */
     }
 
-    .remove-member-btn .remove-icon {
+    .remove-member-btn .remove-icon,
+    .leave-project-btn .leave-icon {
         display: block; /* Show icon on mobile */
         width: 100%;
         height: 100%;
@@ -709,7 +712,9 @@ body {
 
     /* Create X icon using pseudo-elements */
     .remove-member-btn .remove-icon::before,
-    .remove-member-btn .remove-icon::after {
+    .remove-member-btn .remove-icon::after,
+    .leave-project-btn .leave-icon::before,
+    .leave-project-btn .leave-icon::after {
         content: '';
         position: absolute;
         top: 50%;
@@ -720,15 +725,18 @@ body {
         border-radius: 1px;
     }
 
-    .remove-member-btn .remove-icon::before {
+    .remove-member-btn .remove-icon::before,
+    .leave-project-btn .leave-icon::before {
         transform: translate(-50%, -50%) rotate(45deg);
     }
 
-    .remove-member-btn .remove-icon::after {
+    .remove-member-btn .remove-icon::after,
+    .leave-project-btn .leave-icon::after {
         transform: translate(-50%, -50%) rotate(-45deg);
     }
 
-    .remove-member-btn:hover {
+    .remove-member-btn:hover,
+    .leave-project-btn:hover {
         background: #e63939;
         transform: scale(1.05);
     }
@@ -1386,7 +1394,8 @@ body {
 }
 
 /* Remove Member Button - Desktop shows text, mobile shows icon */
-.remove-member-btn {
+.remove-member-btn,
+.leave-project-btn {
     background: var(--danger-color, #ff4949);
     color: white;
     border: none;
@@ -1397,16 +1406,19 @@ body {
     font-size: 0.8rem;
 }
 
-.remove-member-btn:hover {
+.remove-member-btn:hover,
+.leave-project-btn:hover {
     background: #e63939;
     transform: translateY(-1px);
 }
 
-.remove-member-btn .remove-icon {
+.remove-member-btn .remove-icon,
+.leave-project-btn .leave-icon {
     display: none; /* Hidden on desktop */
 }
 
-.remove-member-btn .remove-text {
+.remove-member-btn .remove-text,
+.leave-project-btn .leave-text {
     display: inline; /* Shown on desktop */
 }
 
