@@ -1325,13 +1325,7 @@ function openProjectModal() {
     document.getElementById('projectSubmitBtnText').textContent = 'Create Project';
 
     // No delete button in create/edit modal per new UI
-
-    // Show create mode for members (checkbox list)
-    document.getElementById('projectMembersCreateMode').style.display = 'block';
-    document.getElementById('projectMembersEditMode').style.display = 'none';
-
-    // Populate member checkboxes with all users except current user
-    renderProjectMembersCheckboxes();
+    // Member management removed from project modal - now only in project settings
 
     document.getElementById('projectModal').classList.add('active');
 }
@@ -1379,11 +1373,7 @@ async function handleProjectSubmit(e) {
         color: document.getElementById('projectColor').value
     };
 
-    // If creating a new project, collect selected members from checkboxes
-    if (!projectId) {
-        const checkedBoxes = document.querySelectorAll('input[name="projectMember"]:checked');
-        projectData.members = Array.from(checkedBoxes).map(cb => cb.value);
-    }
+    // Member management removed from project modal - now only in project settings
 
     try {
         const url = projectId ? `${API_PROJECTS}/${projectId}` : API_PROJECTS;
