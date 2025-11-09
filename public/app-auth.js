@@ -1367,16 +1367,11 @@ function openProjectSettings(projectId) {
     const membersSectionEl = document.getElementById('settingsTeamMembersSection');
     const dangerZoneEl = document.getElementById('settingsDangerZone');
     const addMemberSection = document.querySelector('#projectSettingsModal .add-member-section');
-    const leaveProjectSection = document.getElementById('settingsLeaveProjectSection');
 
     if (editBtn) editBtn.style.display = isOwner && !project.is_personal ? '' : 'none';
     if (membersSectionEl) membersSectionEl.style.display = project.is_personal ? 'none' : '';
     if (dangerZoneEl) dangerZoneEl.style.display = isOwner && !project.is_personal ? '' : 'none';
     if (addMemberSection) addMemberSection.style.display = isOwner && !project.is_personal ? '' : 'none';
-
-    // Show "Leave Project" section for non-owners who are members (not personal projects)
-    const isMember = !project.is_personal && project.members && project.members.includes(currentUser.id);
-    if (leaveProjectSection) leaveProjectSection.style.display = (!isOwner && isMember) ? '' : 'none';
 
     // Render members (for non-personal)
     if (!project.is_personal) {
@@ -1409,20 +1404,34 @@ function renderMembersList(project) {
         return;
     }
 
-    membersList.innerHTML = members.map(member => `
-        <div class=\"member-item\">
-            <div class=\"member-info\">
-                <div class=\"member-avatar\"></div>
-                <div class=\"member-details\">
-                    <div class=\"member-name\">${escapeHtml(member.name)}</div>
-                    <div class=\"member-role\">Member</div>
+    // Sort members so current user is first
+    const sortedMembers = [...members].sort((a, b) => {
+        if (a.id === currentUser.id) return -1;
+        if (b.id === currentUser.id) return 1;
+        return 0;
+    });
+
+    membersList.innerHTML = sortedMembers.map(member => {
+        const isCurrentUser = member.id === currentUser.id;
+        const showLeaveButton = isCurrentUser && !isOwner;
+        const showRemoveButton = isOwner && !isCurrentUser;
+
+        return `
+            <div class=\"member-item\">
+                <div class=\"member-info\">
+                    <div class=\"member-avatar\"></div>
+                    <div class=\"member-details\">
+                        <div class=\"member-name\">${escapeHtml(member.name)}</div>
+                        <div class=\"member-role\">Member</div>
+                    </div>
+                </div>
+                <div class=\"member-actions\">
+                    ${showLeaveButton ? `<button class="btn btn-danger" onclick=\"leaveProject()\">Leave</button>` : ''}
+                    ${showRemoveButton ? `<button onclick=\"removeMember('${member.id}')\">Remove</button>` : ''}
                 </div>
             </div>
-            <div class=\"member-actions\">
-                ${isOwner ? `<button onclick=\"removeMember('${member.id}')\">Remove</button>` : ''}
-            </div>
-        </div>
-    `).join('');
+        `;
+    }).join('');
 }
 
 // Add member
