@@ -18,7 +18,16 @@
       "mcp__supabase__list_projects",
       "mcp__supabase__execute_sql",
       "Bash(git push)",
-      "Bash(open:*)"
+      "Bash(open:*)",
+      "Bash(node -c:*)",
+      "Bash(wrangler d1 list:*)",
+      "Bash(wrangler secret put:*)",
+      "Bash(openssl rand:*)",
+      "Bash(wrangler deploy:*)",
+      "Bash(wrangler pages deploy:*)",
+      "Bash(wrangler pages project create:*)",
+      "Bash(wrangler pages project delete:*)",
+      "Bash(git checkout:*)"
     ],
     "deny": [],
     "ask": []
