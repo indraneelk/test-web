@@ -370,7 +370,7 @@ body {
     background: var(--card-bg);
     border-top: 1px solid var(--border-color);
     padding: 0.75rem;
-    align-items: center;
+    align-items: baseline; /* align grid items to baseline so labels align */
     gap: 1rem;
     box-shadow: 0 -1px 3px rgba(0, 0, 0, 0.1);
     display: grid;
@@ -380,9 +380,11 @@ body {
 .mobile-footer-item {
     display: flex;
     flex-direction: row;
-    align-items: center;
+    align-items: baseline; /* align text baselines of label and select */
     gap: 0.5rem;
 }
+.mobile-footer-item.archived { align-items: baseline; }
+.mobile-footer-item.archived input[type="checkbox"] { position: relative; top: 2px; }
 
 .mobile-footer-item label {
     font-size: 0.8125rem;
@@ -390,7 +392,8 @@ body {
     color: var(--text-primary);
     white-space: nowrap;
     flex-shrink: 0;
-    line-height: 1.0rem; /* Match the height of the select boxes */
+    padding: 0; /* let baseline alignment take effect */
+    line-height: 1.25;
 }
 
 .mobile-footer-item select {
