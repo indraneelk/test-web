@@ -15,7 +15,7 @@ async function checkAdminAccess() {
         const user = data.user;
 
         // Check if super admin
-        if (user.email !== 'Indraneel.kasmalkar@gmail.com') {
+        if (!user.email || user.email.toLowerCase() !== 'indraneel.kasmalkar@gmail.com') {
             alert('Access denied. This page is for administrators only.');
             window.location.href = '/';
             return false;
