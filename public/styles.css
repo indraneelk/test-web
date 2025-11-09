@@ -302,11 +302,12 @@ body {
     display: flex;
     align-items: center;
     gap: 0.5rem;
+    flex: 1; /* allow left side to grow so select can be longer */
 }
 
 /* Project select in mobile topbar uses the custom select component */
-.mobile-topbar .custom-select { flex: 1; min-width: 140px; }
-.mobile-topbar .custom-select-trigger { padding: 0.5rem 2rem 0.5rem 0.75rem; font-size: 0.9rem; }
+.mobile-topbar .custom-select { flex: 1 1 auto; min-width: 0; max-width: 100%; }
+.mobile-topbar .custom-select-trigger { padding: 0.5rem 2rem 0.5rem 0.75rem; font-size: 0.95rem; }
 
 .mobile-select:hover {
     border-color: var(--primary-color);
@@ -351,7 +352,7 @@ body {
     align-items: baseline; /* align grid items to baseline so labels align */
     gap: 1rem;
     box-shadow: 0 -1px 3px rgba(0, 0, 0, 0.1);
-    grid-template-columns: 1fr 1fr 1fr; /* Three equal columns */
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; /* Dropdowns flex with viewport */
 }
 
 .mobile-footer-item {
@@ -395,8 +396,15 @@ body {
 }
 
 /* Use custom select component in mobile footer too */
-.mobile-footer .custom-select { width: 100%; }
-.mobile-footer .custom-select-trigger { padding: 0.5rem 2rem 0.5rem 0.75rem; font-size: 0.9rem; }
+.mobile-footer .custom-select { width: 100%; min-width: 0; }
+.mobile-footer .custom-select-trigger {
+    padding: 0.6rem 2rem 0.6rem 0.75rem;
+    font-size: 0.95rem;
+    max-width: 100%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
 
 .mobile-footer-item select:hover {
     border-color: var(--primary-color);
@@ -406,6 +414,11 @@ body {
     outline: none;
     border-color: var(--primary-color);
     box-shadow: 0 0 0 3px rgba(240, 106, 106, 0.1);
+}
+
+/* Hide selected text when compact to keep only the arrow visible */
+.mobile-footer .custom-select-trigger.compact .selected-container {
+    display: none !important;
 }
 
 .mobile-footer-item input[type="checkbox"] {
@@ -429,8 +442,8 @@ body {
     font-size: 0.9375rem;
 }
 
-/* Mobile Media Query - Tablets and below */
-@media (max-width: 768px) {
+/* Mobile Media Query - small phones */
+@media (max-width: 600px) {
     /* Show mobile UI elements */
     .mobile-topbar,
     .mobile-footer,
@@ -494,10 +507,11 @@ body {
     }
 
     .task-card-compact {
-        width: 340px; /* Fixed width to allow centering */
+        width: 340px; /* Preferred width */
         max-width: calc(100vw - 2rem); /* Shrink if viewport is smaller */
         height: auto;
         min-height: 80px;
+        margin: 0 auto; /* Ensure centered in viewport */
     }
 
     .task-card-compact .task-title {

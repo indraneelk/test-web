@@ -341,6 +341,20 @@ function initMobileUI() {
             renderTasks(filterTasks());
         });
     }
+
+    // Compact footer selects when space is tight: hide text, keep arrow only
+    function updateFooterCompact() {
+        document.querySelectorAll('.mobile-footer .custom-select-trigger').forEach(tr => {
+            const w = tr.clientWidth || 0;
+            if (w > 0 && w < 140) {
+                tr.classList.add('compact');
+            } else {
+                tr.classList.remove('compact');
+            }
+        });
+    }
+    setTimeout(updateFooterCompact, 0);
+    window.addEventListener('resize', updateFooterCompact, { passive: true });
 }
 
 function renderMobileProjectOptions() {
@@ -2033,6 +2047,7 @@ class CustomSelect {
 
         // Create selected content (dot + text for priority select)
         this.selectedContainer = document.createElement('span');
+        this.selectedContainer.className = 'selected-container';
         this.selectedContainer.style.display = 'inline-flex';
         this.selectedContainer.style.alignItems = 'center';
         this.selectedContainer.style.gap = '0.5rem';
@@ -2235,6 +2250,7 @@ class CustomSelect {
         const gap = 8;
         const desiredMax = 250;
         const triggerRect = this.trigger.getBoundingClientRect();
+        const containerRect = this.container.getBoundingClientRect();
         let spaceAbove, spaceBelow;
 
         if (this.scroller === window) {
@@ -2253,6 +2269,31 @@ class CustomSelect {
 
         const maxForDirection = Math.max(120, Math.min(desiredMax, openUp ? spaceAbove : spaceBelow));
         this.dropdown.style.maxHeight = `${maxForDirection}px`;
+
+        // Expand dropdown width for very narrow triggers (mobile readability)
+        const inMobileContext = !!(this.container.closest('.mobile-topbar') || this.container.closest('.mobile-footer'));
+        const triggerIsNarrow = triggerRect.width < 160;
+        if (inMobileContext && triggerIsNarrow) {
+            const viewportW = window.innerWidth;
+            const margin = 12; // viewport margin
+            const minW = 220;  // minimum readable width
+            const maxW = Math.max(minW, Math.min(360, viewportW - margin * 2));
+            const desiredW = Math.min(maxW, Math.max(minW, triggerRect.width));
+            // Center dropdown relative to trigger, clamped to viewport
+            let leftDesired = triggerRect.left + (triggerRect.width / 2) - (desiredW / 2);
+            leftDesired = Math.max(margin, Math.min(leftDesired, viewportW - margin - desiredW));
+            // Convert to container-local offset
+            const leftOffset = leftDesired - containerRect.left;
+            // Apply explicit width and left; clear right to allow expansion
+            this.dropdown.style.width = `${desiredW}px`;
+            this.dropdown.style.left = `${leftOffset}px`;
+            this.dropdown.style.right = 'auto';
+        } else {
+            // Reset to default: stretch to container width
+            this.dropdown.style.width = '';
+            this.dropdown.style.left = '';
+            this.dropdown.style.right = '';
+        }
     }
 }
 
