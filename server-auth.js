@@ -848,10 +848,10 @@ app.post('/api/discord/generate-link-code', requireAuth, async (req, res) => {
 
         if (existingCode) {
             const expiresAt = new Date(existingCode.expires_at);
-            const secondsRemaining = Math.floor((expiresAt - new Date()) / 1000);
+            const millisecondsRemaining = Math.max(0, expiresAt - new Date());
             return res.json({
                 code: existingCode.code,
-                expiresIn: secondsRemaining
+                expiresIn: millisecondsRemaining
             });
         }
 
@@ -883,7 +883,7 @@ app.post('/api/discord/generate-link-code', requireAuth, async (req, res) => {
 
         res.json({
             code,
-            expiresIn: 300 // 5 minutes in seconds
+            expiresIn: 300000 // 5 minutes in milliseconds
         });
     } catch (error) {
         console.error('Error generating Discord link code:', error);
