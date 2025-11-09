@@ -582,7 +582,6 @@ function renderProjectsNav() {
     }
 
     nav.innerHTML = projects.map(project => {
-        const taskCount = tasks.filter(t => t.project_id === project.id).length;
         const projectColor = project.color || '#f06a6a';
         return `
             <button class="project-nav-item" data-project-id="${project.id}" onclick="switchToProject('${project.id}')">
@@ -590,7 +589,6 @@ function renderProjectsNav() {
                     <span class="project-color-indicator" style="background-color: ${projectColor}"></span>
                     ${escapeHtml(project.name)}
                 </span>
-                <span class="project-badge">${taskCount}</span>
             </button>
         `;
     }).join('');
@@ -1272,8 +1270,29 @@ async function handleProjectSubmit(e) {
 // Open project settings
 function openProjectSettings(projectId) {
     currentProjectForSettings = projectId;
-    const project = projects.find(p => p.id === projectId);
-    if (!project) return;
+    let project = projects.find(p => p.id === projectId);
+    if (!project) {
+        // Fallback: reload projects then try again; if still missing, fetch directly
+        // This guards against stale local state after create/update
+        // and mismatches between dev/prod backends.
+        console.warn('Project not found locally. Reloading projects...');
+        // Note: loadProjects returns a promise; we sync via then to avoid making this function async broadly
+        // eslint-disable-next-line no-undef
+        return loadProjects().then(async () => {
+            project = projects.find(p => p.id === projectId);
+            if (!project) {
+                const resp = await authFetch(`${API_PROJECTS}/${projectId}`);
+                if (resp.ok) {
+                    const fresh = await resp.json();
+                    projects.push(fresh);
+                    return openProjectSettings(projectId);
+                }
+                showError('Project not found');
+                return;
+            }
+            return openProjectSettings(projectId);
+        });
+    }
 
     const owner = users.find(u => u.id === project.owner_id);
 
@@ -1602,10 +1621,23 @@ async function deleteProjectFromDetails() {
 
 // Edit project
 function editProject(projectId) {
-    const project = projects.find(p => p.id === projectId);
+    let project = projects.find(p => p.id === projectId);
     if (!project) {
-        showError('Project not found');
-        return;
+        console.warn('Project not found locally. Reloading projects...');
+        return loadProjects().then(async () => {
+            project = projects.find(p => p.id === projectId);
+            if (!project) {
+                const resp = await authFetch(`${API_PROJECTS}/${projectId}`);
+                if (resp.ok) {
+                    const fresh = await resp.json();
+                    projects.push(fresh);
+                    return editProject(projectId);
+                }
+                showError('Project not found');
+                return;
+            }
+            return editProject(projectId);
+        });
     }
 
     if (project.is_personal) {

@@ -37,7 +37,7 @@ This document defines the canonical database schema used by the Cloudflare Worke
 - tasks
   - id TEXT PRIMARY KEY
   - name TEXT NOT NULL
-  - description TEXT NOT NULL
+  - description TEXT                  // optional
   - date TEXT NOT NULL              // ISO date (YYYY-MM-DD)
   - project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE
   - assigned_to_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE
@@ -141,4 +141,3 @@ The Worker (`worker.js`) expects:
 - `users.id == Supabase sub`
 
 Keep schema and migrations aligned with the above to avoid runtime issues.
-
