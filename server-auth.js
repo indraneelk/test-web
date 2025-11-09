@@ -640,6 +640,45 @@ app.post('/api/auth/supabase', authLimiter, async (req, res) => {
     }
 });
 
+// Discord authentication endpoint for bot
+app.post('/api/auth/discord', authLimiter, async (req, res) => {
+    try {
+        const { discordUserId } = req.body;
+
+        if (!discordUserId) {
+            return res.status(400).json({ error: 'Discord user ID is required' });
+        }
+
+        // Find user by Discord ID
+        const user = await dataService.getUserByDiscordId(discordUserId);
+
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                error: 'Discord account not linked. Please add your Discord handle on the website first.'
+            });
+        }
+
+        // Regenerate session to prevent fixation
+        await new Promise(resolve => req.session.regenerate(() => resolve()));
+        req.session.userId = user.id;
+
+        await logActivity(user.id, 'user_login', `User ${user.name} logged in via Discord bot`);
+
+        const { password_hash: _, ...userWithoutPassword } = user;
+        res.json({
+            success: true,
+            user: userWithoutPassword
+        });
+    } catch (error) {
+        console.error('Discord auth error:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Authentication failed'
+        });
+    }
+});
+
 // Public config for frontend (safe to expose anon key)
 app.get('/api/config/public', (req, res) => {
     res.json({
@@ -747,6 +786,63 @@ app.delete('/api/users/:id', requireAdmin, async (req, res) => {
         // res.json({ message: 'User deleted successfully' });
     } catch (error) {
         res.status(500).json({ error: 'Failed to delete user' });
+    }
+});
+
+// Update Discord handle for current user
+app.put('/api/user/discord-handle', requireAuth, async (req, res) => {
+    try {
+        const { discordHandle, discordUserId } = req.body;
+
+        if (!discordHandle || !discordUserId) {
+            return res.status(400).json({ error: 'Discord handle and user ID are required' });
+        }
+
+        // Check if Discord user ID is already taken by another user
+        const existingUser = await dataService.getUserByDiscordId(discordUserId);
+        if (existingUser && existingUser.id !== req.userId) {
+            return res.status(400).json({ error: 'This Discord account is already linked to another user' });
+        }
+
+        const updatedUser = await dataService.updateUserDiscordHandle(req.userId, discordHandle, discordUserId);
+
+        if (!updatedUser) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        res.json({
+            message: 'Discord handle updated successfully',
+            user: {
+                id: updatedUser.id,
+                name: updatedUser.name,
+                email: updatedUser.email,
+                discord_handle: updatedUser.discord_handle,
+                discord_verified: updatedUser.discord_verified
+            }
+        });
+    } catch (error) {
+        console.error('Error updating Discord handle:', error);
+        res.status(500).json({ error: 'Failed to update Discord handle' });
+    }
+});
+
+// Get Discord handle for current user
+app.get('/api/user/discord-handle', requireAuth, async (req, res) => {
+    try {
+        const user = await dataService.getUserById(req.userId);
+
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        res.json({
+            discord_handle: user.discord_handle || null,
+            discord_user_id: user.discord_user_id || null,
+            discord_verified: user.discord_verified || 0
+        });
+    } catch (error) {
+        console.error('Error fetching Discord handle:', error);
+        res.status(500).json({ error: 'Failed to fetch Discord handle' });
     }
 });
 
@@ -1481,6 +1577,48 @@ app.get('/api/claude/priorities', requireAuth, async (req, res) => {
 app.get('/api/claude/status', requireAuth, (req, res) => {
     const stats = claudeService.getStats();
     res.json(stats);
+});
+
+// Parse natural language task creation request
+app.post('/api/claude/parse-task', requireAuth, async (req, res) => {
+    try {
+        const { input } = req.body;
+
+        if (!input) {
+            return res.status(400).json({ error: 'Task input is required' });
+        }
+
+        // Validate input length
+        if (!validateString(input, 1, 500)) {
+            return res.status(400).json({ error: 'Task input must be 1-500 characters' });
+        }
+
+        const userId = req.userId;
+
+        // Get user's accessible projects and all users
+        const projects = await dataService.getProjects();
+        const users = await dataService.getUsers();
+
+        const userProjectIds = [];
+        for (const p of projects) {
+            if (p.owner_id === userId || await isProjectMember(userId, p.id)) {
+                userProjectIds.push(p.id);
+            }
+        }
+
+        const userProjects = projects.filter(p => userProjectIds.includes(p.id));
+
+        // Parse task using Claude
+        const parsed = await claudeService.parseTaskRequest(input, userProjects, users);
+
+        res.json(parsed);
+    } catch (error) {
+        console.error('Claude parse task error:', error);
+        res.status(500).json({
+            error: 'Failed to parse task request',
+            details: error.message
+        });
+    }
 });
 
 // ==================== ADMIN INVITATION ROUTES ====================

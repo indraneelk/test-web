@@ -102,7 +102,7 @@ class DataService {
     async getUserById(userId) {
         if (this.useD1) {
             const result = await this.d1.query(
-                'SELECT id, username, name, email, initials, is_admin, created_at, updated_at FROM users WHERE id = ?',
+                'SELECT id, username, name, email, initials, is_admin, discord_handle, discord_user_id, discord_verified, created_at, updated_at FROM users WHERE id = ?',
                 [userId]
             );
             return result.results?.[0] || null;
@@ -227,6 +227,44 @@ class DataService {
                 users[index] = {
                     ...users[index],
                     ...updates,
+                    updated_at: new Date().toISOString()
+                };
+                this.writeJSON(this.USERS_FILE, users);
+                return users[index];
+            }
+            return null;
+        }
+    }
+
+    async getUserByDiscordId(discordUserId) {
+        if (this.useD1) {
+            const result = await this.d1.query(
+                'SELECT id, username, name, email, initials, is_admin, discord_handle, discord_user_id, discord_verified, created_at, updated_at FROM users WHERE discord_user_id = ?',
+                [discordUserId]
+            );
+            return result.results?.[0] || null;
+        } else {
+            const users = this.readJSON(this.USERS_FILE);
+            return users.find(u => u.discord_user_id === discordUserId) || null;
+        }
+    }
+
+    async updateUserDiscordHandle(userId, discordHandle, discordUserId) {
+        if (this.useD1) {
+            await this.d1.query(
+                'UPDATE users SET discord_handle = ?, discord_user_id = ?, discord_verified = 1, updated_at = ? WHERE id = ?',
+                [discordHandle, discordUserId, new Date().toISOString(), userId]
+            );
+            return await this.getUserById(userId);
+        } else {
+            const users = this.readJSON(this.USERS_FILE);
+            const index = users.findIndex(u => u.id === userId);
+            if (index !== -1) {
+                users[index] = {
+                    ...users[index],
+                    discord_handle: discordHandle,
+                    discord_user_id: discordUserId,
+                    discord_verified: 1,
                     updated_at: new Date().toISOString()
                 };
                 this.writeJSON(this.USERS_FILE, users);

@@ -9,6 +9,9 @@ CREATE TABLE IF NOT EXISTS users (
     email TEXT,
     initials TEXT,
     is_admin INTEGER DEFAULT 0,
+    discord_handle TEXT,
+    discord_user_id TEXT UNIQUE,
+    discord_verified INTEGER DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -67,6 +70,7 @@ CREATE TABLE IF NOT EXISTS tasks (
 
 -- Create indexes for faster queries
 CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
+CREATE INDEX IF NOT EXISTS idx_users_discord_user_id ON users(discord_user_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at);
 CREATE INDEX IF NOT EXISTS idx_projects_owner_id ON projects(owner_id);

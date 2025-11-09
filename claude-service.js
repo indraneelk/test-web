@@ -238,6 +238,81 @@ Format your responses clearly with bullet points or numbered lists when appropri
     }
 
     /**
+     * Parse natural language task creation request
+     * Converts user input like "create a task to fix login bug, assign to john, due tomorrow"
+     * into structured task data
+     */
+    async parseTaskRequest(userInput, projects, users) {
+        const projectList = projects.map(p => ({ id: p.id, name: p.name }));
+        const userList = users.map(u => ({ id: u.id, name: u.name, email: u.email }));
+
+        const systemPrompt = `You are a task parser. Convert natural language task requests into JSON.
+
+Available projects:
+${JSON.stringify(projectList, null, 2)}
+
+Available users:
+${JSON.stringify(userList, null, 2)}
+
+Parse the user's request and return ONLY a JSON object with this structure:
+{
+  "title": "task title",
+  "description": "optional description",
+  "dueDate": "YYYY-MM-DD format",
+  "priority": "none|low|medium|high",
+  "projectId": "id from available projects or null",
+  "projectName": "name of project or null",
+  "assignedToId": "user id or null",
+  "assignedToName": "user name or null"
+}
+
+Rules:
+- If no due date mentioned, use today's date
+- If "tomorrow" mentioned, use tomorrow's date
+- If "next week" mentioned, use 7 days from now
+- Default priority is "none" unless specified
+- Match project names case-insensitively
+- Match user names or emails case-insensitively
+- Return null for projectId/assignedToId if not found or not specified
+- Extract description from context if available
+
+Return ONLY valid JSON, no other text.`;
+
+        try {
+            const response = await this.sendMessage(userInput, systemPrompt);
+
+            // Try to parse JSON from response
+            // Claude might wrap it in markdown code blocks, so handle that
+            let jsonStr = response.trim();
+            if (jsonStr.startsWith('```json')) {
+                jsonStr = jsonStr.replace(/```json\n?/g, '').replace(/```\n?$/g, '');
+            } else if (jsonStr.startsWith('```')) {
+                jsonStr = jsonStr.replace(/```\n?/g, '').replace(/```\n?$/g, '');
+            }
+
+            const parsed = JSON.parse(jsonStr);
+
+            // Validate and normalize the parsed data
+            const today = new Date();
+            const result = {
+                title: parsed.title || 'Untitled Task',
+                description: parsed.description || '',
+                dueDate: parsed.dueDate || today.toISOString().split('T')[0],
+                priority: ['none', 'low', 'medium', 'high'].includes(parsed.priority) ? parsed.priority : 'none',
+                projectId: parsed.projectId || null,
+                projectName: parsed.projectName || null,
+                assignedToId: parsed.assignedToId || null,
+                assignedToName: parsed.assignedToName || null
+            };
+
+            return result;
+        } catch (error) {
+            console.error('Failed to parse task request:', error);
+            throw new Error('Failed to parse task creation request. Please try being more specific.');
+        }
+    }
+
+    /**
      * Get service statistics
      */
     getStats() {

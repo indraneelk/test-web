@@ -413,7 +413,7 @@ function renderMobileProjectOptions() {
 }
 
 // USER SETTINGS
-function openUserSettings() {
+async function openUserSettings() {
     if (!currentUser) {
         console.error('Cannot open user settings: currentUser is null');
         console.log('Attempting to reload user data...');
@@ -432,11 +432,89 @@ function openUserSettings() {
     document.getElementById('profileEmail').value = currentUser.email || '';
     document.getElementById('profileInitials').value = currentUser.initials || '';
     document.getElementById('profilePassword').value = '';
+
+    // Load Discord handle
+    try {
+        const resp = await authFetch(`${API_AUTH}/user/discord-handle`);
+        if (resp.ok) {
+            const data = await resp.json();
+            if (data.discord_handle) {
+                document.getElementById('discordHandle').value = data.discord_handle;
+                document.getElementById('discordStatus').innerHTML = '<span style="color: #13ce66;">✓ Linked</span>';
+            } else {
+                document.getElementById('discordHandle').value = '';
+                document.getElementById('discordStatus').innerHTML = '';
+            }
+        }
+    } catch (error) {
+        console.error('Failed to load Discord handle:', error);
+    }
+
     document.getElementById('userSettingsModal').classList.add('active');
 }
 
 function closeUserSettings() {
     document.getElementById('userSettingsModal').classList.remove('active');
+}
+
+async function linkDiscord() {
+    const instructions = `To link your Discord account:
+
+1. Open Discord and right-click your username
+2. Click "Copy User ID" (you may need to enable Developer Mode in Discord Settings > Advanced)
+3. Paste your User ID below
+
+Note: Your Discord User ID looks like: 123456789012345678`;
+
+    const discordUserId = prompt(instructions);
+
+    if (!discordUserId || discordUserId.trim() === '') {
+        return; // User cancelled
+    }
+
+    // Validate Discord User ID (should be numeric and 17-19 digits)
+    if (!/^\d{17,19}$/.test(discordUserId.trim())) {
+        alert('Invalid Discord User ID. It should be a 17-19 digit number.');
+        return;
+    }
+
+    // Prompt for Discord handle (display name)
+    const discordHandle = prompt('Enter your Discord username (e.g., YourName#0000 or YourName):');
+
+    if (!discordHandle || discordHandle.trim() === '') {
+        return; // User cancelled
+    }
+
+    const statusEl = document.getElementById('discordStatus');
+    statusEl.innerHTML = '<span style="color: #4f46e5;">Linking...</span>';
+
+    try {
+        const resp = await authFetch(`${API_AUTH}/user/discord-handle`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                discordHandle: discordHandle.trim(),
+                discordUserId: discordUserId.trim()
+            })
+        });
+
+        const data = await resp.json();
+
+        if (!resp.ok) {
+            throw new Error(data.error || 'Failed to link Discord account');
+        }
+
+        document.getElementById('discordHandle').value = data.user.discord_handle;
+        statusEl.innerHTML = '<span style="color: #13ce66;">✓ Successfully linked!</span>';
+
+        setTimeout(() => {
+            statusEl.innerHTML = '<span style="color: #13ce66;">✓ Linked</span>';
+        }, 3000);
+
+    } catch (error) {
+        console.error('Failed to link Discord:', error);
+        statusEl.innerHTML = `<span style="color: #ff4949;">✗ ${error.message}</span>`;
+    }
 }
 
 async function handleUserSettingsSubmit(e) {

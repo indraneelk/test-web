@@ -467,3 +467,42 @@
         width: 100%;
     }
 }
+
+/* Discord Settings */
+.discord-input-group {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+.discord-input-group input {
+    flex: 1;
+}
+
+.discord-input-group .btn {
+    flex-shrink: 0;
+}
+
+.form-help {
+    display: block;
+    margin-top: 0.25rem;
+    font-size: 0.85rem;
+    color: #64748b;
+}
+
+.discord-status {
+    margin-top: 0.5rem;
+    font-size: 0.9rem;
+    font-weight: 500;
+}
+
+@media (max-width: 768px) {
+    .discord-input-group {
+        flex-direction: column;
+    }
+
+    .discord-input-group input,
+    .discord-input-group .btn {
+        width: 100%;
+    }
+}

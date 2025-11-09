@@ -13,6 +13,32 @@ if (!DISCORD_TOKEN) {
 // Store user sessions (Discord User ID -> Cookie)
 const userSessions = new Map();
 
+// Auto-authenticate user by Discord ID
+async function authenticateDiscordUser(discordUserId) {
+    // Check if we already have a session
+    if (userSessions.has(discordUserId)) {
+        return userSessions.get(discordUserId);
+    }
+
+    try {
+        // Try to authenticate via Discord ID
+        const response = await axios.post(`${API_BASE}/auth/discord`, {
+            discordUserId: discordUserId
+        });
+
+        if (response.data.success && response.headers['set-cookie']) {
+            const cookies = response.headers['set-cookie'];
+            userSessions.set(discordUserId, cookies);
+            return cookies;
+        }
+
+        return null;
+    } catch (error) {
+        console.error('Discord auth error:', error.message);
+        return null;
+    }
+}
+
 // Create Discord client
 const client = new Client({
     intents: [
@@ -52,6 +78,15 @@ client.on('messageCreate', async (message) => {
                 break;
             case 'tasks':
                 await handleTasks(message);
+                break;
+            case 'create':
+                await handleCreate(message, args);
+                break;
+            case 'update':
+                await handleUpdate(message, args);
+                break;
+            case 'complete':
+                await handleComplete(message, args);
                 break;
             case 'summary':
                 await handleSummary(message);
@@ -116,9 +151,9 @@ async function handleLogin(message, args) {
 
 // Get tasks
 async function handleTasks(message) {
-    const session = userSessions.get(message.author.id);
+    const session = await authenticateDiscordUser(message.author.id);
     if (!session) {
-        return message.reply('❌ Please login first: `login <username> <password>`');
+        return message.reply('❌ Please link your Discord account on the website first. Go to Settings and add your Discord handle.');
     }
 
     try {
@@ -167,9 +202,9 @@ async function handleTasks(message) {
 
 // Get summary from Claude
 async function handleSummary(message) {
-    const session = userSessions.get(message.author.id);
+    const session = await authenticateDiscordUser(message.author.id);
     if (!session) {
-        return message.reply('❌ Please login first: `login <username> <password>`');
+        return message.reply('❌ Please link your Discord account on the website first. Go to Settings and add your Discord handle.');
     }
 
     const thinking = await message.reply('🤔 Analyzing your tasks...');
@@ -199,9 +234,9 @@ async function handleSummary(message) {
 
 // Get priorities from Claude
 async function handlePriorities(message) {
-    const session = userSessions.get(message.author.id);
+    const session = await authenticateDiscordUser(message.author.id);
     if (!session) {
-        return message.reply('❌ Please login first: `login <username> <password>`');
+        return message.reply('❌ Please link your Discord account on the website first. Go to Settings and add your Discord handle.');
     }
 
     const thinking = await message.reply('🤔 Analyzing task priorities...');
@@ -226,9 +261,9 @@ async function handlePriorities(message) {
 
 // Ask Claude a question
 async function handleAsk(message, args) {
-    const session = userSessions.get(message.author.id);
+    const session = await authenticateDiscordUser(message.author.id);
     if (!session) {
-        return message.reply('❌ Please login first: `login <username> <password>`');
+        return message.reply('❌ Please link your Discord account on the website first. Go to Settings and add your Discord handle.');
     }
 
     // Get question (everything after 'ask')
@@ -268,24 +303,180 @@ async function handleAsk(message, args) {
     }
 }
 
+// Create task command
+async function handleCreate(message, args) {
+    const session = await authenticateDiscordUser(message.author.id);
+    if (!session) {
+        return message.reply('❌ Please link your Discord account on the website first. Go to Settings and add your Discord handle.');
+    }
+
+    // Get the task description (everything after 'create')
+    const taskInput = args.slice(1).join(' ');
+
+    if (!taskInput || taskInput.length === 0) {
+        return message.reply('Usage: `create <task description>`\nExamples:\n• `create Fix login bug, assign to john, due tomorrow`\n• `create "Update documentation" --project Docs --due 2025-11-20`');
+    }
+
+    const thinking = await message.reply('🤔 Creating task...');
+
+    try {
+        // Check if it's a direct command (has quotes or --flags) or natural language
+        const isDirectCommand = taskInput.includes('"') || taskInput.includes('--');
+
+        let taskData;
+
+        if (isDirectCommand) {
+            // Parse direct command format: create "Title" --project X --due YYYY-MM-DD --priority high --assign user@email.com
+            const titleMatch = taskInput.match(/"([^"]+)"/);
+            const title = titleMatch ? titleMatch[1] : taskInput.split('--')[0].trim();
+
+            const projectMatch = taskInput.match(/--project\s+(\S+)/i);
+            const dueMatch = taskInput.match(/--due\s+(\S+)/i);
+            const priorityMatch = taskInput.match(/--priority\s+(\S+)/i);
+            const assignMatch = taskInput.match(/--assign\s+(\S+)/i);
+
+            taskData = {
+                name: title,
+                description: '',
+                date: dueMatch ? dueMatch[1] : new Date().toISOString().split('T')[0],
+                priority: priorityMatch ? priorityMatch[1] : 'none',
+                project_name: projectMatch ? projectMatch[1] : null,
+                assigned_to_email: assignMatch ? assignMatch[1] : null
+            };
+        } else {
+            // Use Claude to parse natural language
+            const parseResponse = await axios.post(`${API_BASE}/claude/parse-task`,
+                { input: taskInput },
+                { headers: { Cookie: session } }
+            );
+
+            const parsed = parseResponse.data;
+            taskData = {
+                name: parsed.title,
+                description: parsed.description || '',
+                date: parsed.dueDate,
+                priority: parsed.priority,
+                project_id: parsed.projectId,
+                assigned_to_id: parsed.assignedToId
+            };
+        }
+
+        // Create the task
+        const response = await axios.post(`${API_BASE}/tasks`, taskData, {
+            headers: { Cookie: session }
+        });
+
+        const task = response.data;
+
+        const embed = new EmbedBuilder()
+            .setColor(0x13ce66)
+            .setTitle('✅ Task Created')
+            .addFields(
+                { name: 'Title', value: task.name },
+                { name: 'Due Date', value: task.date, inline: true },
+                { name: 'Priority', value: task.priority || 'none', inline: true }
+            )
+            .setTimestamp();
+
+        await thinking.edit({ content: null, embeds: [embed] });
+    } catch (error) {
+        console.error('Create task error:', error);
+        const errorMsg = error.response?.data?.error || error.message;
+        await thinking.edit(`❌ Failed to create task: ${errorMsg}`);
+    }
+}
+
+// Update task command
+async function handleUpdate(message, args) {
+    const session = await authenticateDiscordUser(message.author.id);
+    if (!session) {
+        return message.reply('❌ Please link your Discord account on the website first. Go to Settings and add your Discord handle.');
+    }
+
+    if (args.length < 3) {
+        return message.reply('Usage: `update <task-id> <field> <value>`\nExample: `update task-123 status in-progress`');
+    }
+
+    const taskId = args[1];
+    const field = args[2];
+    const value = args.slice(3).join(' ');
+
+    try {
+        const updateData = {};
+
+        if (field === 'status') {
+            updateData.status = value;
+        } else if (field === 'priority') {
+            updateData.priority = value;
+        } else if (field === 'name' || field === 'title') {
+            updateData.name = value;
+        } else if (field === 'due' || field === 'date') {
+            updateData.date = value;
+        } else {
+            return message.reply('❌ Invalid field. Use: status, priority, name, or due');
+        }
+
+        const response = await axios.put(`${API_BASE}/tasks/${taskId}`, updateData, {
+            headers: { Cookie: session }
+        });
+
+        await message.reply(`✅ Task updated: ${field} set to "${value}"`);
+    } catch (error) {
+        console.error('Update task error:', error);
+        const errorMsg = error.response?.data?.error || error.message;
+        await message.reply(`❌ Failed to update task: ${errorMsg}`);
+    }
+}
+
+// Complete task command
+async function handleComplete(message, args) {
+    const session = await authenticateDiscordUser(message.author.id);
+    if (!session) {
+        return message.reply('❌ Please link your Discord account on the website first. Go to Settings and add your Discord handle.');
+    }
+
+    if (args.length < 2) {
+        return message.reply('Usage: `complete <task-id>`\nExample: `complete task-123`');
+    }
+
+    const taskId = args[1];
+
+    try {
+        const response = await axios.put(`${API_BASE}/tasks/${taskId}`,
+            { status: 'completed' },
+            { headers: { Cookie: session } }
+        );
+
+        await message.reply(`✅ Task marked as completed!`);
+    } catch (error) {
+        console.error('Complete task error:', error);
+        const errorMsg = error.response?.data?.error || error.message;
+        await message.reply(`❌ Failed to complete task: ${errorMsg}`);
+    }
+}
+
 // Help command
 async function handleHelp(message) {
     const embed = new EmbedBuilder()
         .setColor(0x4f46e5)
         .setTitle('🤖 Task Manager Bot - Commands')
-        .setDescription('Interact with your task manager through Discord!')
+        .setDescription('Interact with your task manager through Discord!\n\n**Setup:** Link your Discord account on the website (Settings page) to get started.')
         .addFields(
             {
-                name: '🔐 Authentication',
-                value: '`login <username> <password>` - Login to your account\n⚠️ Use in DMs for security!'
+                name: '📋 View Tasks',
+                value: '`tasks` - View your tasks\n`summary` - Get AI summary from Claude\n`priorities` - Get priority suggestions from Claude'
             },
             {
-                name: '📋 Tasks',
-                value: '`tasks` - View your tasks\n`summary` - Get AI summary from Claude\n`priorities` - Get priority suggestions from Claude'
+                name: '✏️ Create & Modify',
+                value: '`create <description>` - Create a new task (natural language or flags)\n`update <task-id> <field> <value>` - Update a task\n`complete <task-id>` - Mark task as complete'
             },
             {
                 name: '💬 Ask Claude',
                 value: '`ask <question>` - Ask Claude anything about your tasks\nExamples:\n• `ask what should I focus on today?`\n• `ask which tasks are overdue?`\n• `ask summarize project X`'
+            },
+            {
+                name: '📝 Create Task Examples',
+                value: '**Natural language:**\n• `create Fix login bug, assign to john, due tomorrow`\n• `create Update documentation for API`\n\n**Direct commands:**\n• `create "Fix bug" --project Core --due 2025-11-20 --priority high`\n• `create "Write tests" --assign john@example.com`'
             },
             {
                 name: '❓ Help',

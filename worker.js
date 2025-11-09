@@ -207,6 +207,10 @@ async function getUserByEmail(db, email) {
     return await db.prepare('SELECT * FROM users WHERE email = ?').bind(email).first();
 }
 
+async function getUserByDiscordId(db, discordUserId) {
+    return await db.prepare('SELECT * FROM users WHERE discord_user_id = ?').bind(discordUserId).first();
+}
+
 // Removed getUserBySupabaseId: we standardize on id = Supabase sub
 
 async function getProjectById(db, projectId) {
@@ -401,6 +405,48 @@ async function handleSupabaseCallback(request, env) {
     }
 }
 
+async function handleDiscordAuth(request, env) {
+    try {
+        // Rate limit: 10 per 15m per IP
+        const allowed = await rateLimit(request, env, 'discord-auth', 900, 10);
+        if (!allowed) return errorResponse('Too many authentication attempts. Please try again later.', 429);
+
+        const body = await request.json();
+        const { discordUserId } = body;
+
+        if (!discordUserId) {
+            return errorResponse('Discord user ID is required', 400);
+        }
+
+        // Find user by Discord ID
+        const user = await getUserByDiscordId(env.DB, discordUserId);
+
+        if (!user) {
+            return jsonResponse({
+                success: false,
+                error: 'Discord account not linked. Please add your Discord handle on the website first.'
+            }, 404);
+        }
+
+        const now = getCurrentTimestamp();
+        await logActivity(env.DB, user.id, 'user_login', `User ${user.name} logged in via Discord bot`);
+
+        const { password_hash, ...userWithoutPassword } = user;
+        return jsonResponse({
+            success: true,
+            user: userWithoutPassword
+        }, 200, {
+            'Set-Cookie': createAuthCookie(user.id, env)
+        });
+    } catch (error) {
+        console.error('Discord auth error');
+        return jsonResponse({
+            success: false,
+            error: 'Authentication failed'
+        }, 500);
+    }
+}
+
 async function handleLogout(request, env) {
     const user = await authenticate(request, env);
     if (user) {
@@ -516,6 +562,66 @@ async function handleGetUser(request, env, userId) {
 
     const { password_hash, ...userWithoutPassword } = targetUser;
     return jsonResponse(userWithoutPassword);
+}
+
+// Discord Handle Handlers
+async function handleUpdateDiscordHandle(request, env) {
+    const user = await authenticate(request, env);
+    if (!user) {
+        return errorResponse('Authentication required', 401);
+    }
+
+    const { discordHandle, discordUserId } = await request.json();
+
+    if (!discordHandle || !discordUserId) {
+        return errorResponse('Discord handle and user ID are required', 400);
+    }
+
+    // Check if Discord user ID is already taken by another user
+    const { results } = await env.DB.prepare(
+        'SELECT id FROM users WHERE discord_user_id = ? AND id != ?'
+    ).bind(discordUserId, user.id).all();
+
+    if (results.length > 0) {
+        return errorResponse('This Discord account is already linked to another user', 400);
+    }
+
+    // Update user's Discord handle
+    await env.DB.prepare(
+        'UPDATE users SET discord_handle = ?, discord_user_id = ?, discord_verified = 1, updated_at = ? WHERE id = ?'
+    ).bind(discordHandle, discordUserId, new Date().toISOString(), user.id).run();
+
+    const updatedUser = await getUserById(env.DB, user.id);
+
+    return jsonResponse({
+        message: 'Discord handle updated successfully',
+        user: {
+            id: updatedUser.id,
+            name: updatedUser.name,
+            email: updatedUser.email,
+            discord_handle: updatedUser.discord_handle,
+            discord_verified: updatedUser.discord_verified
+        }
+    });
+}
+
+async function handleGetDiscordHandle(request, env) {
+    const user = await authenticate(request, env);
+    if (!user) {
+        return errorResponse('Authentication required', 401);
+    }
+
+    const currentUser = await getUserById(env.DB, user.id);
+
+    if (!currentUser) {
+        return errorResponse('User not found', 404);
+    }
+
+    return jsonResponse({
+        discord_handle: currentUser.discord_handle || null,
+        discord_user_id: currentUser.discord_user_id || null,
+        discord_verified: currentUser.discord_verified || 0
+    });
 }
 
 // Project Handlers
@@ -1170,6 +1276,9 @@ export default {
             if (path === '/api/auth/supabase-callback' && method === 'POST') {
                 return await handleSupabaseCallback(request, env);
             }
+            if (path === '/api/auth/discord' && method === 'POST') {
+                return await handleDiscordAuth(request, env);
+            }
             if (path === '/api/auth/logout' && method === 'POST') {
                 return await handleLogout(request, env);
             }
@@ -1192,6 +1301,12 @@ export default {
             if (path.match(/^\/api\/users\/[^/]+$/) && method === 'GET') {
                 const userId = path.split('/')[3];
                 return await handleGetUser(request, env, userId);
+            }
+            if (path === '/api/user/discord-handle' && method === 'GET') {
+                return await handleGetDiscordHandle(request, env);
+            }
+            if (path === '/api/user/discord-handle' && method === 'PUT') {
+                return await handleUpdateDiscordHandle(request, env);
             }
 
             // Project routes

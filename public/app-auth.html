@@ -280,6 +280,15 @@
                     <label for="profilePassword">New Password (optional)</label>
                     <input id="profilePassword" class="form-input" type="password" placeholder="Leave blank to keep current">
                 </div>
+                <div class="form-group">
+                    <label for="discordHandle">Discord Handle</label>
+                    <div class="discord-input-group">
+                        <input id="discordHandle" class="form-input" type="text" placeholder="YourDiscordName" readonly>
+                        <button type="button" class="btn btn-secondary" onclick="linkDiscord()">Link Discord</button>
+                    </div>
+                    <small class="form-help">Link your Discord account to use the Discord bot</small>
+                    <div id="discordStatus" class="discord-status"></div>
+                </div>
                 <div class="modal-footer">
                     <button type="submit" class="btn btn-primary">Save</button>
                 </div>
