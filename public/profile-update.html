@@ -3,34 +3,495 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Edit Profile</title>
+  <title>Settings - Task Manager</title>
   <link rel="stylesheet" href="styles.css">
   <style>
-    body { background-color: var(--bg-color); min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 2rem; }
-    .profile-container { max-width: 520px; width: 100%; padding: 2.5rem; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 0.75rem; box-shadow: var(--shadow); position: relative; }
-    .close-btn { position: absolute; top: 1rem; right: 1rem; width: 32px; height: 32px; border-radius: 50%; border: none; background: var(--bg-elevated); color: var(--text-secondary); cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 1.25rem; line-height: 1; transition: all 0.2s; }
-    .close-btn:hover { background: var(--border-color); color: var(--text-primary); }
-    .profile-header { text-align: center; margin-bottom: 2rem; }
-    .profile-header h1 { font-size: 1.75rem; font-weight: 600; margin-bottom: 0.5rem; color: var(--text-primary); }
-    .profile-header p { color: var(--text-secondary); font-size: 0.9375rem; }
-    .input-group { margin-bottom: 1.25rem; }
-    .input-group label { display:block; margin-bottom:0.5rem; color: var(--text-primary); font-weight: 600; font-size: 0.875rem; }
-    .input-group input { width:100%; padding:0.75rem 1rem; border:1px solid var(--border-color); border-radius:0.5rem; font-size:0.9375rem; color:var(--text-primary); background:var(--card-bg); }
-    .input-row { display:grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
-    .color-options { display: grid; grid-template-columns: repeat(auto-fill, minmax(38px, 1fr)); gap: 0.5rem; margin-top: 0.25rem; }
-    .color-option { width: 38px; height: 38px; border-radius: 50%; cursor: pointer; border: 2px solid transparent; }
-    .color-option.selected { border-color: #000; }
-    .actions { display:flex; gap: 0.75rem; margin-top: 1rem; }
-    .btn { padding: 0.75rem 1.25rem; border-radius: 0.5rem; border: none; cursor: pointer; font-weight: 600; flex: 1; }
-    .btn-primary { background: var(--primary-color); color: #fff; }
-    .btn-secondary { background: var(--bg-elevated); color: var(--text-primary); border:1px solid var(--border-color); }
-    .error { padding: 0.75rem 1rem; background: #fee2e2; border:1px solid #fca5a5; color:#991b1b; border-radius:0.5rem; margin-bottom:1rem; display:none; }
-    .success { padding: 0.75rem 1rem; background: #dcfce7; border:1px solid #86efac; color:#166534; border-radius:0.5rem; margin-bottom:1rem; display:none; }
-    @media (max-width: 640px) { .input-row { grid-template-columns: 1fr; } }
+    body {
+      background-color: var(--bg-color);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem;
+    }
+
+    .settings-container {
+      max-width: 680px;
+      width: 100%;
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 0.75rem;
+      box-shadow: var(--shadow);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .settings-header {
+      padding: 2rem 2.5rem 0;
+      border-bottom: 1px solid var(--border-color);
+      position: relative;
+    }
+
+    .settings-header-top {
+      margin-bottom: 1.5rem;
+      padding-right: 3rem;
+    }
+
+    .settings-title {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .settings-title h1 {
+      font-size: 1.75rem;
+      font-weight: 600;
+      margin: 0;
+      color: var(--text-primary);
+    }
+
+    .settings-title p {
+      color: var(--text-secondary);
+      font-size: 0.9375rem;
+      margin: 0.25rem 0 0;
+    }
+
+    .close-btn {
+      position: absolute;
+      top: 1.5rem;
+      right: 1.5rem;
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      border: none;
+      background: var(--bg-elevated);
+      color: var(--text-secondary);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.5rem;
+      line-height: 1;
+      transition: all 0.2s;
+      z-index: 10;
+    }
+
+    .close-btn:hover {
+      background: var(--border-color);
+      color: var(--text-primary);
+    }
+
+    /* Tabs */
+    .tabs {
+      display: flex;
+      gap: 0.5rem;
+      padding: 0 0.5rem;
+    }
+
+    .tab {
+      flex: 1;
+      padding: 0.875rem 1.25rem;
+      background: transparent;
+      border: none;
+      border-bottom: 2px solid transparent;
+      color: var(--text-secondary);
+      cursor: pointer;
+      font-weight: 500;
+      font-size: 0.9375rem;
+      transition: all 0.2s;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+    }
+
+    .tab:hover {
+      color: var(--text-primary);
+      background: var(--bg-elevated);
+    }
+
+    .tab.active {
+      color: var(--primary-color);
+      border-bottom-color: var(--primary-color);
+      font-weight: 600;
+    }
+
+    .tab-icon {
+      font-size: 1.125rem;
+    }
+
+    /* Tab Content */
+    .settings-body {
+      padding: 2.5rem;
+    }
+
+    .tab-panel {
+      display: none;
+      animation: fadeIn 0.3s ease-in-out;
+    }
+
+    .tab-panel.active {
+      display: block;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .panel-header {
+      margin-bottom: 2rem;
+    }
+
+    .panel-header h2 {
+      font-size: 1.25rem;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin: 0 0 0.5rem;
+    }
+
+    .panel-header p {
+      color: var(--text-secondary);
+      font-size: 0.9375rem;
+      margin: 0;
+    }
+
+    /* Form Elements */
+    .input-group {
+      margin-bottom: 1.5rem;
+    }
+
+    .input-group label {
+      display: block;
+      margin-bottom: 0.625rem;
+      color: var(--text-primary);
+      font-weight: 600;
+      font-size: 0.875rem;
+    }
+
+    .input-group input {
+      width: 100%;
+      padding: 0.875rem 1rem;
+      border: 1px solid var(--border-color);
+      border-radius: 0.5rem;
+      font-size: 0.9375rem;
+      color: var(--text-primary);
+      background: var(--card-bg);
+      transition: border-color 0.2s;
+    }
+
+    .input-group input:focus {
+      outline: none;
+      border-color: var(--primary-color);
+      box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+    }
+
+    .input-group input:disabled {
+      background: var(--bg-elevated);
+      cursor: not-allowed;
+      opacity: 0.6;
+    }
+
+    .input-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.25rem;
+    }
+
+    .form-help {
+      display: block;
+      margin-top: 0.5rem;
+      color: var(--text-secondary);
+      font-size: 0.875rem;
+      line-height: 1.5;
+    }
+
+    /* Color Picker */
+    .color-options {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(44px, 1fr));
+      gap: 0.75rem;
+      margin-top: 0.5rem;
+    }
+
+    .color-option {
+      width: 44px;
+      height: 44px;
+      border-radius: 0.5rem;
+      cursor: pointer;
+      border: 2px solid transparent;
+      transition: all 0.2s;
+      position: relative;
+    }
+
+    .color-option:hover {
+      transform: scale(1.1);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+
+    .color-option.selected {
+      border-color: var(--text-primary);
+      box-shadow: 0 0 0 2px var(--card-bg), 0 0 0 4px var(--text-primary);
+    }
+
+    .color-option.selected::after {
+      content: '✓';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: white;
+      font-weight: bold;
+      font-size: 1.125rem;
+      text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+    }
+
+    /* Discord Section */
+    .discord-card {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-color);
+      border-radius: 0.75rem;
+      padding: 1.75rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .discord-header {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 1rem;
+    }
+
+    .discord-icon {
+      font-size: 2rem;
+    }
+
+    .discord-header h3 {
+      font-size: 1.125rem;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin: 0;
+    }
+
+    .discord-status {
+      margin-top: 1rem;
+      padding: 0.875rem 1rem;
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 0.5rem;
+      font-size: 0.9375rem;
+    }
+
+    .discord-status.linked {
+      background: #dcfce7;
+      border-color: #86efac;
+      color: #166534;
+    }
+
+    .discord-code-display {
+      background: var(--card-bg);
+      border: 2px dashed var(--primary-color);
+      border-radius: 0.75rem;
+      padding: 1.5rem;
+      text-align: center;
+      margin: 1.5rem 0;
+    }
+
+    .discord-code {
+      font-family: 'Courier New', monospace;
+      font-size: 1.75rem;
+      font-weight: 700;
+      color: var(--primary-color);
+      letter-spacing: 0.125rem;
+      margin: 0.5rem 0;
+    }
+
+    .discord-code-label {
+      font-size: 0.875rem;
+      color: var(--text-secondary);
+      margin-bottom: 0.5rem;
+    }
+
+    .discord-code-expiry {
+      font-size: 0.875rem;
+      color: var(--text-secondary);
+      margin-top: 0.75rem;
+    }
+
+    .discord-instructions {
+      background: #fef3c7;
+      border: 1px solid #fbbf24;
+      border-radius: 0.5rem;
+      padding: 1rem;
+      margin-top: 1.5rem;
+    }
+
+    .discord-instructions-title {
+      font-weight: 600;
+      color: #92400e;
+      margin: 0 0 0.5rem;
+      font-size: 0.9375rem;
+    }
+
+    .discord-instructions ol {
+      margin: 0.5rem 0 0 1.25rem;
+      padding: 0;
+      color: #92400e;
+      font-size: 0.875rem;
+      line-height: 1.6;
+    }
+
+    .discord-instructions code {
+      background: rgba(0,0,0,0.1);
+      padding: 0.125rem 0.375rem;
+      border-radius: 0.25rem;
+      font-family: 'Courier New', monospace;
+      font-size: 0.8125rem;
+    }
+
+    /* Buttons */
+    .btn {
+      padding: 0.875rem 1.5rem;
+      border-radius: 0.5rem;
+      border: none;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 0.9375rem;
+      transition: all 0.2s;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+    }
+
+    .btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .btn-primary {
+      background: var(--primary-color);
+      color: #fff;
+    }
+
+    .btn-primary:hover:not(:disabled) {
+      opacity: 0.9;
+      box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3);
+    }
+
+    .btn-secondary {
+      background: var(--bg-elevated);
+      color: var(--text-primary);
+      border: 1px solid var(--border-color);
+    }
+
+    .btn-secondary:hover:not(:disabled) {
+      background: var(--border-color);
+    }
+
+    .btn-full {
+      width: 100%;
+    }
+
+    .btn-group {
+      display: flex;
+      gap: 0.75rem;
+      margin-top: 2rem;
+      padding-top: 2rem;
+      border-top: 1px solid var(--border-color);
+    }
+
+    /* Messages */
+    .error {
+      padding: 1rem 1.25rem;
+      background: #fee2e2;
+      border: 1px solid #fca5a5;
+      color: #991b1b;
+      border-radius: 0.5rem;
+      margin-bottom: 1.5rem;
+      display: none;
+      font-size: 0.9375rem;
+    }
+
+    .success {
+      padding: 1rem 1.25rem;
+      background: #dcfce7;
+      border: 1px solid #86efac;
+      color: #166534;
+      border-radius: 0.5rem;
+      margin-bottom: 1.5rem;
+      display: none;
+      font-size: 0.9375rem;
+    }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+      body {
+        padding: 1rem;
+      }
+
+      .settings-container {
+        border-radius: 0.5rem;
+      }
+
+      .settings-header {
+        padding: 1.5rem 1.5rem 0;
+      }
+
+      .settings-header-top {
+        padding-right: 3rem;
+      }
+
+      .close-btn {
+        top: 1.25rem;
+        right: 1.25rem;
+      }
+
+      /* Keep tabs horizontal, show only icons */
+      .tabs {
+        justify-content: space-around;
+        padding: 0 0.25rem;
+      }
+
+      .tab {
+        padding: 1rem 0.5rem;
+        min-width: 60px;
+      }
+
+      /* Hide text labels on mobile, show only emoji icons */
+      .tab span:not(.tab-icon) {
+        display: none;
+      }
+
+      .tab-icon {
+        font-size: 1.5rem;
+      }
+
+      .tab.active {
+        background: transparent;
+      }
+
+      .settings-body {
+        padding: 1.5rem;
+      }
+
+      .input-row {
+        grid-template-columns: 1fr;
+      }
+
+      .btn-group {
+        flex-direction: column-reverse;
+      }
+
+      .btn-group .btn {
+        width: 100%;
+      }
+    }
   </style>
   <script src="/vendor/supabase.js"></script>
   <script>
-    // Singleton Supabase client to avoid multiple instances
+    // Singleton Supabase client
     let supaClient = null;
     async function ensureSupabase() {
       if (supaClient) return supaClient;
@@ -44,10 +505,18 @@
       } catch (_) {}
       return supaClient;
     }
+
     async function getAccessToken() {
-      try { const c = await ensureSupabase(); if (c) { const { data } = await c.auth.getSession(); if (data?.session?.access_token) return data.session.access_token; } } catch(_) {}
+      try {
+        const c = await ensureSupabase();
+        if (c) {
+          const { data } = await c.auth.getSession();
+          if (data?.session?.access_token) return data.session.access_token;
+        }
+      } catch(_) {}
       return sessionStorage.getItem('sb_at') || null;
     }
+
     async function authFetch(url, options = {}) {
       const orig = { ...options };
       let token = await getAccessToken();
@@ -55,72 +524,220 @@
       if (token) headers.set('Authorization', `Bearer ${token}`);
       let resp = await fetch(url, { ...options, headers, credentials: token ? undefined : 'include' });
       if (resp.status !== 401) return resp;
-      try{
+      try {
         const client = await ensureSupabase();
-        if (client){
+        if (client) {
           await client.auth.refreshSession();
           const { data } = await client.auth.getSession();
           const newToken = data?.session?.access_token || null;
-          if (newToken && newToken !== token){
+          if (newToken && newToken !== token) {
             const retryHeaders = new Headers(orig.headers || {});
             retryHeaders.set('Authorization', `Bearer ${newToken}`);
             return await fetch(url, { ...orig, headers: retryHeaders, credentials: undefined });
           }
         }
-      }catch(_){ }
+      } catch(_) {}
       return resp;
     }
   </script>
-  </head>
+</head>
 <body>
-  <div class="profile-container">
-    <button class="close-btn" onclick="window.location.href='/'" title="Close">×</button>
+  <div class="settings-container">
+    <!-- Header -->
+    <div class="settings-header">
+      <button class="close-btn" onclick="window.location.href='/'" title="Close">×</button>
 
-    <div class="profile-header">
-      <h1>⚙️ Edit Profile</h1>
-      <p>Update your profile information</p>
+      <div class="settings-header-top">
+        <div class="settings-title">
+          <div>
+            <h1>⚙️ Settings</h1>
+            <p>Manage your account and preferences</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tabs -->
+      <div class="tabs">
+        <button class="tab active" data-tab="profile">
+          <span class="tab-icon">👤</span>
+          <span>Profile</span>
+        </button>
+        <button class="tab" data-tab="password">
+          <span class="tab-icon">🔒</span>
+          <span>Password</span>
+        </button>
+        <button class="tab" data-tab="discord">
+          <span class="tab-icon">💬</span>
+          <span>Discord</span>
+        </button>
+      </div>
     </div>
 
-    <div id="error" class="error"></div>
-    <div id="success" class="success"></div>
-
-    <form id="form">
-      <div class="input-group">
-        <label for="username">Username</label>
-        <input id="username" type="text" placeholder="username">
-      </div>
-
-      <div class="input-row">
-        <div class="input-group">
-          <label for="name">Full Name</label>
-          <input id="name" type="text" placeholder="John Doe" required>
+    <!-- Body -->
+    <div class="settings-body">
+      <!-- Profile Tab -->
+      <div class="tab-panel active" data-panel="profile">
+        <div class="panel-header">
+          <h2>Profile Information</h2>
+          <p>Update your personal details and preferences</p>
         </div>
-        <div class="input-group">
-          <label for="initials">Initials</label>
-          <input id="initials" type="text" placeholder="JD" maxlength="3" style="text-transform: uppercase" required>
+
+        <div id="profileError" class="error"></div>
+        <div id="profileSuccess" class="success"></div>
+
+        <form id="profileForm">
+          <div class="input-group">
+            <label for="username">Username</label>
+            <input id="username" type="text" placeholder="username">
+            <small class="form-help">Your unique username for the system</small>
+          </div>
+
+          <div class="input-row">
+            <div class="input-group">
+              <label for="name">Full Name</label>
+              <input id="name" type="text" placeholder="John Doe" required>
+            </div>
+            <div class="input-group">
+              <label for="initials">Initials</label>
+              <input id="initials" type="text" placeholder="JD" maxlength="3" style="text-transform: uppercase" required>
+            </div>
+          </div>
+
+          <div class="input-group">
+            <label>Avatar Color</label>
+            <small class="form-help" style="margin-top: 0; margin-bottom: 0.5rem;">Choose a color for your avatar</small>
+            <div id="colorOptions" class="color-options"></div>
+          </div>
+
+          <div class="btn-group">
+            <button type="button" class="btn btn-secondary" onclick="window.location.href='/'">Cancel</button>
+            <button type="submit" class="btn btn-primary">Save Changes</button>
+          </div>
+        </form>
+      </div>
+
+      <!-- Password Tab -->
+      <div class="tab-panel" data-panel="password">
+        <div class="panel-header">
+          <h2>Change Password</h2>
+          <p>Update your password to keep your account secure</p>
+        </div>
+
+        <div id="passwordError" class="error"></div>
+        <div id="passwordSuccess" class="success"></div>
+
+        <form id="passwordForm">
+          <div class="input-group">
+            <label for="currentPassword">Current Password</label>
+            <input id="currentPassword" type="password" placeholder="Enter current password" required>
+          </div>
+
+          <div class="input-group">
+            <label for="newPassword">New Password</label>
+            <input id="newPassword" type="password" placeholder="Enter new password" required>
+            <small class="form-help">At least 8 characters recommended</small>
+          </div>
+
+          <div class="input-group">
+            <label for="confirmPassword">Confirm New Password</label>
+            <input id="confirmPassword" type="password" placeholder="Confirm new password" required>
+          </div>
+
+          <div class="btn-group">
+            <button type="button" class="btn btn-secondary" onclick="window.location.href='/'">Cancel</button>
+            <button type="submit" class="btn btn-primary">Update Password</button>
+          </div>
+        </form>
+      </div>
+
+      <!-- Discord Tab -->
+      <div class="tab-panel" data-panel="discord">
+        <div class="panel-header">
+          <h2>Discord Integration</h2>
+          <p>Connect your Discord account to use the task bot</p>
+        </div>
+
+        <div id="discordError" class="error"></div>
+        <div id="discordSuccess" class="success"></div>
+
+        <div class="discord-card">
+          <div class="discord-header">
+            <span class="discord-icon">💬</span>
+            <div>
+              <h3>Link Discord Account</h3>
+            </div>
+          </div>
+
+          <div class="input-group">
+            <label for="discordHandle">Discord Username</label>
+            <input id="discordHandle" type="text" placeholder="Not linked" disabled>
+          </div>
+
+          <div id="discordStatus"></div>
+
+          <div id="discordCodeSection" style="display: none;">
+            <div class="discord-code-display">
+              <div class="discord-code-label">Your Link Code</div>
+              <div class="discord-code" id="discordCode">LINK-XXXX</div>
+              <div class="discord-code-expiry" id="discordExpiry">Expires in 5 minutes</div>
+            </div>
+
+            <div class="discord-instructions">
+              <div class="discord-instructions-title">📋 How to link your account:</div>
+              <ol>
+                <li>Open Discord and find the Task Manager bot</li>
+                <li>Send a direct message to the bot with: <code>link YOUR-CODE</code></li>
+                <li>For example: <code>link LINK-ABC12</code></li>
+                <li>The bot will confirm when your account is linked</li>
+              </ol>
+            </div>
+          </div>
+
+          <button type="button" class="btn btn-primary btn-full" id="linkDiscordBtn" onclick="linkDiscord()">
+            Generate Link Code
+          </button>
         </div>
       </div>
-
-      <div class="input-group">
-        <label>Color</label>
-        <div id="colorOptions" class="color-options"></div>
-      </div>
-
-      <div class="actions">
-        <button type="button" class="btn btn-secondary" id="changePwdBtn">Change Password</button>
-        <button type="submit" class="btn btn-primary">Update Profile</button>
-      </div>
-    </form>
+    </div>
   </div>
 
   <script>
     const colors = ['#FF6B6B','#4ECDC4','#45B7D1','#FFA07A','#98D8C8','#F7DC6F','#BB8FCE','#85C1E2','#F8B195','#F67280','#C06C84','#6C5B7B','#355C7D','#99B898','#FECEAB'];
     let selectedColor = colors[0];
+    let currentUser = null;
 
-    function showError(msg){ const el=document.getElementById('error'); el.textContent=msg; el.style.display='block'; document.getElementById('success').style.display='none'; }
-    function showSuccess(msg){ const el=document.getElementById('success'); el.textContent=msg; el.style.display='block'; document.getElementById('error').style.display='none'; }
+    // Tab Switching
+    document.querySelectorAll('.tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        const tabName = tab.dataset.tab;
 
-    function renderColors(current){
+        // Update tabs
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+
+        // Update panels
+        document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+        document.querySelector(`[data-panel="${tabName}"]`).classList.add('active');
+      });
+    });
+
+    // Show messages
+    function showError(tabName, msg) {
+      const el = document.getElementById(`${tabName}Error`);
+      el.textContent = msg;
+      el.style.display = 'block';
+      document.getElementById(`${tabName}Success`).style.display = 'none';
+    }
+
+    function showSuccess(tabName, msg) {
+      const el = document.getElementById(`${tabName}Success`);
+      el.textContent = msg;
+      el.style.display = 'block';
+      document.getElementById(`${tabName}Error`).style.display = 'none';
+    }
+
+    // Color Picker
+    function renderColors(current) {
       const wrap = document.getElementById('colorOptions');
       wrap.innerHTML = '';
       colors.forEach(c => {
@@ -136,19 +753,49 @@
       });
     }
 
-    async function loadProfile(){
+    // Load Profile
+    async function loadProfile() {
       const resp = await authFetch('/api/auth/me');
-      if (!resp.ok){ window.location.href='/login.html'; return; }
+      if (!resp.ok) {
+        window.location.href = '/login.html';
+        return;
+      }
       let data = await resp.json();
-      const user = data && data.user ? data.user : data;
-      document.getElementById('username').value = user.username || '';
-      document.getElementById('name').value = user.name || '';
-      document.getElementById('initials').value = (user.initials || '').toUpperCase();
-      selectedColor = user.color || '#4ECDC4';
+      currentUser = data && data.user ? data.user : data;
+
+      document.getElementById('username').value = currentUser.username || '';
+      document.getElementById('name').value = currentUser.name || '';
+      document.getElementById('initials').value = (currentUser.initials || '').toUpperCase();
+      selectedColor = currentUser.color || '#4ECDC4';
       renderColors(selectedColor);
+
+      // Load Discord status
+      loadDiscordStatus();
     }
 
-    document.getElementById('form').addEventListener('submit', async (e) => {
+    // Load Discord Status
+    async function loadDiscordStatus() {
+      try {
+        const resp = await authFetch('/api/auth/user/discord-handle');
+        if (resp.ok) {
+          const data = await resp.json();
+          if (data.discord_handle) {
+            document.getElementById('discordHandle').value = data.discord_handle;
+            document.getElementById('discordStatus').innerHTML = `
+              <div class="discord-status linked">
+                ✓ Your Discord account <strong>${data.discord_handle}</strong> is linked
+              </div>
+            `;
+            document.getElementById('linkDiscordBtn').textContent = 'Relink Discord Account';
+          }
+        }
+      } catch (error) {
+        console.error('Failed to load Discord handle:', error);
+      }
+    }
+
+    // Profile Form Submit
+    document.getElementById('profileForm').addEventListener('submit', async (e) => {
       e.preventDefault();
       const payload = {
         username: document.getElementById('username').value.trim(),
@@ -156,25 +803,134 @@
         initials: document.getElementById('initials').value.trim().toUpperCase(),
         color: selectedColor
       };
-      try{
-        const resp = await authFetch('/api/auth/me', { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
+
+      try {
+        const resp = await authFetch('/api/auth/me', {
+          method: 'PUT',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(payload)
+        });
         const data = await resp.json();
-        if (!resp.ok){ throw new Error(data.error || 'Failed to update profile'); }
-        showSuccess('Profile updated');
-        // update fields from server response as source of truth
+        if (!resp.ok) throw new Error(data.error || 'Failed to update profile');
+
+        showSuccess('profile', '✓ Profile updated successfully');
+
+        // Update fields from server response
         const user = data.user ? data.user : data;
         document.getElementById('username').value = user.username || '';
         document.getElementById('name').value = user.name || '';
         document.getElementById('initials').value = (user.initials || '').toUpperCase();
         selectedColor = user.color || selectedColor;
         renderColors(selectedColor);
-      }catch(err){ showError(err.message); }
+      } catch (err) {
+        showError('profile', err.message);
+      }
     });
 
-    document.getElementById('changePwdBtn').addEventListener('click', () => {
-      window.location.href = '/profile-password.html';
+    // Password Form Submit
+    document.getElementById('passwordForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      const currentPassword = document.getElementById('currentPassword').value;
+      const newPassword = document.getElementById('newPassword').value;
+      const confirmPassword = document.getElementById('confirmPassword').value;
+
+      if (newPassword !== confirmPassword) {
+        showError('password', 'New passwords do not match');
+        return;
+      }
+
+      if (newPassword.length < 8) {
+        showError('password', 'Password must be at least 8 characters');
+        return;
+      }
+
+      try {
+        const resp = await authFetch('/api/auth/change-password', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ currentPassword, newPassword })
+        });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.error || 'Failed to update password');
+
+        showSuccess('password', '✓ Password updated successfully');
+        document.getElementById('passwordForm').reset();
+      } catch (err) {
+        showError('password', err.message);
+      }
     });
 
+    // Discord Linking
+    async function linkDiscord() {
+      const statusEl = document.getElementById('discordStatus');
+      const linkBtn = document.getElementById('linkDiscordBtn');
+
+      linkBtn.disabled = true;
+      linkBtn.textContent = 'Generating code...';
+
+      try {
+        const resp = await authFetch('/api/auth/discord/generate-link-code', {
+          method: 'POST'
+        });
+        const data = await resp.json();
+
+        if (!resp.ok) throw new Error(data.error || 'Failed to generate link code');
+
+        const code = data.code;
+        const expiresIn = data.expiresIn;
+
+        // Show code section
+        document.getElementById('discordCodeSection').style.display = 'block';
+        document.getElementById('discordCode').textContent = code;
+
+        // Calculate expiry time
+        const expiryDate = new Date(Date.now() + expiresIn);
+        const expiryMinutes = Math.floor(expiresIn / 60000);
+        document.getElementById('discordExpiry').textContent = `Expires in ${expiryMinutes} minutes`;
+
+        linkBtn.textContent = 'Generate New Code';
+        linkBtn.disabled = false;
+
+        // Poll for link status
+        pollDiscordLinkStatus(code);
+
+      } catch (error) {
+        showError('discord', error.message);
+        linkBtn.textContent = 'Generate Link Code';
+        linkBtn.disabled = false;
+      }
+    }
+
+    // Poll for Discord link status
+    let pollInterval = null;
+    async function pollDiscordLinkStatus(code) {
+      if (pollInterval) clearInterval(pollInterval);
+
+      pollInterval = setInterval(async () => {
+        try {
+          const resp = await authFetch('/api/auth/user/discord-handle');
+          if (resp.ok) {
+            const data = await resp.json();
+            if (data.discord_handle) {
+              clearInterval(pollInterval);
+              document.getElementById('discordCodeSection').style.display = 'none';
+              showSuccess('discord', `✓ Successfully linked to ${data.discord_handle}!`);
+              loadDiscordStatus();
+            }
+          }
+        } catch (error) {
+          console.error('Poll error:', error);
+        }
+      }, 2000);
+
+      // Stop polling after 5 minutes
+      setTimeout(() => {
+        if (pollInterval) clearInterval(pollInterval);
+      }, 300000);
+    }
+
+    // Initialize
     loadProfile();
   </script>
 </body>
