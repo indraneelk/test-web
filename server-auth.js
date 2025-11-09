@@ -7,7 +7,7 @@ const session = require('express-session');
 const cookieParser = require('cookie-parser');
 const crypto = require('crypto');
 const helmet = require('helmet');
-const rateLimit = require('express-rate-limit');
+const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
 const claudeService = require('./claude-service');
 const dataService = require('./data-service');
 const supabaseService = require('./supabase-service');
@@ -164,10 +164,10 @@ const magicLinkLimiter = rateLimit({
     keyGenerator: (req /*, res*/) => {
         try {
             const email = (req.body && typeof req.body.email === 'string') ? req.body.email.toLowerCase().trim() : '';
-            const ip = (req.ip || req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '').toString();
+            const ip = ipKeyGenerator(req);
             return `${email}|${ip}`;
         } catch {
-            return req.ip || 'unknown';
+            return ipKeyGenerator(req);
         }
     }
 });
