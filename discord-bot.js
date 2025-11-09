@@ -65,6 +65,9 @@ client.on('messageCreate', async (message) => {
             case 'ask':
                 await handleAsk(message, args);
                 break;
+            case 'link':
+                await handleLink(message, args);
+                break;
             case 'help':
                 await handleHelp(message);
                 break;
@@ -81,6 +84,39 @@ client.on('messageCreate', async (message) => {
         await message.reply(`❌ Error: ${error.message}`);
     }
 });
+
+// Link Discord account using code from website
+async function handleLink(message, args) {
+    if (args.length < 2) {
+        return message.reply('Usage: `link <CODE>`\n\nGet your link code from the website Settings page.');
+    }
+
+    const code = args[1].toUpperCase();
+    const discordUserId = message.author.id;
+    const discordHandle = message.author.username;
+
+    try {
+        const response = await axios.post(`${API_BASE}/discord/verify-link-code`, {
+            code,
+            discordUserId,
+            discordHandle
+        });
+
+        if (response.data.success) {
+            await message.reply(`✅ Success! Your Discord account (@${discordHandle}) has been linked.\n\nYou can now use all bot commands!`);
+        }
+    } catch (error) {
+        if (error.response?.status === 404) {
+            return message.reply('❌ Invalid code. Please check the code from the website and try again.');
+        }
+        if (error.response?.status === 400) {
+            const errorMsg = error.response.data.error || 'Invalid request';
+            return message.reply(`❌ ${errorMsg}`);
+        }
+        console.error('Link error:', error);
+        await message.reply('❌ Failed to link account. Please try again or contact support.');
+    }
+}
 
 // Get tasks
 async function handleTasks(message) {
@@ -451,8 +487,12 @@ async function handleHelp(message) {
     const embed = new EmbedBuilder()
         .setColor(0x4f46e5)
         .setTitle('🤖 Task Manager Bot - Commands')
-        .setDescription('Interact with your task manager through Discord!\n\n**Setup:** Link your Discord account on the website (Settings page) to get started.')
+        .setDescription('Interact with your task manager through Discord!')
         .addFields(
+            {
+                name: '🔗 Link Your Account',
+                value: '1. Go to the website Settings page\n2. Click "Link Discord Account" to get a code\n3. Send `link <CODE>` here\n\nExample: `link LINK-ABC12`'
+            },
             {
                 name: '📋 View Tasks',
                 value: '`tasks` - View your tasks\n`summary` - Get AI summary from Claude\n`priorities` - Get priority suggestions from Claude'

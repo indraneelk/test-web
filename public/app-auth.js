@@ -457,62 +457,91 @@ function closeUserSettings() {
     document.getElementById('userSettingsModal').classList.remove('active');
 }
 
+let linkingPollInterval = null;
+
 async function linkDiscord() {
-    const instructions = `To link your Discord account:
-
-1. Open Discord and right-click your username
-2. Click "Copy User ID" (you may need to enable Developer Mode in Discord Settings > Advanced)
-3. Paste your User ID below
-
-Note: Your Discord User ID looks like: 123456789012345678`;
-
-    const discordUserId = prompt(instructions);
-
-    if (!discordUserId || discordUserId.trim() === '') {
-        return; // User cancelled
-    }
-
-    // Validate Discord User ID (should be numeric and 17-19 digits)
-    if (!/^\d{17,19}$/.test(discordUserId.trim())) {
-        alert('Invalid Discord User ID. It should be a 17-19 digit number.');
-        return;
-    }
-
-    // Prompt for Discord handle (display name)
-    const discordHandle = prompt('Enter your Discord username (e.g., YourName#0000 or YourName):');
-
-    if (!discordHandle || discordHandle.trim() === '') {
-        return; // User cancelled
-    }
-
     const statusEl = document.getElementById('discordStatus');
-    statusEl.innerHTML = '<span style="color: #4f46e5;">Linking...</span>';
+    statusEl.innerHTML = '<span style="color: #4f46e5;">Generating code...</span>';
 
     try {
-        const resp = await authFetch(`${API_AUTH}/user/discord-handle`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                discordHandle: discordHandle.trim(),
-                discordUserId: discordUserId.trim()
-            })
+        // Generate link code
+        const resp = await authFetch(`${API_AUTH}/discord/generate-link-code`, {
+            method: 'POST'
         });
 
         const data = await resp.json();
 
         if (!resp.ok) {
-            throw new Error(data.error || 'Failed to link Discord account');
+            throw new Error(data.error || 'Failed to generate link code');
         }
 
-        document.getElementById('discordHandle').value = data.user.discord_handle;
-        statusEl.innerHTML = '<span style="color: #13ce66;">✓ Successfully linked!</span>';
+        const code = data.code;
+        const expiresIn = data.expiresIn;
 
-        setTimeout(() => {
-            statusEl.innerHTML = '<span style="color: #13ce66;">✓ Linked</span>';
-        }, 3000);
+        // Calculate expiry time
+        const expiryTime = new Date(Date.now() + expiresIn * 1000);
+
+        // Show instructions with code
+        const instructions = `🔗 Link Your Discord Account
+
+1. Open Discord (desktop or mobile)
+2. Find the TaskBot or DM it
+3. Send this message:
+
+   link ${code}
+
+⏱ Code expires in ${Math.floor(expiresIn / 60)} minutes
+
+Click OK and waiting for you to link...`;
+
+        alert(instructions);
+
+        // Update status to show waiting
+        let countdown = Math.floor(expiresIn);
+        statusEl.innerHTML = `<span style="color: #4f46e5;">⏱ Waiting for Discord link... (${Math.floor(countdown / 60)}:${String(countdown % 60).padStart(2, '0')})</span>`;
+
+        // Start polling for link status
+        if (linkingPollInterval) {
+            clearInterval(linkingPollInterval);
+        }
+
+        linkingPollInterval = setInterval(async () => {
+            try {
+                countdown -= 2;
+
+                // Update countdown display
+                if (countdown > 0) {
+                    const mins = Math.floor(countdown / 60);
+                    const secs = countdown % 60;
+                    statusEl.innerHTML = `<span style="color: #4f46e5;">⏱ Waiting for Discord link... (${mins}:${String(secs).padStart(2, '0')})</span>`;
+                }
+
+                // Check link status
+                const statusResp = await authFetch(`${API_AUTH}/discord/link-status/${code}`);
+                const statusData = await statusResp.json();
+
+                if (statusData.status === 'linked') {
+                    clearInterval(linkingPollInterval);
+                    linkingPollInterval = null;
+
+                    document.getElementById('discordHandle').value = statusData.discord_handle;
+                    statusEl.innerHTML = '<span style="color: #13ce66;">✓ Successfully linked!</span>';
+
+                    setTimeout(() => {
+                        statusEl.innerHTML = '<span style="color: #13ce66;">✓ Linked</span>';
+                    }, 3000);
+                } else if (statusData.status === 'expired' || countdown <= 0) {
+                    clearInterval(linkingPollInterval);
+                    linkingPollInterval = null;
+                    statusEl.innerHTML = '<span style="color: #ff4949;">✗ Code expired. Please try again.</span>';
+                }
+            } catch (pollError) {
+                console.error('Polling error:', pollError);
+            }
+        }, 2000); // Poll every 2 seconds
 
     } catch (error) {
-        console.error('Failed to link Discord:', error);
+        console.error('Failed to generate Discord link code:', error);
         statusEl.innerHTML = `<span style="color: #ff4949;">✗ ${error.message}</span>`;
     }
 }

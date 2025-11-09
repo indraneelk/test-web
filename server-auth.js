@@ -180,6 +180,17 @@ const sanitizeString = (str) => {
     return str.trim().slice(0, 1000); // Limit length and trim
 };
 
+// Generate secure Discord link code
+function generateDiscordLinkCode() {
+    // Generate format: LINK-XXXXX (5 alphanumeric chars)
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    let code = 'LINK-';
+    for (let i = 0; i < 5; i++) {
+        code += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return code;
+}
+
 // Rate Limiting
 const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
@@ -835,6 +846,157 @@ app.get('/api/user/discord-handle', requireAuth, async (req, res) => {
     } catch (error) {
         console.error('Error fetching Discord handle:', error);
         res.status(500).json({ error: 'Failed to fetch Discord handle' });
+    }
+});
+
+// Generate Discord link code (for logged-in users)
+app.post('/api/discord/generate-link-code', requireAuth, async (req, res) => {
+    try {
+        const db = dataService.db;
+
+        // Clean up expired codes for this user first
+        const now = new Date().toISOString();
+        await db.run('DELETE FROM discord_link_codes WHERE user_id = ? AND expires_at < ?', [req.userId, now]);
+
+        // Check if user already has a valid unused code
+        const existingCode = await db.get(
+            'SELECT code, expires_at FROM discord_link_codes WHERE user_id = ? AND used = 0 AND expires_at > ?',
+            [req.userId, now]
+        );
+
+        if (existingCode) {
+            const expiresAt = new Date(existingCode.expires_at);
+            const secondsRemaining = Math.floor((expiresAt - new Date()) / 1000);
+            return res.json({
+                code: existingCode.code,
+                expiresIn: secondsRemaining
+            });
+        }
+
+        // Generate new code
+        let code;
+        let attempts = 0;
+        while (attempts < 10) {
+            code = generateDiscordLinkCode();
+            const existing = await db.get('SELECT id FROM discord_link_codes WHERE code = ?', [code]);
+            if (!existing) break;
+            attempts++;
+        }
+
+        if (attempts >= 10) {
+            return res.status(500).json({ error: 'Failed to generate unique code' });
+        }
+
+        // Code expires in 5 minutes
+        const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+        const createdAt = new Date().toISOString();
+
+        await db.run(
+            'INSERT INTO discord_link_codes (code, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)',
+            [code, req.userId, expiresAt, createdAt]
+        );
+
+        res.json({
+            code,
+            expiresIn: 300 // 5 minutes in seconds
+        });
+    } catch (error) {
+        console.error('Error generating Discord link code:', error);
+        res.status(500).json({ error: 'Failed to generate link code' });
+    }
+});
+
+// Check Discord link status (for polling)
+app.get('/api/discord/link-status/:code', requireAuth, async (req, res) => {
+    try {
+        const { code } = req.params;
+        const db = dataService.db;
+
+        const linkCode = await db.get(
+            'SELECT used, expires_at FROM discord_link_codes WHERE code = ? AND user_id = ?',
+            [code, req.userId]
+        );
+
+        if (!linkCode) {
+            return res.status(404).json({ error: 'Code not found' });
+        }
+
+        const now = new Date().toISOString();
+        if (linkCode.expires_at < now) {
+            return res.json({ status: 'expired' });
+        }
+
+        if (linkCode.used) {
+            // Get updated user info
+            const user = await dataService.getUserById(req.userId);
+            return res.json({
+                status: 'linked',
+                discord_handle: user.discord_handle,
+                discord_user_id: user.discord_user_id
+            });
+        }
+
+        res.json({ status: 'pending' });
+    } catch (error) {
+        console.error('Error checking link status:', error);
+        res.status(500).json({ error: 'Failed to check status' });
+    }
+});
+
+// Verify Discord link code (called by Discord bot)
+app.post('/api/discord/verify-link-code', async (req, res) => {
+    try {
+        const { code, discordUserId, discordHandle } = req.body;
+
+        if (!code || !discordUserId || !discordHandle) {
+            return res.status(400).json({ error: 'Code, Discord User ID, and handle are required' });
+        }
+
+        // Validate Discord User ID format
+        if (!/^\d{17,19}$/.test(discordUserId)) {
+            return res.status(400).json({ error: 'Invalid Discord User ID format' });
+        }
+
+        const db = dataService.db;
+        const now = new Date().toISOString();
+
+        // Find the link code
+        const linkCode = await db.get(
+            'SELECT id, user_id, expires_at, used FROM discord_link_codes WHERE code = ?',
+            [code]
+        );
+
+        if (!linkCode) {
+            return res.status(404).json({ error: 'Invalid code' });
+        }
+
+        if (linkCode.expires_at < now) {
+            return res.status(400).json({ error: 'Code expired' });
+        }
+
+        if (linkCode.used) {
+            return res.status(400).json({ error: 'Code already used' });
+        }
+
+        // Check if Discord ID is already linked to another user
+        const existingUser = await dataService.getUserByDiscordId(discordUserId);
+        if (existingUser && existingUser.id !== linkCode.user_id) {
+            return res.status(400).json({ error: 'This Discord account is already linked to another user' });
+        }
+
+        // Mark code as used
+        await db.run('UPDATE discord_link_codes SET used = 1 WHERE id = ?', [linkCode.id]);
+
+        // Update user with Discord info
+        await dataService.updateUserDiscordHandle(linkCode.user_id, discordHandle, discordUserId);
+
+        res.json({
+            success: true,
+            message: 'Discord account linked successfully'
+        });
+    } catch (error) {
+        console.error('Error verifying link code:', error);
+        res.status(500).json({ error: 'Failed to verify code' });
     }
 });
 

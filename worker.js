@@ -20,6 +20,16 @@ function sanitizeString(str, maxLen = 1000) {
     return s.length > maxLen ? s.slice(0, maxLen) : s;
 }
 
+function generateDiscordLinkCode() {
+    // Generate format: LINK-XXXXX (5 alphanumeric chars)
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    let code = 'LINK-';
+    for (let i = 0; i < 5; i++) {
+        code += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return code;
+}
+
 function isHexColor(str) {
     return typeof str === 'string' && /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(str.trim());
 }
@@ -604,6 +614,147 @@ async function handleGetDiscordHandle(request, env) {
         discord_handle: currentUser.discord_handle || null,
         discord_user_id: currentUser.discord_user_id || null,
         discord_verified: currentUser.discord_verified || 0
+    });
+}
+
+// Generate Discord link code
+async function handleGenerateDiscordLinkCode(request, env) {
+    const user = await authenticate(request, env);
+    if (!user) {
+        return errorResponse('Authentication required', 401);
+    }
+
+    // Clean up expired codes for this user first
+    const now = getCurrentTimestamp();
+    await env.DB.prepare('DELETE FROM discord_link_codes WHERE user_id = ? AND expires_at < ?')
+        .bind(user.id, now).run();
+
+    // Check if user already has a valid unused code
+    const existing = await env.DB.prepare(
+        'SELECT code, expires_at FROM discord_link_codes WHERE user_id = ? AND used = 0 AND expires_at > ?'
+    ).bind(user.id, now).first();
+
+    if (existing) {
+        const expiresAt = new Date(existing.expires_at);
+        const secondsRemaining = Math.floor((expiresAt - new Date()) / 1000);
+        return jsonResponse({
+            code: existing.code,
+            expiresIn: secondsRemaining
+        });
+    }
+
+    // Generate new code
+    let code;
+    let attempts = 0;
+    while (attempts < 10) {
+        code = generateDiscordLinkCode();
+        const existingCode = await env.DB.prepare('SELECT id FROM discord_link_codes WHERE code = ?')
+            .bind(code).first();
+        if (!existingCode) break;
+        attempts++;
+    }
+
+    if (attempts >= 10) {
+        return errorResponse('Failed to generate unique code', 500);
+    }
+
+    // Code expires in 5 minutes
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+    const createdAt = getCurrentTimestamp();
+
+    await env.DB.prepare(
+        'INSERT INTO discord_link_codes (code, user_id, expires_at, created_at, used) VALUES (?, ?, ?, ?, 0)'
+    ).bind(code, user.id, expiresAt, createdAt).run();
+
+    return jsonResponse({
+        code,
+        expiresIn: 300 // 5 minutes in seconds
+    });
+}
+
+// Check Discord link status
+async function handleCheckDiscordLinkStatus(request, env, code) {
+    const user = await authenticate(request, env);
+    if (!user) {
+        return errorResponse('Authentication required', 401);
+    }
+
+    const linkCode = await env.DB.prepare(
+        'SELECT used, expires_at FROM discord_link_codes WHERE code = ? AND user_id = ?'
+    ).bind(code, user.id).first();
+
+    if (!linkCode) {
+        return errorResponse('Code not found', 404);
+    }
+
+    const now = getCurrentTimestamp();
+    if (linkCode.expires_at < now) {
+        return jsonResponse({ status: 'expired' });
+    }
+
+    if (linkCode.used) {
+        // Get updated user info
+        const currentUser = await getUserById(env.DB, user.id);
+        return jsonResponse({
+            status: 'linked',
+            discord_handle: currentUser.discord_handle,
+            discord_user_id: currentUser.discord_user_id
+        });
+    }
+
+    return jsonResponse({ status: 'pending' });
+}
+
+// Verify Discord link code (called by Discord bot)
+async function handleVerifyDiscordLinkCode(request, env) {
+    const { code, discordUserId, discordHandle } = await request.json();
+
+    if (!code || !discordUserId || !discordHandle) {
+        return errorResponse('Code, Discord User ID, and handle are required', 400);
+    }
+
+    // Validate Discord User ID format
+    if (!/^\d{17,19}$/.test(discordUserId)) {
+        return errorResponse('Invalid Discord User ID format', 400);
+    }
+
+    const now = getCurrentTimestamp();
+
+    // Find the link code
+    const linkCode = await env.DB.prepare(
+        'SELECT id, user_id, expires_at, used FROM discord_link_codes WHERE code = ?'
+    ).bind(code).first();
+
+    if (!linkCode) {
+        return errorResponse('Invalid code', 404);
+    }
+
+    if (linkCode.expires_at < now) {
+        return errorResponse('Code expired', 400);
+    }
+
+    if (linkCode.used) {
+        return errorResponse('Code already used', 400);
+    }
+
+    // Check if Discord ID is already linked to another user
+    const existingUser = await getUserByDiscordId(env.DB, discordUserId);
+    if (existingUser && existingUser.id !== linkCode.user_id) {
+        return errorResponse('This Discord account is already linked to another user', 400);
+    }
+
+    // Mark code as used
+    await env.DB.prepare('UPDATE discord_link_codes SET used = 1 WHERE id = ?')
+        .bind(linkCode.id).run();
+
+    // Update user with Discord info
+    await env.DB.prepare(
+        'UPDATE users SET discord_handle = ?, discord_user_id = ?, discord_verified = 1, updated_at = ? WHERE id = ?'
+    ).bind(discordHandle, discordUserId, getCurrentTimestamp(), linkCode.user_id).run();
+
+    return jsonResponse({
+        success: true,
+        message: 'Discord account linked successfully'
     });
 }
 
@@ -1287,6 +1438,18 @@ export default {
             }
             if (path === '/api/user/discord-handle' && method === 'PUT') {
                 return await handleUpdateDiscordHandle(request, env);
+            }
+
+            // Discord linking routes
+            if (path === '/api/discord/generate-link-code' && method === 'POST') {
+                return await handleGenerateDiscordLinkCode(request, env);
+            }
+            if (path.match(/^\/api\/discord\/link-status\/[^/]+$/) && method === 'GET') {
+                const code = path.split('/')[4];
+                return await handleCheckDiscordLinkStatus(request, env, code);
+            }
+            if (path === '/api/discord/verify-link-code' && method === 'POST') {
+                return await handleVerifyDiscordLinkCode(request, env);
             }
 
             // Project routes
