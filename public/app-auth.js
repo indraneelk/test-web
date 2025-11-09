@@ -359,6 +359,13 @@ function renderMobileProjectOptions() {
     if (!currentProjectId) {
         select.value = '';
     }
+
+    // Refresh custom select UI (mobile topbar) to match the app aesthetic
+    if (select._customSelect) {
+        select._customSelect.refresh();
+    } else if (typeof initCustomSelects === 'function') {
+        setTimeout(initCustomSelects, 0);
+    }
 }
 
 // USER SETTINGS

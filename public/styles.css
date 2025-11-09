@@ -304,31 +304,9 @@ body {
     gap: 0.5rem;
 }
 
-.mobile-select {
-    width: 70%; /* 70% width for better balance */
-    min-width: 120px; /* Minimum readable width */
-    padding: 0.75rem;
-    padding-right: 2.5rem; /* Extra right padding for arrow */
-    border: 1px solid var(--border-color);
-    border-radius: 0.5rem;
-    background-color: white;
-    color: var(--text-primary);
-    font-size: 0.9375rem;
-    font-weight: 500;
-    font-family: inherit;
-    cursor: pointer;
-    transition: all 0.2s;
-    appearance: none;
-    -webkit-appearance: none;
-    -moz-appearance: none;
-    background-repeat: no-repeat;
-    background-position: right 0.9rem center;
-    background-size: 10px 6px;
-    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path d='M1 1l4 4 4-4' fill='none' stroke='%23999' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/></svg>");
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    overflow: hidden;
-}
+/* Project select in mobile topbar uses the custom select component */
+.mobile-topbar .custom-select { flex: 1; min-width: 140px; }
+.mobile-topbar .custom-select-trigger { padding: 0.5rem 2rem 0.5rem 0.75rem; font-size: 0.9rem; }
 
 .mobile-select:hover {
     border-color: var(--primary-color);
@@ -373,7 +351,6 @@ body {
     align-items: baseline; /* align grid items to baseline so labels align */
     gap: 1rem;
     box-shadow: 0 -1px 3px rgba(0, 0, 0, 0.1);
-    display: grid;
     grid-template-columns: 1fr 1fr 1fr; /* Three equal columns */
 }
 
@@ -417,6 +394,10 @@ body {
     background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path d='M1 1l4 4 4-4' fill='none' stroke='%23999' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/></svg>");
 }
 
+/* Use custom select component in mobile footer too */
+.mobile-footer .custom-select { width: 100%; }
+.mobile-footer .custom-select-trigger { padding: 0.5rem 2rem 0.5rem 0.75rem; font-size: 0.9rem; }
+
 .mobile-footer-item select:hover {
     border-color: var(--primary-color);
 }
@@ -455,6 +436,11 @@ body {
     .mobile-footer,
     .mobile-create-wrap {
         display: flex;
+    }
+
+    /* Mobile footer uses grid layout */
+    .mobile-footer {
+        display: grid;
     }
 
     /* Hide desktop elements */
