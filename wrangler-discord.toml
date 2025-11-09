@@ -1,0 +1,22 @@
+name = "discord-bot"
+main = "discord-worker.js"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+
+# Environment variables (non-sensitive)
+[vars]
+ENVIRONMENT = "production"
+MAIN_WORKER_URL = "https://team-task-manager.moovmyway.workers.dev/api"
+
+# Secrets (add these with: wrangler secret put <NAME> --config wrangler-discord.toml)
+# Run these commands after creating the worker:
+# wrangler secret put DISCORD_PUBLIC_KEY --config wrangler-discord.toml
+# wrangler secret put DISCORD_BOT_SECRET --config wrangler-discord.toml
+
+# Development environment (for local testing)
+[env.dev]
+name = "discord-bot-dev"
+
+[env.dev.vars]
+ENVIRONMENT = "development"
+MAIN_WORKER_URL = "http://localhost:5001/api"
