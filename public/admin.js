@@ -17,7 +17,7 @@ async function checkAdminAccess() {
         // Check if super admin
         if (user.email !== 'Indraneel.kasmalkar@gmail.com') {
             alert('Access denied. This page is for administrators only.');
-            window.location.href = '/app-auth.html';
+            window.location.href = '/';
             return false;
         }
 

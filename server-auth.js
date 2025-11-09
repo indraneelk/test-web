@@ -1596,8 +1596,8 @@ app.post('/api/admin/invitations/:email/resend', requireSuperAdmin, magicLinkLim
 
 // Serve frontend
 app.get('/', (req, res) => {
-    // Serve authenticated app (it will redirect to login if not authenticated)
-    res.sendFile(path.join(__dirname, 'public', 'app-auth.html'));
+    // Serve main app (it will redirect to login if not authenticated)
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 // Start Claude service (only if API key is configured)
