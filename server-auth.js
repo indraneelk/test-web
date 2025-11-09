@@ -207,9 +207,29 @@ const magicLinkLimiter = rateLimit({
     }
 });
 
-// Authentication Middleware - supports both Bearer tokens and sessions
+// Authentication Middleware - supports Discord User ID, Bearer tokens, and sessions
 const requireAuth = async (req, res, next) => {
-    // Try Bearer token first
+    // Try Discord User ID first (from Discord bot)
+    const discordUserId = req.headers['x-discord-user-id'];
+    if (discordUserId) {
+        try {
+            const user = await dataService.getUserByDiscordId(discordUserId);
+            if (user) {
+                req.userId = user.id;
+                req.user = user;
+                return next();
+            } else {
+                return res.status(403).json({
+                    error: 'Discord account not linked. Please link your Discord account on the website.'
+                });
+            }
+        } catch (error) {
+            console.error('Discord auth error:', error);
+            return res.status(500).json({ error: 'Authentication failed' });
+        }
+    }
+
+    // Try Bearer token
     const authHeader = req.headers.authorization;
     if (authHeader && authHeader.startsWith('Bearer ')) {
         const token = authHeader.substring(7);
@@ -637,45 +657,6 @@ app.post('/api/auth/supabase', authLimiter, async (req, res) => {
     } catch (err) {
         console.error('Supabase session error:', err.message);
         res.status(401).json({ error: 'Invalid Supabase token' });
-    }
-});
-
-// Discord authentication endpoint for bot
-app.post('/api/auth/discord', authLimiter, async (req, res) => {
-    try {
-        const { discordUserId } = req.body;
-
-        if (!discordUserId) {
-            return res.status(400).json({ error: 'Discord user ID is required' });
-        }
-
-        // Find user by Discord ID
-        const user = await dataService.getUserByDiscordId(discordUserId);
-
-        if (!user) {
-            return res.status(404).json({
-                success: false,
-                error: 'Discord account not linked. Please add your Discord handle on the website first.'
-            });
-        }
-
-        // Regenerate session to prevent fixation
-        await new Promise(resolve => req.session.regenerate(() => resolve()));
-        req.session.userId = user.id;
-
-        await logActivity(user.id, 'user_login', `User ${user.name} logged in via Discord bot`);
-
-        const { password_hash: _, ...userWithoutPassword } = user;
-        res.json({
-            success: true,
-            user: userWithoutPassword
-        });
-    } catch (error) {
-        console.error('Discord auth error:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Authentication failed'
-        });
     }
 });
 

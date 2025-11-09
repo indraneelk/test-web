@@ -239,7 +239,16 @@ async function isProjectOwner(db, userId, projectId) {
 // ==================== AUTHENTICATION MIDDLEWARE ====================
 
 async function authenticate(request, env) {
-    // Prefer Authorization: Bearer <access_token> (stateless)
+    // Try Discord User ID first (from Discord bot)
+    const discordUserId = request.headers.get('X-Discord-User-ID');
+    if (discordUserId) {
+        const user = await getUserByDiscordId(env.DB, discordUserId);
+        if (user) return user;
+        // If Discord ID provided but not found, return null (will trigger 401)
+        return null;
+    }
+
+    // Try Authorization: Bearer <access_token> (stateless)
     const auth = request.headers.get('Authorization');
     if (auth && auth.startsWith('Bearer ')) {
         const token = auth.slice(7);
@@ -407,48 +416,6 @@ async function handleSupabaseCallback(request, env) {
     } catch (error) {
         console.error('Supabase callback error');
         return errorResponse('Authentication failed', 500);
-    }
-}
-
-async function handleDiscordAuth(request, env) {
-    try {
-        // Rate limit: 10 per 15m per IP
-        const allowed = await rateLimit(request, env, 'discord-auth', 900, 10);
-        if (!allowed) return errorResponse('Too many authentication attempts. Please try again later.', 429);
-
-        const body = await request.json();
-        const { discordUserId } = body;
-
-        if (!discordUserId) {
-            return errorResponse('Discord user ID is required', 400);
-        }
-
-        // Find user by Discord ID
-        const user = await getUserByDiscordId(env.DB, discordUserId);
-
-        if (!user) {
-            return jsonResponse({
-                success: false,
-                error: 'Discord account not linked. Please add your Discord handle on the website first.'
-            }, 404);
-        }
-
-        const now = getCurrentTimestamp();
-        await logActivity(env.DB, user.id, 'user_login', `User ${user.name} logged in via Discord bot`);
-
-        const { password_hash, ...userWithoutPassword } = user;
-        return jsonResponse({
-            success: true,
-            user: userWithoutPassword
-        }, 200, {
-            'Set-Cookie': createAuthCookie(user.id, env)
-        });
-    } catch (error) {
-        console.error('Discord auth error');
-        return jsonResponse({
-            success: false,
-            error: 'Authentication failed'
-        }, 500);
     }
 }
 
@@ -1291,9 +1258,6 @@ export default {
             }
             if (path === '/api/auth/supabase-callback' && method === 'POST') {
                 return await handleSupabaseCallback(request, env);
-            }
-            if (path === '/api/auth/discord' && method === 'POST') {
-                return await handleDiscordAuth(request, env);
             }
             if (path === '/api/auth/logout' && method === 'POST') {
                 return await handleLogout(request, env);
