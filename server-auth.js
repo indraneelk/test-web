@@ -378,6 +378,25 @@ app.post('/api/auth/magic-link', magicLinkLimiter, async (req, res) => {
             return res.status(400).json({ error: 'Invalid email format' });
         }
 
+        // Security: Check if email is on the invitations list
+        const normalizedEmail = email.toLowerCase().trim();
+        const invitation = await dataService.getInvitationByEmail(normalizedEmail);
+
+        if (!invitation) {
+            // Email not invited - return generic message for security (don't reveal if email exists)
+            return res.status(403).json({
+                error: 'This email is not authorized to access the system. Please contact an administrator for an invitation.'
+            });
+        }
+
+        // Check if invitation is still pending (not already accepted)
+        if (invitation.status === 'accepted') {
+            // User already has an account, they should use regular login
+            return res.status(400).json({
+                error: 'You already have an account. Please use the regular login page.'
+            });
+        }
+
         const redirectTo = req.body.redirectTo || `${req.protocol}://${req.get('host')}/auth/callback`;
 
         await supabaseService.sendMagicLink(email, redirectTo);
