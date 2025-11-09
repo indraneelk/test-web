@@ -1,60 +1,54 @@
 # Deployment Guide
 
-This project uses a **2-tier Cloudflare architecture**:
+## ⚠️ Updated Architecture (Simplified)
 
-## Architecture
+This project now uses a **simplified single-service architecture** with Cloudflare Pages Functions:
 
 ```
-┌─────────────────────────────────────────┐
-│  Cloudflare Pages (mmw-tm.pages.dev)   │
-│  - Serves static frontend (HTML/CSS/JS) │
-│  - Proxies /api/* to Worker              │
-└────────────────┬────────────────────────┘
-                 │ /api/* requests
-                 ▼
-┌─────────────────────────────────────────┐
-│  Cloudflare Worker                       │
-│  (team-task-manager.moovmyway.workers.dev)│
-│  - Handles all API logic                 │
-│  - Connected to D1 database              │
-│  - Supabase auth integration             │
-└─────────────────────────────────────────┘
+┌──────────────────────────────────────────────────┐
+│         Cloudflare Pages (mmw-tm.pages.dev)      │
+│  ┌────────────────┐  ┌────────────────────────┐  │
+│  │ Static Files   │  │ Pages Functions        │  │
+│  │ (public/)      │  │ (functions/_worker.js) │  │
+│  │                │  │ • API routes (/api/*)  │  │
+│  │ • HTML/CSS/JS  │  │ • Discord auth         │  │
+│  └────────────────┘  │ • D1 database          │  │
+│                      └────────────────────────┘  │
+└──────────────────────────────────────────────────┘
 ```
+
+**Benefits:**
+- ✅ Single deployment (no separate Worker needed)
+- ✅ Simpler environment variable management
+- ✅ No CORS issues (same origin)
+- ✅ Lower cost
 
 ## Deployment Files
 
-- **`wrangler.toml`** - Pages configuration
-- **`wrangler-worker.toml`** - Main Worker configuration
-- **`wrangler-discord.toml`** - Discord bot Worker configuration
+- **`wrangler.toml`** - Pages configuration (main deployment)
+- **`wrangler-worker.toml`** - Optional separate Worker (not needed for basic setup)
+- **`wrangler-discord.toml`** - Optional Discord bot Worker (for slash commands)
 
-## Deployment Steps
+## Quick Start
 
-### 1. Deploy the Main Worker (Backend API)
-
-```bash
-# Deploy the worker with D1 database binding
-npx wrangler deploy --config wrangler-worker.toml
-
-# Set secrets (only needed once or when changing)
-npx wrangler secret put SUPABASE_ANON_KEY --config wrangler-worker.toml
-npx wrangler secret put SUPABASE_SERVICE_ROLE_KEY --config wrangler-worker.toml  
-npx wrangler secret put SUPABASE_JWT_SECRET --config wrangler-worker.toml
-npx wrangler secret put SESSION_SECRET --config wrangler-worker.toml
-npx wrangler secret put DISCORD_BOT_SECRET --config wrangler-worker.toml
-```
-
-### 2. Deploy Pages (Frontend + API Proxy)
+### 1. Deploy to Cloudflare Pages
 
 ```bash
-# Deploy to Cloudflare Pages
+# Deploy (creates project on first run)
 npx wrangler pages deploy public --project-name mmw-tm
-
-# Set secrets (only needed once or when changing)
-npx wrangler pages secret put SUPABASE_ANON_KEY --project-name mmw-tm
-npx wrangler pages secret put SUPABASE_SERVICE_ROLE_KEY --project-name mmw-tm
-npx wrangler pages secret put SUPABASE_JWT_SECRET --project-name mmw-tm
-npx wrangler pages secret put SESSION_SECRET --project-name mmw-tm
 ```
+
+### 2. Set Environment Variables
+
+Set secrets via **Cloudflare Dashboard**:
+1. Go to https://dash.cloudflare.com
+2. Workers & Pages → mmw-tm → Settings → Environment Variables
+3. Add for "Production" environment:
+   - `SUPABASE_ANON_KEY`
+   - `SUPABASE_SERVICE_ROLE_KEY`
+   - `SUPABASE_JWT_SECRET`
+   - `SESSION_SECRET` (generate with: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`)
+   - `DISCORD_BOT_SECRET` (generate same way)
 
 ### 3. Deploy Discord Worker (Optional)
 

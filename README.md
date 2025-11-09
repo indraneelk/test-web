@@ -21,6 +21,21 @@ npm start
 
 📖 **Want details?** See **[QUICKSTART.md](QUICKSTART.md)** for the complete 5-minute guide.
 
+## ☁️ Deploy to Cloudflare Pages
+
+**Quick Deploy (5 minutes):**
+
+```bash
+wrangler pages deploy public --project-name=mmw-tm
+```
+
+Then set environment variables in Cloudflare Dashboard and you're done!
+
+📚 **Deployment Guides:**
+- **[QUICK_DEPLOY.md](QUICK_DEPLOY.md)** - Fast deployment checklist
+- **[CLOUDFLARE_PAGES_SETUP.md](CLOUDFLARE_PAGES_SETUP.md)** - Complete setup guide with troubleshooting
+- **[DISCORD_SETUP.md](DISCORD_SETUP.md)** - Discord bot configuration
+
 ---
 
 ## 🎯 Features

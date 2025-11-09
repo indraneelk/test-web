@@ -16,9 +16,12 @@ SUPABASE_URL = "https://oxbaswpyxryvygamgtsu.supabase.co"
 
 # Secrets (add these with: wrangler secret put <NAME>)
 # For Pages, use: wrangler pages secret put <NAME> --project-name=mmw-tm
-# wrangler pages secret put SUPABASE_ANON_KEY
-# wrangler pages secret put SUPABASE_SERVICE_ROLE_KEY
-# wrangler pages secret put SUPABASE_JWT_SECRET
-# wrangler pages secret put SESSION_SECRET
-# wrangler pages secret put DISCORD_PUBLIC_KEY
-# wrangler pages secret put ANTHROPIC_API_KEY (optional, for Claude AI features)
+# Required secrets:
+# wrangler pages secret put SUPABASE_ANON_KEY --project-name=mmw-tm
+# wrangler pages secret put SUPABASE_SERVICE_ROLE_KEY --project-name=mmw-tm
+# wrangler pages secret put SUPABASE_JWT_SECRET --project-name=mmw-tm
+# wrangler pages secret put SESSION_SECRET --project-name=mmw-tm
+# wrangler pages secret put DISCORD_BOT_SECRET --project-name=mmw-tm
+# Optional secrets:
+# wrangler pages secret put DISCORD_PUBLIC_KEY --project-name=mmw-tm (for Discord OAuth)
+# wrangler pages secret put ANTHROPIC_API_KEY --project-name=mmw-tm (for Claude AI features)
