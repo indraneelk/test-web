@@ -36,7 +36,15 @@ async function verifyDiscordRequest(request, publicKey) {
     const timestamp = request.headers.get('x-signature-timestamp');
     const body = await request.clone().text();
 
+    console.log('[Discord Verify] Starting verification:', {
+        hasSignature: !!signature,
+        hasTimestamp: !!timestamp,
+        hasPublicKey: !!publicKey,
+        bodyLength: body.length
+    });
+
     if (!signature || !timestamp) {
+        console.log('[Discord Verify] Missing signature or timestamp');
         return false;
     }
 
@@ -60,14 +68,17 @@ async function verifyDiscordRequest(request, publicKey) {
         const signatureData = hexToUint8Array(signature);
         const message = encoder.encode(timestamp + body);
 
-        return await crypto.subtle.verify(
+        const isValid = await crypto.subtle.verify(
             'Ed25519',
             key,
             signatureData,
             message
         );
+
+        console.log('[Discord Verify] Verification result:', isValid);
+        return isValid;
     } catch (error) {
-        console.error('Signature verification error:', error);
+        console.error('[Discord Verify] Signature verification error:', error);
         return false;
     }
 }

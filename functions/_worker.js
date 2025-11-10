@@ -2270,6 +2270,12 @@ export default {
 
         // Discord Interactions endpoint (for slash commands)
         if (path === '/api/interactions' && method === 'POST') {
+            console.log('[Discord Interactions] Request received:', {
+                timestamp: new Date().toISOString(),
+                hasSignature: !!request.headers.get('x-signature-ed25519'),
+                hasTimestamp: !!request.headers.get('x-signature-timestamp'),
+                userAgent: request.headers.get('user-agent')
+            });
             return await handleDiscordInteraction(request, env);
         }
 
