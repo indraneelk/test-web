@@ -155,7 +155,7 @@ async function createAuthCookie(userId, env) {
 async function broadcastChange(env, eventType, payload) {
     try {
         // Use Supabase REST API to send broadcast to 'task-updates' channel
-        const response = await fetch(`${env.SUPABASE_URL}/realtime/v1/api/broadcast`, {
+        const response = await fetch(`${env.SUPABASE_URL}/rest/v1/rpc/broadcast`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -163,9 +163,11 @@ async function broadcastChange(env, eventType, payload) {
                 'apikey': env.SUPABASE_ANON_KEY
             },
             body: JSON.stringify({
-                channel: 'task-updates',
-                event: eventType,
-                payload
+                messages: [{
+                    topic: 'task-updates',
+                    event: eventType,
+                    payload
+                }]
             })
         });
 
