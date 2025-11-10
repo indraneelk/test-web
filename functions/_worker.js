@@ -2093,71 +2093,324 @@ async function handleDiscordInteraction(request, env, ctx) {
                     return { data: linkedUser };
                 }
 
-                // POST /claude/smart - AI assistant
+                // Claude AI configuration - Model swapping for retries
+                const CLAUDE_SONNET = 'claude-sonnet-4-5-20250929';  // Latest Sonnet
+                const CLAUDE_HAIKU = 'claude-haiku-4-5-20251001';     // Latest Haiku
+                const CLAUDE_MODEL = CLAUDE_SONNET;  // Default model
+
+                /**
+                 * Retry helper with exponential backoff and model swapping
+                 * @param {Function} fn - Async function to retry (receives attempt number)
+                 * @param {number} maxRetries - Maximum number of retry attempts (default: 6)
+                 * @param {number} baseDelay - Base delay in ms (default: 1000)
+                 * @returns {Promise} Result of the function call
+                 */
+                async function retryWithBackoff(fn, maxRetries = 6, baseDelay = 1000) {
+                    let lastError;
+
+                    for (let attempt = 0; attempt < maxRetries; attempt++) {
+                        try {
+                            // Pass attempt number to fn so it can choose model
+                            return await fn(attempt);
+                        } catch (error) {
+                            lastError = error;
+
+                            // Check if error is retryable (503, 429, 500, or network errors)
+                            const isRetryable = error.message && (
+                                error.message.includes('503') ||
+                                error.message.includes('429') ||
+                                error.message.includes('500') ||
+                                error.message.includes('error code: 1200')
+                            );
+
+                            // Don't retry on non-retryable errors or on last attempt
+                            if (!isRetryable || attempt === maxRetries - 1) {
+                                throw error;
+                            }
+
+                            // Calculate exponential backoff delay: baseDelay * 2^attempt (capped at 32s)
+                            const delay = Math.min(baseDelay * Math.pow(2, attempt), 32000);
+                            console.log(`[Retry] Attempt ${attempt + 1}/${maxRetries} failed, retrying in ${delay}ms...`);
+
+                            // Wait before retrying
+                            await new Promise(resolve => setTimeout(resolve, delay));
+                        }
+                    }
+
+                    throw lastError;
+                }
+
+                /**
+                 * Helper function to call Claude API and parse JSON response with model swapping
+                 */
+                async function callClaudeForJSON(userInput, systemPrompt, apiKey) {
+                    return await retryWithBackoff(async (attempt) => {
+                        // Alternate between Sonnet and Haiku: Even attempts use Sonnet, odd use Haiku
+                        const model = (attempt % 2 === 0) ? CLAUDE_SONNET : CLAUDE_HAIKU;
+                        console.log(`[Claude API] Attempt ${attempt + 1} using ${model}`);
+
+                        const response = await fetch('https://api.anthropic.com/v1/messages', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'x-api-key': apiKey,
+                                'anthropic-version': '2023-06-01'
+                            },
+                            body: JSON.stringify({
+                                model: model,
+                                max_tokens: 2048,
+                                messages: [{
+                                    role: 'user',
+                                    content: userInput
+                                }],
+                                system: systemPrompt
+                            })
+                        });
+
+                        if (!response.ok) {
+                            const error = await response.text();
+                            throw new Error(`Claude API error: ${response.status} - ${error}`);
+                        }
+
+                        const data = await response.json();
+
+                        // Safely extract text content with null checks
+                        if (!data || !data.content || !Array.isArray(data.content) || data.content.length === 0) {
+                            throw new Error('Invalid response from Claude API: missing content');
+                        }
+
+                        let text = data.content[0].text?.trim();
+                        if (!text) {
+                            throw new Error('Invalid response from Claude API: empty text content');
+                        }
+
+                        // Remove markdown code blocks if present
+                        if (text.startsWith('```json')) {
+                            text = text.replace(/```json\n?/g, '').replace(/```\n?$/g, '');
+                        } else if (text.startsWith('```')) {
+                            text = text.replace(/```\n?/g, '').replace(/```\n?$/g, '');
+                        }
+
+                        return JSON.parse(text);
+                    });
+                }
+
+                /**
+                 * Classify user intent (create_task, edit_task, or question)
+                 */
+                async function classifyIntent(userInput, apiKey) {
+                    const systemPrompt = `You are an intent classifier. Analyze the user's input and determine if they want to:
+1. Create a task (keywords: create, add, make, new task, etc.)
+2. Edit/update a task (keywords: change, update, modify, edit, set, move, etc.)
+3. Ask a question (anything else)
+
+Return ONLY a JSON object with this structure:
+{
+  "intent": "create_task" or "edit_task" or "question"
+}
+
+Examples:
+"create a task to fix the login bug" -> {"intent": "create_task"}
+"what tasks are overdue?" -> {"intent": "question"}
+"change the due date of the login bug to tomorrow" -> {"intent": "edit_task"}
+"update the priority of testing task to high" -> {"intent": "edit_task"}
+"show me my priorities" -> {"intent": "question"}
+
+Return ONLY valid JSON, no other text.`;
+
+                    return await callClaudeForJSON(userInput, systemPrompt, apiKey);
+                }
+
+                /**
+                 * Parse task creation request
+                 */
+                async function parseTaskCreation(userInput, projects, users, apiKey) {
+                    // Filter out null/undefined entries and safely map properties
+                    const projectList = projects
+                        .filter(p => p && p.id && p.name)
+                        .map(p => ({ id: p.id, name: p.name }));
+                    const userList = users
+                        .filter(u => u && u.id)
+                        .map(u => ({ id: u.id, name: u.name || u.email || 'Unknown', email: u.email || '' }));
+
+                    const systemPrompt = `You are a task parser. Convert natural language task requests into JSON.
+
+Available projects:
+${JSON.stringify(projectList, null, 2)}
+
+Available users:
+${JSON.stringify(userList, null, 2)}
+
+Parse the user's request and return ONLY a JSON object with this structure:
+{
+  "title": "task title",
+  "description": "optional description",
+  "dueDate": "YYYY-MM-DD format",
+  "priority": "none|low|medium|high",
+  "projectId": "id from available projects or null",
+  "projectName": "name of project or null",
+  "assignedToId": "user id or null",
+  "assignedToName": "user name or null"
+}
+
+Rules:
+- If no due date mentioned, use today's date
+- If "tomorrow" mentioned, use tomorrow's date
+- If "next week" mentioned, use 7 days from now
+- Default priority is "none" unless specified
+- Match project names case-insensitively
+- Match user names or emails case-insensitively
+- Return null for projectId/assignedToId if not found or not specified
+- Extract description from context if available
+
+Return ONLY valid JSON, no other text.`;
+
+                    const parsed = await callClaudeForJSON(userInput, systemPrompt, apiKey);
+
+                    // Validate and normalize
+                    const today = new Date();
+                    return {
+                        title: parsed.title || 'Untitled Task',
+                        description: parsed.description || '',
+                        dueDate: parsed.dueDate || today.toISOString().split('T')[0],
+                        priority: ['none', 'low', 'medium', 'high'].includes(parsed.priority) ? parsed.priority : 'none',
+                        projectId: parsed.projectId || null,
+                        projectName: parsed.projectName || null,
+                        assignedToId: parsed.assignedToId || null,
+                        assignedToName: parsed.assignedToName || null
+                    };
+                }
+
+                // POST /claude/smart - AI assistant with smart actions
                 if (path === '/claude/smart' && method === 'POST') {
-                    console.log('[Claude] Endpoint hit with body:', body);
+                    console.log('[Claude Smart] Endpoint hit');
                     const { input } = body;
-                    console.log('[Claude] Input:', input);
 
                     if (!env.ANTHROPIC_API_KEY) {
                         throw new Error('ANTHROPIC_API_KEY not configured');
                     }
 
-                    // Get user's tasks for context
-                    const userTasks = await env.DB.prepare(
-                        'SELECT * FROM tasks WHERE assigned_to_id = ? AND archived = 0 ORDER BY created_at DESC LIMIT 50'
-                    ).bind(user.id).all();
+                    // Get user's tasks, projects, and users for context
+                    const [userTasks, allProjects, allUsers] = await Promise.all([
+                        env.DB.prepare('SELECT * FROM tasks WHERE assigned_to_id = ? AND archived = 0 ORDER BY created_at DESC LIMIT 50').bind(user.id).all(),
+                        env.DB.prepare('SELECT id, name FROM projects').all(),
+                        env.DB.prepare('SELECT id, name, email FROM users').all()
+                    ]);
 
-                    // Build context for Claude
-                    const tasksContext = (userTasks.results || []).map(t =>
-                        `- ${t.name} (${t.status}, priority: ${t.priority}, due: ${t.date})`
-                    ).join('\n');
+                    const tasks = userTasks.results || [];
+                    const projects = allProjects.results || [];
+                    const users = allUsers.results || [];
 
-                    // Call Claude API
-                    const claudeResponse = await fetch('https://api.anthropic.com/v1/messages', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'x-api-key': env.ANTHROPIC_API_KEY,
-                            'anthropic-version': '2023-06-01'
-                        },
-                        body: JSON.stringify({
-                            model: 'claude-haiku-4-5',
-                            max_tokens: 1024,
-                            messages: [{
-                                role: 'user',
-                                content: `You are a task management assistant. Here are the user's current tasks:
+                    // Step 1: Classify intent
+                    const intent = await classifyIntent(input, env.ANTHROPIC_API_KEY);
+                    console.log('[Claude Smart] Intent:', intent);
+
+                    if (intent.intent === 'create_task') {
+                        // Step 2: Parse task creation request
+                        const taskData = await parseTaskCreation(input, projects, users, env.ANTHROPIC_API_KEY);
+                        console.log('[Claude Smart] Parsed task data:', taskData);
+
+                        // Step 3: Create the task in database
+                        const result = await env.DB.prepare(`
+                            INSERT INTO tasks (name, description, status, date, priority, project_id, assigned_to_id, created_by_id, created_at, archived)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        `).bind(
+                            taskData.title,
+                            taskData.description,
+                            'pending',
+                            taskData.dueDate,
+                            taskData.priority,
+                            taskData.projectId,
+                            taskData.assignedToId || user.id, // Default to current user if no assignee
+                            user.id,
+                            new Date().toISOString(),
+                            0
+                        ).run();
+
+                        // Get the created task
+                        const createdTask = await env.DB.prepare('SELECT * FROM tasks WHERE id = ?').bind(result.meta.last_row_id).first();
+
+                        return {
+                            data: {
+                                type: 'task_created',
+                                task: createdTask,
+                                message: `Task "${taskData.title}" created successfully!`
+                            }
+                        };
+
+                    } else if (intent.intent === 'edit_task') {
+                        // For now, return a helpful message that edit is not yet supported
+                        // TODO: Implement task editing logic
+                        return {
+                            data: {
+                                type: 'answer',
+                                answer: "Task editing via natural language is coming soon! For now, please use the task management interface to edit tasks."
+                            }
+                        };
+
+                    } else {
+                        // Answer the question using context - filter out null/undefined tasks and properties
+                        const tasksContext = tasks
+                            .filter(t => t && t.name)
+                            .map(t =>
+                                `- ${t.name} (${t.status || 'no status'}, priority: ${t.priority || 'none'}, due: ${t.date || 'no date'})`
+                            ).join('\n');
+
+                        const answer = await retryWithBackoff(async (attempt) => {
+                            // Alternate between Sonnet and Haiku: Even attempts use Sonnet, odd use Haiku
+                            const model = (attempt % 2 === 0) ? CLAUDE_SONNET : CLAUDE_HAIKU;
+                            console.log(`[Claude API] Attempt ${attempt + 1} using ${model}`);
+
+                            const answerResponse = await fetch('https://api.anthropic.com/v1/messages', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    'x-api-key': env.ANTHROPIC_API_KEY,
+                                    'anthropic-version': '2023-06-01'
+                                },
+                                body: JSON.stringify({
+                                    model: model,
+                                    max_tokens: 1024,
+                                    messages: [{
+                                        role: 'user',
+                                        content: `You are a task management assistant. Here are the user's current tasks:
 
 ${tasksContext || 'No tasks yet.'}
 
 User question: ${input}
 
-Please provide a helpful response. If the user wants to create/update tasks, respond with a clear summary of what should be done.`
-                            }]
-                        })
-                    });
+Please provide a helpful response about their tasks.`
+                                    }]
+                                })
+                            });
 
-                    if (!claudeResponse.ok) {
-                        const error = await claudeResponse.text();
-                        console.error('[Claude] API error:', {
-                            status: claudeResponse.status,
-                            statusText: claudeResponse.statusText,
-                            error: error
+                            if (!answerResponse.ok) {
+                                const error = await answerResponse.text();
+                                throw new Error(`Claude API error: ${answerResponse.status} - ${error}`);
+                            }
+
+                            const answerData = await answerResponse.json();
+
+                            // Safely extract text content with null checks
+                            if (!answerData || !answerData.content || !Array.isArray(answerData.content) || answerData.content.length === 0) {
+                                throw new Error('Invalid response from Claude API: missing content');
+                            }
+
+                            const answerText = answerData.content[0]?.text;
+                            if (!answerText) {
+                                throw new Error('Invalid response from Claude API: empty text content');
+                            }
+
+                            return answerText;
                         });
-                        throw new Error(`Claude API error: ${claudeResponse.status} - ${error}`);
+
+                        return {
+                            data: {
+                                type: 'answer',
+                                answer: answer
+                            }
+                        };
                     }
-
-                    const claudeData = await claudeResponse.json();
-                    const answer = claudeData.content[0].text;
-
-                    console.log('[Claude] Response from API:', answer);
-
-                    return {
-                        data: {
-                            type: 'answer',
-                            answer: answer
-                        }
-                    };
                 }
 
                 throw new Error(`Unknown path: ${path}`);
