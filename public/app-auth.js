@@ -226,6 +226,13 @@ function updateUserInfo() {
 // Logout
 async function logout() {
     try {
+        // Sign out from Supabase first
+        const client = await ensureSupabase();
+        if (client) {
+            await client.auth.signOut();
+        }
+
+        // Then clear server-side session
         await authFetch(`${API_AUTH}/logout`, {
             method: 'POST',
             credentials: 'include'
@@ -1429,6 +1436,12 @@ async function handleProjectSubmit(e) {
         closeProjectModal();
         await loadProjects();
         renderProjectsGrid();
+
+        // If we're currently viewing this project, refresh the view to show updated color/name
+        if (projectId && currentView === 'project' && currentProjectId === projectId) {
+            switchToProject(projectId);
+        }
+
         showSuccess(projectId ? 'Project updated successfully!' : 'Project created successfully!');
     } catch (error) {
         showError(error.message);
