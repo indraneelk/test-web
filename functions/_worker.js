@@ -1934,7 +1934,7 @@ async function handleDeleteUser(request, env, userId) {
  * Handle Discord Interactions (slash commands) directly
  * This replaces the need for a separate discord-bot worker
  */
-async function handleDiscordInteraction(request, env) {
+async function handleDiscordInteraction(request, env, ctx) {
     // Verify Discord signature
     const isValid = await verifyDiscordInteraction(request, env.DISCORD_PUBLIC_KEY);
     if (!isValid) {
@@ -2122,7 +2122,7 @@ async function handleDiscordInteraction(request, env) {
                             'anthropic-version': '2023-06-01'
                         },
                         body: JSON.stringify({
-                            model: 'claude-3-5-sonnet-20241022',
+                            model: 'claude-haiku-4-5',
                             max_tokens: 1024,
                             messages: [{
                                 role: 'user',
@@ -2139,8 +2139,12 @@ Please provide a helpful response. If the user wants to create/update tasks, res
 
                     if (!claudeResponse.ok) {
                         const error = await claudeResponse.text();
-                        console.error('[Claude] API error:', error);
-                        throw new Error('Claude API error');
+                        console.error('[Claude] API error:', {
+                            status: claudeResponse.status,
+                            statusText: claudeResponse.statusText,
+                            error: error
+                        });
+                        throw new Error(`Claude API error: ${claudeResponse.status} - ${error}`);
                     }
 
                     const claudeData = await claudeResponse.json();
@@ -2192,11 +2196,50 @@ Please provide a helpful response. If the user wants to create/update tasks, res
                     break;
 
                 case 'claude':
-                    const claudeParams = {
-                        query: getOption(options, 'query')
-                    };
-                    responseData = await handleClaudeCommand(fetchAPI, discordUserId, claudeParams);
-                    break;
+                    // For Claude commands, defer the response immediately to avoid 3-second timeout
+                    const claudeQuery = getOption(options, 'query');
+                    const interactionToken = interaction.token;
+                    const applicationId = interaction.application_id;
+
+                    // Return deferred response immediately
+                    const deferredResponse = new Response(JSON.stringify({
+                        type: InteractionResponseType.DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE
+                    }), {
+                        headers: { 'Content-Type': 'application/json' }
+                    });
+
+                    // Process Claude request in background
+                    ctx.waitUntil((async () => {
+                        try {
+                            const claudeParams = { query: claudeQuery };
+                            const claudeResult = await handleClaudeCommand(fetchAPI, discordUserId, claudeParams);
+
+                            // Edit the deferred response with the actual result
+                            await fetch(`https://discord.com/api/v10/webhooks/${applicationId}/${interactionToken}/messages/@original`, {
+                                method: 'PATCH',
+                                headers: {
+                                    'Content-Type': 'application/json'
+                                },
+                                body: JSON.stringify({
+                                    content: claudeResult.content
+                                })
+                            });
+                        } catch (error) {
+                            console.error('[Claude Deferred] Error:', error);
+                            // Update with error message
+                            await fetch(`https://discord.com/api/v10/webhooks/${applicationId}/${interactionToken}/messages/@original`, {
+                                method: 'PATCH',
+                                headers: {
+                                    'Content-Type': 'application/json'
+                                },
+                                body: JSON.stringify({
+                                    content: `❌ Error: ${error.message}`
+                                })
+                            });
+                        }
+                    })());
+
+                    return deferredResponse;
 
                 case 'link':
                     const linkParams = {
@@ -2247,7 +2290,7 @@ Please provide a helpful response. If the user wants to create/update tasks, res
 // ==================== MAIN REQUEST HANDLER ====================
 
 export default {
-    async fetch(request, env) {
+    async fetch(request, env, ctx) {
         const url = new URL(request.url);
         const path = url.pathname;
         const method = request.method;
@@ -2276,7 +2319,7 @@ export default {
                 hasTimestamp: !!request.headers.get('x-signature-timestamp'),
                 userAgent: request.headers.get('user-agent')
             });
-            return await handleDiscordInteraction(request, env);
+            return await handleDiscordInteraction(request, env, ctx);
         }
 
         try {
