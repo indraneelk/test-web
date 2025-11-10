@@ -289,27 +289,37 @@
         // Check if already logged in - wait for Supabase session first
         (async () => {
             try {
-                // Wait for Supabase to be ready
-                if (window.supabase) {
-                    const resp = await fetch('/api/config/public');
-                    const cfg = await resp.json();
-                    if (cfg.supabaseUrl && cfg.supabaseAnonKey) {
-                        const client = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey);
-                        // Ensure session is loaded before checking auth
-                        await client.auth.getSession();
+                // Wait for Supabase to be ready with timeout
+                const timeoutPromise = new Promise((_, reject) =>
+                    setTimeout(() => reject(new Error('Timeout')), 3000)
+                );
+
+                const authCheckPromise = (async () => {
+                    if (window.supabase) {
+                        const resp = await fetch('/api/config/public');
+                        const cfg = await resp.json();
+                        if (cfg.supabaseUrl && cfg.supabaseAnonKey) {
+                            const client = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey);
+                            // Ensure session is loaded before checking auth
+                            await client.auth.getSession();
+                        }
                     }
-                }
 
-                const response = await fetch('/api/auth/me', {
-                    credentials: 'include'
-                });
+                    const response = await fetch('/api/auth/me', {
+                        credentials: 'include'
+                    });
 
-                if (response.ok) {
-                    // Already logged in, redirect to app
-                    window.location.href = '/';
-                }
+                    if (response.ok) {
+                        // Already logged in, redirect to app
+                        window.location.href = '/';
+                    }
+                })();
+
+                // Race between auth check and timeout
+                await Promise.race([authCheckPromise, timeoutPromise]);
             } catch (error) {
-                // Not logged in, stay on login page
+                // Not logged in or timeout, stay on login page
+                console.log('Auth check skipped:', error.message);
             }
         })();
 
