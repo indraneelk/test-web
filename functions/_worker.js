@@ -1988,21 +1988,68 @@ async function handleDiscordInteraction(request, env, ctx) {
                 }
 
                 if (path === '/discord/tasks' && method === 'POST') {
-                    const { name, date, priority } = body;
-                    const taskId = generateId('task');
-                    const now = getCurrentTimestamp();
+                    const { name, date, priority, project, assigned_to } = body;
 
-                    // Get user's personal project
-                    const personalProject = await env.DB.prepare(
-                        'SELECT * FROM projects WHERE owner_id = ? AND name = ?'
-                    ).bind(user.id, 'Personal').first();
+                    // Step 1: Find or default to Personal project
+                    let targetProject;
+                    if (project) {
+                        // Look up project by name (case-insensitive) where user is member or owner
+                        const projectByName = await env.DB.prepare(`
+                            SELECT p.* FROM projects p
+                            LEFT JOIN project_members pm ON p.id = pm.project_id
+                            WHERE LOWER(p.name) = LOWER(?) AND (p.owner_id = ? OR pm.user_id = ?)
+                        `).bind(project, user.id, user.id).first();
 
-                    await env.DB.prepare(
-                        'INSERT INTO tasks (id, name, description, status, priority, date, created_by_id, assigned_to_id, project_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-                    ).bind(taskId, name, '', 'pending', priority || 'none', date, user.id, user.id, personalProject.id, now, now).run();
+                        if (!projectByName) {
+                            throw new Error(`Project "${project}" not found or you are not a member`);
+                        }
+                        targetProject = projectByName;
+                    } else {
+                        // Default to Personal project
+                        targetProject = await env.DB.prepare(
+                            'SELECT * FROM projects WHERE owner_id = ? AND name = ?'
+                        ).bind(user.id, 'Personal').first();
+                    }
 
-                    const task = await env.DB.prepare('SELECT * FROM tasks WHERE id = ?').bind(taskId).first();
-                    return { data: task };
+                    // Step 2: Find assigned user if specified
+                    let assignedUserId = user.id; // Default to current user
+                    let assignedUserName = null;
+                    if (assigned_to) {
+                        // Look up user by name or email (case-insensitive)
+                        const assignedUser = await env.DB.prepare(`
+                            SELECT * FROM users
+                            WHERE LOWER(username) = LOWER(?) OR LOWER(email) = LOWER(?)
+                        `).bind(assigned_to, assigned_to).first();
+
+                        if (!assignedUser) {
+                            throw new Error(`User "${assigned_to}" not found`);
+                        }
+                        assignedUserId = assignedUser.id;
+                        assignedUserName = assignedUser.username || assignedUser.email;
+                    }
+
+                    // Step 3: Create task using business logic for consistency
+                    const dataService = createDataService(env.DB);
+                    const createdTask = await businessLogic.createTask(dataService, user.id, {
+                        name: name,
+                        date: date,
+                        priority: priority || 'none',
+                        project_id: targetProject.id,
+                        assigned_to_id: assignedUserId
+                    });
+
+                    // Log activity
+                    await logActivity(env.DB, user.id, 'task_created', `Created task "${createdTask.name}" via Discord`, createdTask.id, createdTask.project_id);
+                    await broadcastChange(env, 'task-created', { taskId: createdTask.id, projectId: createdTask.project_id });
+
+                    // Add additional fields for Discord response
+                    const responseData = {
+                        ...createdTask,
+                        project_name: targetProject.name,
+                        assigned_to_name: assignedUserName || (user.username || user.email)
+                    };
+
+                    return { data: responseData };
                 }
 
                 if (path.match(/^\/discord\/tasks\/.*\/complete$/) && method === 'PUT') {
@@ -2024,12 +2071,18 @@ async function handleDiscordInteraction(request, env, ctx) {
                         throw new Error('Task not found or not assigned to you');
                     }
 
+                    // Use business logic for consistency
+                    const dataService = createDataService(env.DB);
                     const now = getCurrentTimestamp();
-                    await env.DB.prepare(
-                        'UPDATE tasks SET status = ?, completed_at = ?, updated_at = ? WHERE id = ?'
-                    ).bind('completed', now, now, task.id).run();
+                    const updatedTask = await businessLogic.updateTask(dataService, user.id, task.id, {
+                        status: 'completed',
+                        completed_at: now
+                    });
 
-                    const updatedTask = await env.DB.prepare('SELECT * FROM tasks WHERE id = ?').bind(task.id).first();
+                    // Log activity and broadcast change
+                    await logActivity(env.DB, user.id, 'task_updated', `Completed task "${updatedTask.name}" via Discord`, task.id, updatedTask.project_id);
+                    await broadcastChange(env, 'task-updated', { taskId: task.id, projectId: updatedTask.project_id });
+
                     return { data: updatedTask };
                 }
 
@@ -2101,11 +2154,11 @@ async function handleDiscordInteraction(request, env, ctx) {
                 /**
                  * Retry helper with exponential backoff and model swapping
                  * @param {Function} fn - Async function to retry (receives attempt number)
-                 * @param {number} maxRetries - Maximum number of retry attempts (default: 6)
-                 * @param {number} baseDelay - Base delay in ms (default: 1000)
+                 * @param {number} maxRetries - Maximum number of retry attempts (default: 5)
+                 * @param {number} baseDelay - Base delay in ms (default: 500)
                  * @returns {Promise} Result of the function call
                  */
-                async function retryWithBackoff(fn, maxRetries = 6, baseDelay = 1000) {
+                async function retryWithBackoff(fn, maxRetries = 5, baseDelay = 500) {
                     let lastError;
 
                     for (let attempt = 0; attempt < maxRetries; attempt++) {
@@ -2261,6 +2314,7 @@ Rules:
 - Match project names case-insensitively
 - Match user names or emails case-insensitively
 - Return null for projectId/assignedToId if not found or not specified
+- IMPORTANT: If no assignee is explicitly mentioned in the request, return null for assignedToId/assignedToName - the task will automatically be assigned to the creator
 - Extract description from context if available
 
 Return ONLY valid JSON, no other text.`;
@@ -2310,31 +2364,32 @@ Return ONLY valid JSON, no other text.`;
                         const taskData = await parseTaskCreation(input, projects, users, env.ANTHROPIC_API_KEY);
                         console.log('[Claude Smart] Parsed task data:', taskData);
 
-                        // Step 3: Create the task in database
-                        const result = await env.DB.prepare(`
-                            INSERT INTO tasks (name, description, status, date, priority, project_id, assigned_to_id, created_by_id, created_at, archived)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        `).bind(
-                            taskData.title,
-                            taskData.description,
-                            'pending',
-                            taskData.dueDate,
-                            taskData.priority,
-                            taskData.projectId,
-                            taskData.assignedToId || user.id, // Default to current user if no assignee
-                            user.id,
-                            new Date().toISOString(),
-                            0
-                        ).run();
+                        // Step 3: Create task using business logic for consistency
+                        const dataService = createDataService(env.DB);
+                        const createdTask = await businessLogic.createTask(dataService, user.id, {
+                            name: taskData.title,
+                            description: taskData.description,
+                            date: taskData.dueDate,
+                            priority: taskData.priority,
+                            project_id: taskData.projectId,
+                            assigned_to_id: taskData.assignedToId || user.id // Default to current user if no assignee
+                        });
 
-                        // Get the created task
-                        const createdTask = await env.DB.prepare('SELECT * FROM tasks WHERE id = ?').bind(result.meta.last_row_id).first();
+                        // Log activity
+                        await logActivity(env.DB, user.id, 'task_created', `Created task "${createdTask.name}" via Discord`, createdTask.id, createdTask.project_id);
+                        await broadcastChange(env, 'task-created', { taskId: createdTask.id, projectId: createdTask.project_id });
+
+                        // Build success message
+                        const wasAutoAssigned = !taskData.assignedToId;
+                        const successMessage = wasAutoAssigned
+                            ? `Task "${taskData.title}" created and assigned to you!`
+                            : `Task "${taskData.title}" created successfully!`;
 
                         return {
                             data: {
                                 type: 'task_created',
                                 task: createdTask,
-                                message: `Task "${taskData.title}" created successfully!`
+                                message: successMessage
                             }
                         };
 
@@ -2428,7 +2483,9 @@ Please provide a helpful response about their tasks.`
                     const createParams = {
                         title: getOption(options, 'title'),
                         due: getOption(options, 'due'),
-                        priority: getOption(options, 'priority')
+                        priority: getOption(options, 'priority'),
+                        project: getOption(options, 'project'),
+                        assigned_to: getOption(options, 'assigned_to')
                     };
                     responseData = await handleCreateCommand(fetchAPI, discordUserId, createParams);
                     break;
@@ -2461,11 +2518,40 @@ Please provide a helpful response about their tasks.`
                         headers: { 'Content-Type': 'application/json' }
                     });
 
-                    // Process Claude request in background
+                    // Process Claude request in background with timeout
                     ctx.waitUntil((async () => {
+                        const TIMEOUT_MS = 25000; // 25 seconds (Discord allows ~30s total)
+                        let timeoutId;
+
                         try {
-                            const claudeParams = { query: claudeQuery };
-                            const claudeResult = await handleClaudeCommand(fetchAPI, discordUserId, claudeParams);
+                            const timeoutPromise = new Promise((_, reject) => {
+                                timeoutId = setTimeout(() => reject(new Error('Claude processing timeout')), TIMEOUT_MS);
+                            });
+
+                            const claudePromise = (async () => {
+                                const claudeParams = { query: claudeQuery };
+                                console.log('[Claude Deferred] Starting Claude processing:', { query: claudeQuery });
+                                return await handleClaudeCommand(fetchAPI, discordUserId, claudeParams);
+                            })();
+
+                            // Race between Claude processing and timeout
+                            const claudeResult = await Promise.race([claudePromise, timeoutPromise]);
+                            clearTimeout(timeoutId);
+
+                            console.log('[Claude Deferred] Claude result:', {
+                                type: claudeResult.embeds ? 'embeds' : 'content',
+                                hasContent: !!claudeResult.content,
+                                hasEmbeds: !!claudeResult.embeds
+                            });
+
+                            // Build response payload - handle both content and embeds
+                            const updatePayload = {};
+                            if (claudeResult.content) {
+                                updatePayload.content = claudeResult.content;
+                            }
+                            if (claudeResult.embeds) {
+                                updatePayload.embeds = claudeResult.embeds;
+                            }
 
                             // Edit the deferred response with the actual result
                             await fetch(`https://discord.com/api/v10/webhooks/${applicationId}/${interactionToken}/messages/@original`, {
@@ -2473,12 +2559,12 @@ Please provide a helpful response about their tasks.`
                                 headers: {
                                     'Content-Type': 'application/json'
                                 },
-                                body: JSON.stringify({
-                                    content: claudeResult.content
-                                })
+                                body: JSON.stringify(updatePayload)
                             });
                         } catch (error) {
+                            if (timeoutId) clearTimeout(timeoutId);
                             console.error('[Claude Deferred] Error:', error);
+
                             // Update with error message
                             await fetch(`https://discord.com/api/v10/webhooks/${applicationId}/${interactionToken}/messages/@original`, {
                                 method: 'PATCH',
@@ -2486,7 +2572,9 @@ Please provide a helpful response about their tasks.`
                                     'Content-Type': 'application/json'
                                 },
                                 body: JSON.stringify({
-                                    content: `❌ Error: ${error.message}`
+                                    content: error.message.includes('timeout')
+                                        ? '⏱️ Claude is taking too long. Please try a simpler query or try again later.'
+                                        : `❌ Error: ${error.message}`
                                 })
                             });
                         }

@@ -48,32 +48,52 @@ async function handleTasksCommand(fetchAPI, discordUserId) {
  * Handle /create command - create a new task
  */
 async function handleCreateCommand(fetchAPI, discordUserId, params) {
-    const { title, due, priority } = params;
+    const { title, due, priority, project, assigned_to } = params;
 
     if (!title || !due) {
         return {
-            content: '❌ Please provide task title and due date.\nUsage: `/create title:My Task due:2025-12-31 priority:high`'
+            content: '❌ Please provide task title and due date.\nUsage: `/create title:My Task due:2025-12-31 priority:high project:Work assigned_to:user@email.com`'
         };
     }
 
-    const response = await fetchAPI(discordUserId, 'POST', '/discord/tasks', {
+    const requestBody = {
         name: title,
         date: due,
         priority: priority || 'none'
-    });
+    };
+
+    // Add optional parameters if provided
+    if (project) {
+        requestBody.project = project;
+    }
+    if (assigned_to) {
+        requestBody.assigned_to = assigned_to;
+    }
+
+    const response = await fetchAPI(discordUserId, 'POST', '/discord/tasks', requestBody);
 
     const task = response.data;
+
+    // Build embed fields dynamically
+    const fields = [
+        { name: '📝 Title', value: task.name },
+        { name: '📅 Due Date', value: task.date },
+        { name: '⭐ Priority', value: task.priority || 'none' }
+    ];
+
+    if (task.project_name) {
+        fields.push({ name: '📁 Project', value: task.project_name });
+    }
+    if (task.assigned_to_name) {
+        fields.push({ name: '👤 Assigned To', value: task.assigned_to_name });
+    }
 
     return {
         embeds: [{
             color: 0x13ce66,
             title: '✅ Task Created',
             description: `Successfully created new task\n\u200b`,
-            fields: [
-                { name: '📝 Title', value: task.name },
-                { name: '📅 Due Date', value: task.date },
-                { name: '⭐ Priority', value: task.priority || 'none' }
-            ],
+            fields: fields,
             timestamp: new Date().toISOString()
         }]
     };
@@ -188,14 +208,22 @@ async function handleClaudeCommand(fetchAPI, discordUserId, params) {
 
     if (result.type === 'task_created') {
         const task = result.task;
+
+        // Handle case where task might be null
+        if (!task) {
+            return {
+                content: `✅ ${result.message || 'Task created successfully!'}\n\n⚠️ Task details unavailable.`
+            };
+        }
+
         return {
             embeds: [{
                 color: 0x13ce66,
                 title: '✅ Task Created via Claude',
                 description: `${result.message}\n\u200b`,
                 fields: [
-                    { name: '📝 Title', value: task.name },
-                    { name: '📅 Due Date', value: task.date },
+                    { name: '📝 Title', value: task.name || 'Untitled' },
+                    { name: '📅 Due Date', value: task.date || 'No date' },
                     { name: '⭐ Priority', value: task.priority || 'none' }
                 ],
                 timestamp: new Date().toISOString()
@@ -203,15 +231,23 @@ async function handleClaudeCommand(fetchAPI, discordUserId, params) {
         };
     } else if (result.type === 'task_updated') {
         const task = result.task;
+
+        // Handle case where task might be null
+        if (!task) {
+            return {
+                content: `✅ ${result.message || 'Task updated successfully!'}\n\n⚠️ Task details unavailable.`
+            };
+        }
+
         return {
             embeds: [{
                 color: 0x4f46e5,
                 title: '📝 Task Updated via Claude',
                 description: `${result.message}\n\u200b`,
                 fields: [
-                    { name: '📝 Task', value: task.name },
-                    { name: '📅 Due Date', value: task.date },
-                    { name: '📊 Status', value: task.status }
+                    { name: '📝 Task', value: task.name || 'Untitled' },
+                    { name: '📅 Due Date', value: task.date || 'No date' },
+                    { name: '📊 Status', value: task.status || 'Unknown' }
                 ],
                 timestamp: new Date().toISOString()
             }]

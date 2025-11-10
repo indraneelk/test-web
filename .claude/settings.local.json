@@ -44,7 +44,9 @@
       "Bash(node:*)",
       "Bash(timeout 30 npx wrangler tail:*)",
       "Skill(discord-bot)",
-      "Bash(timeout 30 npx wrangler pages deployment tail:*)"
+      "Bash(timeout 30 npx wrangler pages deployment tail:*)",
+      "Bash(pkill:*)",
+      "Bash(GUILD_ID=1326718373978963988 node register-guild-commands.js:*)"
     ],
     "deny": [],
     "ask": []

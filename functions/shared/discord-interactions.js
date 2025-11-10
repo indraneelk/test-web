@@ -127,6 +127,18 @@ const COMMANDS = [
                     { name: 'Medium', value: 'medium' },
                     { name: 'High', value: 'high' }
                 ]
+            },
+            {
+                name: 'project',
+                description: 'Project name (defaults to Personal)',
+                type: 3,
+                required: false
+            },
+            {
+                name: 'assigned_to',
+                description: 'User to assign (name or email)',
+                type: 3,
+                required: false
             }
         ]
     },
