@@ -114,15 +114,21 @@ async function handleCompleteCommand(fetchAPI, discordUserId, params) {
     const response = await fetchAPI(discordUserId, 'PUT', `/discord/tasks/${encodeURIComponent(task)}/complete`);
     const updatedTask = response.data;
 
+    const fields = [
+        { name: '📝 Task', value: updatedTask.name },
+        { name: '📅 Completed', value: new Date().toLocaleDateString() }
+    ];
+
+    if (updatedTask.assigned_to_name) {
+        fields.push({ name: '👤 Assigned To', value: updatedTask.assigned_to_name });
+    }
+
     return {
         embeds: [{
             color: 0x13ce66,
             title: '✅ Task Completed',
             description: `Marked task as completed\n\u200b`,
-            fields: [
-                { name: '📝 Task', value: updatedTask.name },
-                { name: '📅 Completed', value: new Date().toLocaleDateString() }
-            ],
+            fields: fields,
             timestamp: new Date().toISOString()
         }]
     };
@@ -216,16 +222,22 @@ async function handleClaudeCommand(fetchAPI, discordUserId, params) {
             };
         }
 
+        const fields = [
+            { name: '📝 Title', value: task.name || 'Untitled' },
+            { name: '📅 Due Date', value: task.date || 'No date' },
+            { name: '⭐ Priority', value: task.priority || 'none' }
+        ];
+
+        if (task.assigned_to_name) {
+            fields.push({ name: '👤 Assigned To', value: task.assigned_to_name });
+        }
+
         return {
             embeds: [{
                 color: 0x13ce66,
                 title: '✅ Task Created via Claude',
                 description: `${result.message}\n\u200b`,
-                fields: [
-                    { name: '📝 Title', value: task.name || 'Untitled' },
-                    { name: '📅 Due Date', value: task.date || 'No date' },
-                    { name: '⭐ Priority', value: task.priority || 'none' }
-                ],
+                fields: fields,
                 timestamp: new Date().toISOString()
             }]
         };
@@ -239,16 +251,22 @@ async function handleClaudeCommand(fetchAPI, discordUserId, params) {
             };
         }
 
+        const fields = [
+            { name: '📝 Task', value: task.name || 'Untitled' },
+            { name: '📅 Due Date', value: task.date || 'No date' },
+            { name: '📊 Status', value: task.status || 'Unknown' }
+        ];
+
+        if (task.assigned_to_name) {
+            fields.push({ name: '👤 Assigned To', value: task.assigned_to_name });
+        }
+
         return {
             embeds: [{
                 color: 0x4f46e5,
                 title: '📝 Task Updated via Claude',
                 description: `${result.message}\n\u200b`,
-                fields: [
-                    { name: '📝 Task', value: task.name || 'Untitled' },
-                    { name: '📅 Due Date', value: task.date || 'No date' },
-                    { name: '📊 Status', value: task.status || 'Unknown' }
-                ],
+                fields: fields,
                 timestamp: new Date().toISOString()
             }]
         };

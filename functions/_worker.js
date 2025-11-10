@@ -1437,6 +1437,12 @@ async function handleRemoveProjectMember(request, env, projectId, memberId) {
         await env.DB.prepare('DELETE FROM project_members WHERE project_id = ? AND user_id = ?')
             .bind(projectId, memberId).run();
 
+        // Unassign all tasks in this project that were assigned to the removed member
+        console.log('Unassigning tasks for removed member');
+        await env.DB.prepare(
+            'UPDATE tasks SET assigned_to_id = NULL WHERE project_id = ? AND assigned_to_id = ?'
+        ).bind(projectId, memberId).run();
+
         const removedUser = await getUserById(env.DB, memberId);
         const actionMessage = isSelfRemoval
             ? `Left project`
@@ -2083,7 +2089,17 @@ async function handleDiscordInteraction(request, env, ctx) {
                     await logActivity(env.DB, user.id, 'task_updated', `Completed task "${updatedTask.name}" via Discord`, task.id, updatedTask.project_id);
                     await broadcastChange(env, 'task-updated', { taskId: task.id, projectId: updatedTask.project_id });
 
-                    return { data: updatedTask };
+                    // Get assigned user name for Discord response
+                    const assignedUser = await env.DB.prepare(
+                        'SELECT username, email FROM users WHERE id = ?'
+                    ).bind(updatedTask.assigned_to_id).first();
+
+                    const responseData = {
+                        ...updatedTask,
+                        assigned_to_name: assignedUser?.username || assignedUser?.email || 'Unknown'
+                    };
+
+                    return { data: responseData };
                 }
 
                 if (path === '/discord/summary' && method === 'GET') {
@@ -2379,16 +2395,26 @@ Return ONLY valid JSON, no other text.`;
                         await logActivity(env.DB, user.id, 'task_created', `Created task "${createdTask.name}" via Discord`, createdTask.id, createdTask.project_id);
                         await broadcastChange(env, 'task-created', { taskId: createdTask.id, projectId: createdTask.project_id });
 
+                        // Get assigned user name for Discord response
+                        const assignedUser = await env.DB.prepare(
+                            'SELECT username, email FROM users WHERE id = ?'
+                        ).bind(createdTask.assigned_to_id).first();
+
                         // Build success message
                         const wasAutoAssigned = !taskData.assignedToId;
                         const successMessage = wasAutoAssigned
                             ? `Task "${taskData.title}" created and assigned to you!`
                             : `Task "${taskData.title}" created successfully!`;
 
+                        const taskWithAssignee = {
+                            ...createdTask,
+                            assigned_to_name: assignedUser?.username || assignedUser?.email || 'Unknown'
+                        };
+
                         return {
                             data: {
                                 type: 'task_created',
-                                task: createdTask,
+                                task: taskWithAssignee,
                                 message: successMessage
                             }
                         };
