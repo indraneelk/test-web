@@ -1,0 +1,22 @@
+{
+  "mcpServers": {
+    "cloudflare-bindings": {
+      "command": "npx",
+      "args": [
+        "mcp-remote",
+        "https://bindings.mcp.cloudflare.com/mcp"
+      ]
+    },
+    "task-manager": {
+      "command": "node",
+      "args": [
+        "task-manager-mcp-server.js"
+      ],
+      "env": {
+        "CLOUDFLARE_ACCOUNT_ID": "${CLOUDFLARE_ACCOUNT_ID}",
+        "CLOUDFLARE_D1_DATABASE_ID": "${CLOUDFLARE_D1_DATABASE_ID}",
+        "CLOUDFLARE_API_TOKEN": "${CLOUDFLARE_API_TOKEN}"
+      }
+    }
+  }
+}

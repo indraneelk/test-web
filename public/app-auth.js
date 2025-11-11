@@ -254,6 +254,39 @@ function setupEventListeners() {
         }
     });
 
+    // Event delegation for task cards and checkboxes (better mobile support)
+    document.addEventListener('click', (e) => {
+        // Handle checkbox clicks
+        const checkbox = e.target.closest('.task-checkbox');
+        if (checkbox) {
+            e.preventDefault();
+            e.stopPropagation();
+            const taskId = checkbox.dataset.taskId;
+            const isCompleted = checkbox.dataset.completed === 'true';
+            quickCompleteTask(taskId, !isCompleted);
+            return;
+        }
+
+        // Handle task card clicks (but not if clicking on interactive elements)
+        const taskCard = e.target.closest('.task-card-compact');
+        if (taskCard && !e.target.closest('.task-checkbox')) {
+            const taskId = taskCard.dataset.taskId;
+            viewTaskDetails(taskId);
+        }
+    });
+
+    // Handle touch events separately for better mobile responsiveness
+    document.addEventListener('touchend', (e) => {
+        const checkbox = e.target.closest('.task-checkbox');
+        if (checkbox) {
+            e.preventDefault();
+            e.stopPropagation();
+            const taskId = checkbox.dataset.taskId;
+            const isCompleted = checkbox.dataset.completed === 'true';
+            quickCompleteTask(taskId, !isCompleted);
+        }
+    }, { passive: false });
+
     // Color preset buttons
     document.querySelectorAll('.color-preset').forEach(btn => {
         btn.addEventListener('click', (e) => {
@@ -747,11 +780,13 @@ function createTaskCard(task) {
     }
 
     return `
-        <div class="task-card-compact ${task.status}" onclick="viewTaskDetails('${task.id}')" style="border-left-color: ${projectColor};">
+        <div class="task-card-compact ${task.status}" data-task-id="${task.id}" style="border-left-color: ${projectColor};">
             ${showPriorityTriangle ? `<div class="priority-triangle" style="border-color: transparent ${priorityColor} transparent transparent;" title="Priority: ${priority}"></div>` : ''}
             <div class="task-card-main">
                 <button class="task-checkbox ${isCompleted ? 'checked' : ''}"
-                        onclick="event.stopPropagation(); quickCompleteTask('${task.id}', ${!isCompleted})"
+                        data-task-id="${task.id}"
+                        data-completed="${isCompleted}"
+                        type="button"
                         title="${isCompleted ? 'Mark as incomplete' : 'Mark as complete'}">
                     ${isCompleted ? '<span class="checkmark">✓</span>' : ''}
                 </button>
