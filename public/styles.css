@@ -869,7 +869,7 @@ body {
 
 .task-card-main {
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     gap: 0.75rem;
 }
 
@@ -886,11 +886,14 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 0;
-    margin-top: 2px;
+    /* Expand touch area to 44px (20px + 12px padding on each side) */
+    padding: 12px;
+    margin: -10px;
+    margin-right: 2px;
     touch-action: manipulation;
     -webkit-tap-highlight-color: transparent;
     user-select: none;
+    position: relative;
 }
 
 @media (hover: hover) {
@@ -908,6 +911,21 @@ body {
 .task-checkbox.checked {
     background-color: var(--success-color);
     border-color: var(--success-color);
+}
+
+.task-checkbox.updating {
+    opacity: 0.7;
+    animation: pulse-checkbox 0.8s ease-in-out infinite;
+    pointer-events: none;
+}
+
+@keyframes pulse-checkbox {
+    0%, 100% {
+        opacity: 0.7;
+    }
+    50% {
+        opacity: 0.9;
+    }
 }
 
 .task-checkbox .checkmark {

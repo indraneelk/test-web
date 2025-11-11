@@ -887,6 +887,13 @@ function filterTasks() {
         });
     }
 
+    // Final sort: Always put pending tasks before completed tasks
+    filtered.sort((a, b) => {
+        const aCompleted = a.status === 'completed' ? 1 : 0;
+        const bCompleted = b.status === 'completed' ? 1 : 0;
+        return aCompleted - bCompleted;
+    });
+
     return filtered;
 }
 
@@ -1291,7 +1298,20 @@ async function quickCompleteTask(event, id, checked) {
 
     const newStatus = checked ? 'completed' : 'pending';
 
+    // Store original state for rollback
+    const originalStatus = task.status;
+
+    // OPTIMISTIC UPDATE: Update local state immediately
+    task.status = newStatus;
+
+    // Add visual indicator for in-flight request
+    checkbox.classList.add('updating');
+
+    // Re-render UI immediately with optimistic state
+    updateUI();
+
     try {
+        // Send API request in background
         const response = await authFetch(`${API_TASKS}/${id}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
@@ -1300,15 +1320,38 @@ async function quickCompleteTask(event, id, checked) {
 
         if (!response.ok) throw new Error('Failed to update task');
 
-        await loadTasks();
-        updateUI();
+        // Success: Update with server response to ensure consistency
+        const updatedTask = await response.json();
+        const taskIndex = tasks.findIndex(t => t.id === id);
+        if (taskIndex !== -1) {
+            tasks[taskIndex] = updatedTask;
+        }
 
+        // Remove visual indicator (no re-render needed, optimistic state is correct)
+        checkbox.classList.remove('updating');
+
+        // Celebrate on completion
         if (newStatus === 'completed') {
             celebrate();
             showSuccess('🎉 Awesome! Task completed!');
         }
+
+        // No updateUI() call here - optimistic update is already showing correct state
+
     } catch (error) {
-        showError('Failed to update task');
+        // ROLLBACK: Revert to original state on failure
+        console.error('Task update failed:', error);
+        task.status = originalStatus;
+
+        // Remove visual indicator
+        checkbox.classList.remove('updating');
+
+        // Re-render with original state
+        updateUI();
+
+        // Show error to user
+        showError('Failed to update task. Please try again.');
+
     } finally {
         checkbox.dataset.loading = 'false';
     }

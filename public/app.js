@@ -272,6 +272,13 @@ function filterTasks() {
         );
     }
 
+    // Sort: Always put pending tasks before completed tasks
+    filteredTasks.sort((a, b) => {
+        const aCompleted = a.status === 'completed' ? 1 : 0;
+        const bCompleted = b.status === 'completed' ? 1 : 0;
+        return aCompleted - bCompleted;
+    });
+
     renderTasks(filteredTasks);
 }
 
@@ -399,9 +406,27 @@ async function quickCompleteTask(event, id, checked) {
     const task = tasks.find(t => t.id === id);
     if (!task) return;
 
+    // Prevent multiple clicks
+    const checkbox = event.target.closest('.task-checkbox');
+    if (checkbox && checkbox.dataset.loading === 'true') return;
+    if (checkbox) checkbox.dataset.loading = 'true';
+
     const newStatus = checked ? 'completed' : 'pending';
 
+    // Store original state for rollback
+    const originalStatus = task.status;
+
+    // OPTIMISTIC UPDATE: Update local state immediately
+    task.status = newStatus;
+
+    // Add visual indicator for in-flight request
+    if (checkbox) checkbox.classList.add('updating');
+
+    // Re-render UI immediately with optimistic state
+    renderTasks();
+
     try {
+        // Send API request in background
         const response = await fetch(`${API_URL}/${id}`, {
             method: 'PUT',
             headers: {
@@ -417,15 +442,40 @@ async function quickCompleteTask(event, id, checked) {
             throw new Error('Failed to update task');
         }
 
-        await loadTasks();
+        // Success: Update with server response to ensure consistency
+        const updatedTask = await response.json();
+        const taskIndex = tasks.findIndex(t => t.id === id);
+        if (taskIndex !== -1) {
+            tasks[taskIndex] = updatedTask;
+        }
 
+        // Remove visual indicator (no re-render needed, optimistic state is correct)
+        if (checkbox) checkbox.classList.remove('updating');
+
+        // Celebrate on completion
         if (newStatus === 'completed') {
             celebrate();
             showSuccess('🎉 Awesome! Task completed!');
         }
+
+        // No renderTasks() call here - optimistic update is already showing correct state
+
     } catch (error) {
-        console.error('Error updating task:', error);
+        // ROLLBACK: Revert to original state on failure
+        console.error('Task update failed:', error);
+        task.status = originalStatus;
+
+        // Remove visual indicator
+        if (checkbox) checkbox.classList.remove('updating');
+
+        // Re-render with original state
+        renderTasks();
+
+        // Show error to user
         showError('Failed to update task. Please try again.');
+
+    } finally {
+        if (checkbox) checkbox.dataset.loading = 'false';
     }
 }
 
