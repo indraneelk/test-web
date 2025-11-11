@@ -966,7 +966,7 @@ function createTaskCard(task) {
             ${showPriorityTriangle ? `<div class="priority-triangle" style="border-color: transparent ${priorityColor} transparent transparent;" title="Priority: ${priority}"></div>` : ''}
             <div class="task-card-main">
                 <button class="task-checkbox ${isCompleted ? 'checked' : ''}"
-                        onclick="event.stopPropagation(); quickCompleteTask('${task.id}', ${!isCompleted})"
+                        onclick="quickCompleteTask(event, '${task.id}', ${!isCompleted})"
                         title="${isCompleted ? 'Mark as incomplete' : 'Mark as complete'}">
                     ${isCompleted ? '<span class="checkmark">✓</span>' : ''}
                 </button>
@@ -1278,7 +1278,9 @@ async function handleTaskSubmit(e) {
 }
 
 // Quick complete task
-async function quickCompleteTask(id, checked) {
+async function quickCompleteTask(event, id, checked) {
+    event.stopPropagation();
+
     const task = tasks.find(t => t.id === id);
     if (!task) return;
 

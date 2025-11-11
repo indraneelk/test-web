@@ -204,7 +204,7 @@ function createTaskCard(task) {
         <div class="task-card ${task.status}">
             <div class="task-header">
                 <div class="task-checkbox ${isCompleted ? 'checked' : ''}"
-                     onclick="quickCompleteTask('${task.id}', ${!isCompleted})"
+                     onclick="quickCompleteTask(event, '${task.id}', ${!isCompleted})"
                      title="${isCompleted ? 'Mark as incomplete' : 'Mark as complete'}">
                 </div>
                 <div class="task-title-section">
@@ -393,7 +393,9 @@ document.addEventListener('keydown', (e) => {
 });
 
 // Quick complete task (from checkbox in card)
-async function quickCompleteTask(id, checked) {
+async function quickCompleteTask(event, id, checked) {
+    event.stopPropagation();
+
     const task = tasks.find(t => t.id === id);
     if (!task) return;
 
