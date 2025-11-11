@@ -2370,7 +2370,7 @@ Return ONLY valid JSON, no other text.`;
                     const tools = [
                         {
                             name: 'query_tasks',
-                            description: 'Query tasks from the database. Only returns tasks the user has access to (assigned to them or in their projects). Use this to answer questions about tasks, find specific tasks, check statuses, priorities, due dates, etc. When user asks about "my tasks" or "my work", set assigned_to_me=true.',
+                            description: 'Query tasks from the database. Only returns tasks the user has access to (assigned to them or in their projects). Use this to answer questions about tasks, find specific tasks, check statuses, priorities, due dates, etc.',
                             input_schema: {
                                 type: 'object',
                                 properties: {
@@ -2378,7 +2378,6 @@ Return ONLY valid JSON, no other text.`;
                                         type: 'object',
                                         description: 'Optional filters to apply',
                                         properties: {
-                                            assigned_to_me: { type: 'boolean', description: 'If true, only return tasks assigned to the current user. Use this when user asks about "my tasks" or "my work".' },
                                             status: { type: 'string', enum: ['pending', 'completed'], description: 'Filter by task status' },
                                             priority: { type: 'string', enum: ['high', 'medium', 'low', 'none'], description: 'Filter by priority' },
                                             project_id: { type: 'string', description: 'Filter by specific project ID' },
@@ -2433,19 +2432,8 @@ Return ONLY valid JSON, no other text.`;
                             const { filters = {}, limit = 50 } = toolInput;
 
                             // Build WHERE clause with security constraints
-                            let conditions = [];
-                            let params = [];
-
-                            // Handle "my tasks" filter (assigned_to_me)
-                            if (filters.assigned_to_me) {
-                                // Only tasks assigned to the user
-                                conditions.push('t.assigned_to_id = ?');
-                                params.push(user.id);
-                            } else {
-                                // All accessible tasks (assigned to user OR in their projects)
-                                conditions.push('(t.assigned_to_id = ? OR t.project_id IN (' + projectIds.map(() => '?').join(',') + '))');
-                                params.push(user.id, ...projectIds);
-                            }
+                            const conditions = ['(t.assigned_to_id = ? OR t.project_id IN (' + projectIds.map(() => '?').join(',') + '))'];
+                            const params = [user.id, ...projectIds];
 
                             if (filters.status) {
                                 conditions.push('t.status = ?');
@@ -2572,28 +2560,11 @@ Key information:
 - User Name: ${user.name || user.email}
 - Today's date: ${new Date().toISOString().split('T')[0]}
 
-Important context about task queries:
-- When the user asks about "my tasks" or "my work", they mean tasks assigned to them (assigned_to_id = user's ID)
-- The user has access to tasks in two ways: (1) tasks assigned to them, (2) tasks in projects they are members of
-- Always filter for assigned_to_id when user asks about "my" tasks specifically
-
 When answering questions:
 1. Use the tools to get up-to-date information from the database
 2. Be concise and helpful in your responses
 3. Format dates in a human-readable way
-4. When listing tasks, include relevant details like status, priority, due date, and project
-
-CRITICAL: Always separate pending tasks from completed tasks in your responses:
-- **Pending tasks** are the priority - list these first and in detail
-- **Completed tasks** are less important - mention these separately at the end, or just provide a count
-- Never mix pending and completed tasks in the same list
-- Example format:
-  "You have 3 pending tasks:
-   - Task 1 (high priority, due tomorrow)
-   - Task 2 (medium priority, due next week)
-   - Task 3 (no due date)
-
-   You also have 5 completed tasks."`,
+4. When listing tasks, include relevant details like status, priority, due date, and project`,
                                 messages,
                                 tools
                             })
@@ -2670,6 +2641,132 @@ CRITICAL: Always separate pending tasks from completed tasks in your responses:
                             answer: 'I apologize, but I need more iterations to complete this request. Please try asking in a simpler way.'
                         }
                     };
+                }
+
+                throw new Error(`Unknown path: ${path}`);
+            };
+
+            let responseData;
+
+            // Route to appropriate command handler
+            switch (name) {
+                case 'tasks':
+                        // Step 2: Parse task creation request
+                        const taskData = await parseTaskCreation(input, projects, users, env.ANTHROPIC_API_KEY);
+                        console.log('[Claude Smart] Parsed task data:', taskData);
+
+                        // Step 3: Create task using business logic for consistency
+                        const dataService = createDataService(env.DB);
+                        const createdTask = await businessLogic.createTask(dataService, user.id, {
+                            name: taskData.title,
+                            description: taskData.description,
+                            date: taskData.dueDate,
+                            priority: taskData.priority,
+                            project_id: taskData.projectId,
+                            assigned_to_id: taskData.assignedToId || user.id // Default to current user if no assignee
+                        });
+
+                        // Log activity
+                        await logActivity(env.DB, user.id, 'task_created', `Created task "${createdTask.name}" via Discord`, createdTask.id, createdTask.project_id);
+                        await broadcastChange(env, 'task-created', { taskId: createdTask.id, projectId: createdTask.project_id });
+
+                        // Get assigned user name for Discord response
+                        const assignedUser = await env.DB.prepare(
+                            'SELECT username, email FROM users WHERE id = ?'
+                        ).bind(createdTask.assigned_to_id).first();
+
+                        // Build success message
+                        const wasAutoAssigned = !taskData.assignedToId;
+                        const successMessage = wasAutoAssigned
+                            ? `Task "${taskData.title}" created and assigned to you!`
+                            : `Task "${taskData.title}" created successfully!`;
+
+                        const taskWithAssignee = {
+                            ...createdTask,
+                            assigned_to_name: assignedUser?.username || assignedUser?.email || 'Unknown'
+                        };
+
+                        return {
+                            data: {
+                                type: 'task_created',
+                                task: taskWithAssignee,
+                                message: successMessage
+                            }
+                        };
+
+                    } else if (intent.intent === 'edit_task') {
+                        // For now, return a helpful message that edit is not yet supported
+                        // TODO: Implement task editing logic
+                        return {
+                            data: {
+                                type: 'answer',
+                                answer: "Task editing via natural language is coming soon! For now, please use the task management interface to edit tasks."
+                            }
+                        };
+
+                    } else {
+                        // Answer the question using context - filter out null/undefined tasks and properties
+                        const tasksContext = tasks
+                            .filter(t => t && t.name)
+                            .map(t =>
+                                `- ${t.name} (${t.status || 'no status'}, priority: ${t.priority || 'none'}, due: ${t.date || 'no date'})`
+                            ).join('\n');
+
+                        const answer = await retryWithBackoff(async (attempt) => {
+                            // Alternate between Sonnet and Haiku: Even attempts use Sonnet, odd use Haiku
+                            const model = (attempt % 2 === 0) ? CLAUDE_SONNET : CLAUDE_HAIKU;
+                            console.log(`[Claude API] Attempt ${attempt + 1} using ${model}`);
+
+                            const answerResponse = await fetch('https://api.anthropic.com/v1/messages', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    'x-api-key': env.ANTHROPIC_API_KEY,
+                                    'anthropic-version': '2023-06-01'
+                                },
+                                body: JSON.stringify({
+                                    model: model,
+                                    max_tokens: 1024,
+                                    messages: [{
+                                        role: 'user',
+                                        content: `You are a task management assistant. Here are the user's current tasks:
+
+${tasksContext || 'No tasks yet.'}
+
+User question: ${input}
+
+Please provide a helpful response about their tasks.`
+                                    }]
+                                })
+                            });
+
+                            if (!answerResponse.ok) {
+                                const error = await answerResponse.text();
+                                throw new Error(`Claude API error: ${answerResponse.status} - ${error}`);
+                            }
+
+                            const answerData = await answerResponse.json();
+
+                            // Safely extract text content with null checks
+                            if (!answerData || !answerData.content || !Array.isArray(answerData.content) || answerData.content.length === 0) {
+                                throw new Error('Invalid response from Claude API: missing content');
+                            }
+
+                            const answerText = answerData.content[0]?.text;
+                            if (!answerText) {
+                                throw new Error('Invalid response from Claude API: empty text content');
+                            }
+
+                            return answerText;
+                        });
+
+                        return {
+                            data: {
+                                type: 'answer',
+                                answer: answer
+                            }
+                        };
+                    }
                 }
 
                 throw new Error(`Unknown path: ${path}`);
