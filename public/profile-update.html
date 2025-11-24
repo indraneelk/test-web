@@ -630,11 +630,6 @@
 
         <form id="passwordForm">
           <div class="input-group">
-            <label for="currentPassword">Current Password</label>
-            <input id="currentPassword" type="password" placeholder="Enter current password" required>
-          </div>
-
-          <div class="input-group">
             <label for="newPassword">New Password</label>
             <input id="newPassword" type="password" placeholder="Enter new password" required>
             <small class="form-help">At least 8 characters recommended</small>
@@ -830,7 +825,6 @@
     document.getElementById('passwordForm').addEventListener('submit', async (e) => {
       e.preventDefault();
 
-      const currentPassword = document.getElementById('currentPassword').value;
       const newPassword = document.getElementById('newPassword').value;
       const confirmPassword = document.getElementById('confirmPassword').value;
 
@@ -845,13 +839,18 @@
       }
 
       try {
-        const resp = await authFetch('/api/auth/change-password', {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({ currentPassword, newPassword })
+        const client = await ensureSupabase();
+        if (!client) {
+          throw new Error('Unable to connect to authentication service');
+        }
+
+        const { error } = await client.auth.updateUser({
+          password: newPassword
         });
-        const data = await resp.json();
-        if (!resp.ok) throw new Error(data.error || 'Failed to update password');
+
+        if (error) {
+          throw new Error(error.message);
+        }
 
         showSuccess('password', '✓ Password updated successfully');
         document.getElementById('passwordForm').reset();
