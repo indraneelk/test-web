@@ -169,15 +169,7 @@ async function updateTask(dataService, userId, taskId, updates) {
     if (description !== undefined) updateData.description = sanitizeString(description, VALIDATION.TASK_DESCRIPTION_MAX);
     if (date !== undefined) updateData.date = date;
     if (assigned_to_id !== undefined) updateData.assigned_to_id = (assigned_to_id && assigned_to_id.trim() !== '') ? assigned_to_id : null;
-    if (status !== undefined) {
-        updateData.status = status;
-        // Set completed_at when marking as completed, clear it otherwise
-        if (status === 'completed') {
-            updateData.completed_at = getCurrentTimestamp();
-        } else {
-            updateData.completed_at = null;
-        }
-    }
+    if (status !== undefined) updateData.status = status;
     if (priority !== undefined) updateData.priority = priority;
     if (project_id !== undefined) updateData.project_id = project_id;
 

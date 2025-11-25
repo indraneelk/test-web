@@ -1476,6 +1476,32 @@ async function handleGetTasks(request, env) {
          ORDER BY t.date ASC`
     ).bind(user.id, user.id).all();
 
+    // Auto-archive tasks that have been completed for 2+ days
+    const now = Date.now();
+    const twoDaysInMs = 2 * 24 * 60 * 60 * 1000;
+    const nowISO = new Date().toISOString();
+
+    for (const task of results) {
+        // Backfill completed_at for tasks that are completed but missing the timestamp
+        if (task.status === 'completed' && !task.completed_at) {
+            await env.DB.prepare('UPDATE tasks SET completed_at = ?, updated_at = ? WHERE id = ?')
+                .bind(nowISO, nowISO, task.id).run();
+            task.completed_at = nowISO;
+        }
+
+        // Auto-archive completed tasks older than 2 days
+        if (task.status === 'completed' && task.completed_at && !task.archived) {
+            const completedDate = new Date(task.completed_at).getTime();
+            const daysSinceCompletion = now - completedDate;
+
+            if (daysSinceCompletion >= twoDaysInMs) {
+                await env.DB.prepare('UPDATE tasks SET archived = 1, updated_at = ? WHERE id = ?')
+                    .bind(nowISO, task.id).run();
+                task.archived = 1; // Update in memory for this response
+            }
+        }
+    }
+
     return jsonResponse(results);
 }
 

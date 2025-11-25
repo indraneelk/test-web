@@ -47,7 +47,8 @@
       "Bash(timeout 30 npx wrangler pages deployment tail:*)",
       "Bash(pkill:*)",
       "Bash(GUILD_ID=1326718373978963988 node register-guild-commands.js:*)",
-      "Bash(npm run dev:*)"
+      "Bash(npm run dev:*)",
+      "Bash(npm run sync:shared:*)"
     ],
     "deny": [],
     "ask": []

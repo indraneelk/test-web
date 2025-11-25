@@ -1186,16 +1186,16 @@ app.get('/api/tasks', requireAuth, async (req, res) => {
         const projects = await dataService.getProjects();
         const userId = req.userId;
 
-        // Auto-archive tasks that have been completed for 7+ days
+        // Auto-archive tasks that have been completed for 2+ days
         const now = new Date();
-        const sevenDaysInMs = 7 * 24 * 60 * 60 * 1000;
+        const twoDaysInMs = 2 * 24 * 60 * 60 * 1000;
 
         for (const task of tasks) {
             if (task.status === 'completed' && task.completed_at && !task.archived) {
                 const completedDate = new Date(task.completed_at);
                 const daysSinceCompletion = now - completedDate;
 
-                if (daysSinceCompletion >= sevenDaysInMs) {
+                if (daysSinceCompletion >= twoDaysInMs) {
                     await dataService.updateTask(task.id, { ...task, archived: true });
                     task.archived = true; // Update in memory for this response
                 }
