@@ -189,8 +189,11 @@ function renderUsers() {
     }
 
     container.innerHTML = users.map(function(user) {
-        var initials = (user.name || user.username || '?')
-            .split(/\s+/).map(function(w) { return w[0]; }).slice(0, 2).join('').toUpperCase();
+        var initials = user.initials
+            ? user.initials.toUpperCase()
+            : (user.name || user.username || '?').trim().split(/\s+/).reduce(function(acc, w, i, arr) {
+                return i === 0 || i === arr.length - 1 ? acc + w[0] : acc;
+              }, '').toUpperCase().substring(0, 2);
         return '<div class="user-card">' +
             '<div class="user-info">' +
                 '<div class="user-header">' +

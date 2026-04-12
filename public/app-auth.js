@@ -219,18 +219,14 @@ function updateUserInfo() {
     document.getElementById('userName').textContent = currentUser.username || currentUser.name;
     const avatar = document.getElementById('userAvatar');
     if (avatar) {
-        const initials = (currentUser.username || currentUser.name)
-            .split(/\s+/).map(w => w[0]).slice(0,2).join('').toUpperCase();
-        avatar.textContent = initials;
+        avatar.textContent = getInitials(currentUser);
         if (currentUser.color) {
             avatar.style.backgroundColor = currentUser.color;
         }
     }
     const mobileAvatar = document.getElementById('mobileUserAvatar');
     if (mobileAvatar) {
-        const initials = (currentUser.username || currentUser.name)
-            .split(/\s+/).map(w => w[0]).slice(0,2).join('').toUpperCase();
-        mobileAvatar.textContent = initials;
+        mobileAvatar.textContent = getInitials(currentUser);
         if (currentUser.color) {
             mobileAvatar.style.backgroundColor = currentUser.color;
         }
@@ -1590,8 +1586,7 @@ function renderMembersList(project) {
         const showLeaveButton = isCurrentUser && !isOwner;
         const showRemoveButton = isOwner && !isCurrentUser;
 
-        const initials = (member.username || member.name || '?')
-            .split(/\s+/).map(w => w[0]).slice(0,2).join('').toUpperCase();
+        const initials = getInitials(member);
         const avatarStyle = member.color ? 'style="background-color: ' + member.color + ';"' : '';
 
         return '<div class="member-item">' +
@@ -1941,6 +1936,13 @@ function createConfetti(x, y) {
 }
 
 // UTILITY FUNCTIONS
+function getInitials(user) {
+    if (user.initials) return user.initials.toUpperCase();
+    const name = user.name || user.username || '?';
+    const parts = name.trim().split(/\s+/);
+    return (parts.length === 1 ? parts[0].substring(0, 2) : parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
 function escapeHtml(text) {
     const map = {
         '&': '&amp;',
