@@ -1,319 +1,318 @@
-// Admin Panel - User Invitation Management
+// Admin Panel — rewritten to use Supabase directly + Edge Functions
+// All user data is passed through escapeHtml() before innerHTML insertion (XSS-safe)
 
-// Configuration
-const ADMIN_EMAIL = 'indraneel.kasmalkar@gmail.com';
+const SUPABASE_FUNCTIONS_URL = 'https://tfltkqgxxceykzbjuziv.supabase.co/functions/v1';
 
 let invitations = [];
 let users = [];
 let currentFilter = 'all';
-let currentView = 'invitations'; // 'invitations' or 'users'
+let currentView = 'invitations';
+let supaClient = null;
+let adminJwt = null;
 
-// Check admin access on load
+function getClient() {
+    if (!supaClient) supaClient = window.getSupabaseClient();
+    return supaClient;
+}
+
+// ── Auth & admin check ──────────────────────────────────────────────────────
+
 async function checkAdminAccess() {
     try {
-        const response = await fetch('/api/auth/me', { credentials: 'include' });
-        if (!response.ok) {
+        const client = getClient();
+        const { data: { session }, error: sessionError } = await client.auth.getSession();
+
+        if (sessionError || !session) {
             window.location.href = '/login.html';
             return false;
         }
-        const data = await response.json();
-        const user = data.user;
 
-        // Check if super admin
-        if (!user.email || user.email.toLowerCase() !== ADMIN_EMAIL) {
-            alert('Access denied. This page is for administrators only.');
+        adminJwt = session.access_token;
+
+        const { data: profile, error: profileError } = await client
+            .from('profiles')
+            .select('is_admin, name')
+            .eq('id', session.user.id)
+            .single();
+
+        if (profileError || !profile?.is_admin) {
             window.location.href = '/';
             return false;
         }
 
-        // Show admin content only after access is verified
         document.querySelector('.admin-container').style.display = 'block';
         return true;
-    } catch (error) {
-        console.error('Auth check failed:', error);
+    } catch (err) {
+        console.error('Admin access check failed:', err);
         window.location.href = '/login.html';
         return false;
     }
 }
 
-// Fetch invitations
+// ── Invitations ─────────────────────────────────────────────────────────────
+
 async function loadInvitations() {
     try {
-        const response = await fetch('/api/admin/invitations', { credentials: 'include' });
-        if (!response.ok) throw new Error('Failed to load invitations');
+        const client = getClient();
+        const { data, error } = await client
+            .from('invitations')
+            .select('id, email, status, created_at, joined_at')
+            .order('created_at', { ascending: false });
 
-        const data = await response.json();
-        invitations = data.invitations;
+        if (error) throw new Error(error.message);
+
+        invitations = data || [];
         renderInvitations();
-    } catch (error) {
-        console.error('Load invitations error:', error);
-        showStatus('Failed to load invitations', 'error');
-        document.getElementById('invitationsList').innerHTML = '<div class="error-state">Failed to load invitations</div>';
+    } catch (err) {
+        console.error('Load invitations error:', err);
+        document.getElementById('invitationsList').textContent = 'Failed to load invitations: ' + err.message;
     }
 }
 
-// Render invitations table
 function renderInvitations() {
     const container = document.getElementById('invitationsList');
-
-    const filtered = invitations.filter(inv => {
-        if (currentFilter === 'all') return true;
-        return inv.status === currentFilter;
-    });
+    const filtered = invitations.filter(inv =>
+        currentFilter === 'all' || inv.status === currentFilter
+    );
 
     if (filtered.length === 0) {
-        container.innerHTML = `
-            <div class="empty-state">
-                <p>No ${currentFilter === 'all' ? '' : currentFilter} invitations</p>
-            </div>
-        `;
+        container.innerHTML = '<div class="empty-state"><p>No ' +
+            escapeHtml(currentFilter === 'all' ? '' : currentFilter) + ' invitations</p></div>';
         return;
     }
 
-    container.innerHTML = filtered.map(inv => `
-        <div class="invitation-card ${inv.status}">
-            <div class="invitation-info">
-                <div class="email">${escapeHtml(inv.email)}</div>
-                <div class="meta">
-                    <span class="status-badge status-${inv.status}">${inv.status}</span>
-                    <span class="date">Invited: ${formatDate(inv.invited_at)}</span>
-                    ${inv.joined_at ? `<span class="date">Joined: ${formatDate(inv.joined_at)}</span>` : ''}
-                </div>
-                ${inv.user_name ? `<div class="user-info">✓ Registered as: ${escapeHtml(inv.user_name)} (@${escapeHtml(inv.username)})</div>` : ''}
-            </div>
-            <div class="invitation-actions">
-                ${inv.status === 'pending' ? `
-                    <button class="btn-resend" onclick="resendInvitation('${escapeHtml(inv.email)}')">
-                        Resend
-                    </button>
-                ` : ''}
-            </div>
-        </div>
-    `).join('');
+    container.innerHTML = filtered.map(inv =>
+        '<div class="invitation-card ' + escapeHtml(inv.status) + '">' +
+            '<div class="invitation-info">' +
+                '<div class="email">' + escapeHtml(inv.email) + '</div>' +
+                '<div class="meta">' +
+                    '<span class="status-badge status-' + escapeHtml(inv.status) + '">' + escapeHtml(inv.status) + '</span>' +
+                    '<span class="date">Invited: ' + escapeHtml(formatDate(inv.created_at)) + '</span>' +
+                    (inv.joined_at ? '<span class="date">Joined: ' + escapeHtml(formatDate(inv.joined_at)) + '</span>' : '') +
+                '</div>' +
+            '</div>' +
+            '<div class="invitation-actions">' +
+                (inv.status === 'pending'
+                    ? '<button class="btn-resend" onclick="resendInvitation(\'' + escapeHtml(inv.email) + '\')">Resend</button>'
+                    : '') +
+            '</div>' +
+        '</div>'
+    ).join('');
 }
 
-// Send invitation
 async function sendInvitation(email) {
     const submitBtn = document.getElementById('submitBtn');
-    const originalText = submitBtn.textContent;
+    const original = submitBtn.textContent;
     submitBtn.disabled = true;
     submitBtn.textContent = 'Sending...';
 
     try {
-        const response = await fetch('/api/admin/invitations', {
+        const res = await fetch(SUPABASE_FUNCTIONS_URL + '/admin-invite', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer ' + adminJwt
+            },
             body: JSON.stringify({ email })
         });
 
-        const data = await response.json();
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to send invitation');
 
-        if (!response.ok) {
-            throw new Error(data.error || 'Failed to send invitation');
-        }
-
-        showStatus(`✉️ Invitation sent to ${email}!`, 'success');
+        showStatus('Invitation sent to ' + email + '!', 'success');
         document.getElementById('inviteForm').reset();
-        loadInvitations(); // Refresh list
-
-    } catch (error) {
-        showStatus(error.message, 'error');
+        loadInvitations();
+    } catch (err) {
+        showStatus(err.message, 'error');
     } finally {
         submitBtn.disabled = false;
-        submitBtn.textContent = originalText;
+        submitBtn.textContent = original;
     }
 }
 
-// Resend invitation
 async function resendInvitation(email) {
-    try {
-        const response = await fetch(`/api/admin/invitations/${encodeURIComponent(email)}/resend`, {
-            method: 'POST',
-            credentials: 'include'
-        });
+    const res = await fetch(SUPABASE_FUNCTIONS_URL + '/admin-invite', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + adminJwt
+        },
+        body: JSON.stringify({ email })
+    });
 
-        const data = await response.json();
-
-        if (!response.ok) {
-            throw new Error(data.error || 'Failed to resend invitation');
-        }
-
-        showStatus(`✉️ Invitation resent to ${email}!`, 'success');
+    const data = await res.json();
+    if (!res.ok) {
+        showStatus(data.error || 'Failed to resend', 'error');
+    } else {
+        showStatus('Invitation resent to ' + email + '!', 'success');
         loadInvitations();
-
-    } catch (error) {
-        showStatus(error.message, 'error');
     }
 }
 
-// Status message
-function showStatus(message, type) {
-    const statusEl = document.getElementById('inviteStatus');
-    statusEl.textContent = message;
-    statusEl.className = `status-message ${type}`;
+// ── Users ────────────────────────────────────────────────────────────────────
 
-    setTimeout(() => {
-        statusEl.textContent = '';
-        statusEl.className = 'status-message';
-    }, 5000);
-}
-
-// Format date
-function formatDate(isoString) {
-    if (!isoString) return '';
-    const date = new Date(isoString);
-    return date.toLocaleDateString('en-US', {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
-    });
-}
-
-// Escape HTML to prevent XSS
-function escapeHtml(text) {
-    if (!text) return '';
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-}
-
-// ==================== USER MANAGEMENT ====================
-
-// Fetch all users
 async function loadUsers() {
     try {
-        const response = await fetch('/api/admin/users', { credentials: 'include' });
-        if (!response.ok) throw new Error('Failed to load users');
+        const client = getClient();
+        const { data, error } = await client
+            .from('profiles')
+            .select('id, name, username, email, color, is_admin, created_at')
+            .order('created_at', { ascending: true });
 
-        const data = await response.json();
-        users = data.users;
+        if (error) throw new Error(error.message);
+
+        users = data || [];
         renderUsers();
-    } catch (error) {
-        console.error('Load users error:', error);
-        showStatus('Failed to load users', 'error');
-        document.getElementById('usersList').innerHTML = '<div class="error-state">Failed to load users</div>';
+    } catch (err) {
+        console.error('Load users error:', err);
+        document.getElementById('usersList').textContent = 'Failed to load users: ' + err.message;
     }
 }
 
-// Render users table
 function renderUsers() {
     const container = document.getElementById('usersList');
 
     if (users.length === 0) {
-        container.innerHTML = `
-            <div class="empty-state">
-                <p>No users found</p>
-            </div>
-        `;
+        container.innerHTML = '<div class="empty-state"><p>No users found</p></div>';
         return;
     }
 
-    container.innerHTML = users.map(user => `
-        <div class="user-card">
-            <div class="user-info">
-                <div class="user-header">
-                    <div class="user-avatar" style="background-color: ${escapeHtml(user.color || '#9333ea')}">
-                        ${escapeHtml(user.initials || user.name.substring(0, 2).toUpperCase())}
-                    </div>
-                    <div class="user-details">
-                        <div class="user-name">${escapeHtml(user.name)}</div>
-                        <div class="user-username">@${escapeHtml(user.username)}</div>
-                        <div class="user-email">${escapeHtml(user.email)}</div>
-                    </div>
-                </div>
-                <div class="user-meta">
-                    ${user.is_admin ? '<span class="admin-badge">Admin</span>' : ''}
-                    <span class="task-count">${user.task_count || 0} tasks</span>
-                    <span class="date">Joined: ${formatDate(user.created_at)}</span>
-                </div>
-            </div>
-            <div class="user-actions">
-                ${user.email.toLowerCase() !== ADMIN_EMAIL.toLowerCase() ? `
-                    <button class="btn-delete" onclick="confirmDeleteUser('${escapeHtml(user.id)}', '${escapeHtml(user.name)}', '${escapeHtml(user.username)}')">
-                        Delete User
-                    </button>
-                ` : '<span style="color: #888;">Super Admin</span>'}
-            </div>
-        </div>
-    `).join('');
+    container.innerHTML = users.map(function(user) {
+        var initials = (user.name || user.username || '?')
+            .split(/\s+/).map(function(w) { return w[0]; }).slice(0, 2).join('').toUpperCase();
+        return '<div class="user-card">' +
+            '<div class="user-info">' +
+                '<div class="user-header">' +
+                    '<div class="user-avatar" style="background-color:' + escapeHtml(user.color || '#6366f1') + '">' +
+                        escapeHtml(initials) +
+                    '</div>' +
+                    '<div class="user-details">' +
+                        '<div class="user-name">' + escapeHtml(user.name || '—') + '</div>' +
+                        (user.username ? '<div class="user-username">@' + escapeHtml(user.username) + '</div>' : '') +
+                        '<div class="user-email">' + escapeHtml(user.email || '—') + '</div>' +
+                    '</div>' +
+                '</div>' +
+                '<div class="user-meta">' +
+                    (user.is_admin ? '<span class="admin-badge">Admin</span>' : '') +
+                    '<span class="date">Joined: ' + escapeHtml(formatDate(user.created_at)) + '</span>' +
+                '</div>' +
+            '</div>' +
+            '<div class="user-actions">' +
+                (!user.is_admin
+                    ? '<button class="btn-delete" onclick="confirmDeleteUser(\'' + escapeHtml(user.id) + '\',\'' + escapeHtml(user.name || user.email) + '\')">Remove</button>'
+                    : '<span style="color:#888;font-size:0.875rem;">You</span>') +
+            '</div>' +
+        '</div>';
+    }).join('');
 }
 
-// Confirm and delete user
-async function confirmDeleteUser(userId, name, username) {
-    const confirmed = confirm(
-        `Are you sure you want to delete user "${name}" (@${username})?\n\n` +
-        `This will:\n` +
-        `- Delete the user account\n` +
-        `- Unassign all their tasks\n` +
-        `- Delete their personal project folder and all tasks in it\n\n` +
-        `This action CANNOT be undone!`
+function confirmDeleteUser(userId, name) {
+    showConfirmModal(
+        'Remove user',
+        'Remove "' + name + '"? This deletes their account, unassigns their tasks, and removes their personal project. Cannot be undone.',
+        function() { deleteUser(userId, name); }
     );
+}
 
-    if (!confirmed) return;
-
+async function deleteUser(userId, name) {
     try {
-        const response = await fetch(`/api/admin/users/${userId}`, {
-            method: 'DELETE',
-            credentials: 'include'
+        const res = await fetch(SUPABASE_FUNCTIONS_URL + '/admin-delete-user', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer ' + adminJwt
+            },
+            body: JSON.stringify({ userId: userId })
         });
 
-        const data = await response.json();
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to remove user');
 
-        if (!response.ok) {
-            throw new Error(data.error || 'Failed to delete user');
-        }
-
-        showStatus(`✓ User "${name}" has been deleted successfully`, 'success');
-        loadUsers(); // Refresh list
-        loadInvitations(); // Also refresh invitations in case user was linked
-
-    } catch (error) {
-        showStatus(error.message, 'error');
+        showStatus('"' + name + '" has been removed', 'success');
+        loadUsers();
+        loadInvitations();
+    } catch (err) {
+        showStatus(err.message, 'error');
     }
 }
 
-// Switch between views
+// ── Confirmation modal ────────────────────────────────────────────────────────
+
+function showConfirmModal(title, message, onConfirm) {
+    document.getElementById('confirmModalTitle').textContent = title;
+    document.getElementById('confirmModalMessage').textContent = message;
+    var okBtn = document.getElementById('confirmModalOkBtn');
+    var fresh = okBtn.cloneNode(true);
+    okBtn.parentNode.replaceChild(fresh, okBtn);
+    fresh.addEventListener('click', function() {
+        closeConfirmModal();
+        onConfirm();
+    });
+    document.getElementById('confirmModal').style.display = 'flex';
+}
+
+function closeConfirmModal() {
+    document.getElementById('confirmModal').style.display = 'none';
+}
+
+// ── View switching ───────────────────────────────────────────────────────────
+
 function switchView(view) {
     currentView = view;
-
-    // Update view buttons
-    document.querySelectorAll('.view-tab').forEach(tab => {
+    document.querySelectorAll('.view-tab').forEach(function(tab) {
         tab.classList.toggle('active', tab.dataset.view === view);
     });
+    document.getElementById('invitationsSection').style.display =
+        view === 'invitations' ? 'block' : 'none';
+    document.getElementById('usersSection').style.display =
+        view === 'users' ? 'block' : 'none';
 
-    // Show/hide sections
-    document.getElementById('invitationsSection').style.display = view === 'invitations' ? 'block' : 'none';
-    document.getElementById('usersSection').style.display = view === 'users' ? 'block' : 'none';
-
-    // Load data if needed
-    if (view === 'users' && users.length === 0) {
-        loadUsers();
-    }
+    if (view === 'users' && users.length === 0) loadUsers();
 }
 
-// Event listeners
-document.addEventListener('DOMContentLoaded', async () => {
-    const hasAccess = await checkAdminAccess();
-    if (!hasAccess) return;
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+function showStatus(message, type) {
+    var el = document.getElementById('inviteStatus');
+    el.textContent = message;
+    el.className = 'status-message ' + type;
+    setTimeout(function() { el.textContent = ''; el.className = 'status-message'; }, 5000);
+}
+
+function formatDate(iso) {
+    if (!iso) return '';
+    return new Date(iso).toLocaleDateString('en-US', {
+        year: 'numeric', month: 'short', day: 'numeric',
+        hour: '2-digit', minute: '2-digit'
+    });
+}
+
+function escapeHtml(text) {
+    if (text === null || text === undefined) return '';
+    var div = document.createElement('div');
+    div.textContent = String(text);
+    return div.innerHTML;
+}
+
+// ── Boot ─────────────────────────────────────────────────────────────────────
+
+document.addEventListener('DOMContentLoaded', async function() {
+    var ok = await checkAdminAccess();
+    if (!ok) return;
 
     loadInvitations();
 
-    // Form submission
-    document.getElementById('inviteForm').addEventListener('submit', (e) => {
+    document.getElementById('inviteForm').addEventListener('submit', function(e) {
         e.preventDefault();
-        const email = document.getElementById('email').value.trim();
-        if (email) {
-            sendInvitation(email);
-        }
+        var email = document.getElementById('email').value.trim();
+        if (email) sendInvitation(email);
     });
 
-    // Filter tabs
-    document.querySelectorAll('.filter-tab').forEach(tab => {
-        tab.addEventListener('click', () => {
-            document.querySelectorAll('.filter-tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.filter-tab').forEach(function(tab) {
+        tab.addEventListener('click', function() {
+            document.querySelectorAll('.filter-tab').forEach(function(t) {
+                t.classList.remove('active');
+            });
             tab.classList.add('active');
             currentFilter = tab.dataset.filter;
             renderInvitations();

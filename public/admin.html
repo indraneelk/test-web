@@ -80,6 +80,22 @@
         </div>
     </div>
 
+    <!-- Confirmation modal -->
+    <div id="confirmModal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeConfirmModal()">
+      <div class="modal" style="max-width:420px;">
+        <div class="modal-header">
+          <h2 id="confirmModalTitle" class="modal-title">Are you sure?</h2>
+        </div>
+        <div class="modal-body">
+          <p id="confirmModalMessage" style="color:var(--text-secondary);margin:0 0 1.5rem;"></p>
+          <div style="display:flex;gap:0.75rem;justify-content:flex-end;">
+            <button class="btn btn-secondary" onclick="closeConfirmModal()">Cancel</button>
+            <button id="confirmModalOkBtn" class="btn btn-danger">Confirm</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <script src="/vendor/supabase.js"></script>
     <script src="auth-helper.js"></script>
     <script src="admin.js"></script>

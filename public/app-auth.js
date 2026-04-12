@@ -1,7 +1,6 @@
 // Task Manager Frontend — Supabase direct (no Express API)
 
 // Configuration
-const ADMIN_EMAIL = 'indraneel.kasmalkar@gmail.com';
 
 // Loading Spinner Control
 function updateLoadingText(text) {
@@ -101,9 +100,42 @@ function closeConfirmModal() {
     document.getElementById('confirmModal').style.display = 'none';
 }
 
+// Safe date formatter — returns null if invalid, avoids "Invalid Date" strings
+function formatDateSafe(iso, opts) {
+    if (!iso) return null;
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return null;
+    return d.toLocaleDateString('en-US', opts);
+}
+
 // Supabase client helper
 function ensureSupabase() {
     return window.getSupabaseClient ? window.getSupabaseClient() : null;
+}
+
+let _pollingInterval = null;
+let _visibilityHandler = null;
+
+function stopPolling() {
+    if (_pollingInterval !== null) {
+        clearInterval(_pollingInterval);
+        _pollingInterval = null;
+    }
+    if (_visibilityHandler !== null) {
+        document.removeEventListener('visibilitychange', _visibilityHandler);
+        _visibilityHandler = null;
+    }
+}
+
+function startPolling() {
+    stopPolling();
+    _visibilityHandler = async () => {
+        if (!document.hidden) await loadData();
+    };
+    document.addEventListener('visibilitychange', _visibilityHandler);
+    _pollingInterval = setInterval(async () => {
+        await loadData();
+    }, 60000);
 }
 
 // Initialize app
@@ -138,17 +170,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     } catch (_) {}
 
-    // Polling fallback (every 60 seconds)
-    setInterval(async () => {
-        await loadData();
-    }, 60000);
-
-    // Refetch when tab becomes visible
-    document.addEventListener('visibilitychange', async () => {
-        if (!document.hidden) {
-            await loadData();
-        }
-    });
+    startPolling();
 });
 
 // Check authentication via Supabase session
@@ -215,13 +237,14 @@ function updateUserInfo() {
     }
 
     const adminLink = document.getElementById('adminLink');
-    if (adminLink && currentUser.email && currentUser.email.toLowerCase() === ADMIN_EMAIL) {
+    if (adminLink && currentUser.is_admin) {
         adminLink.style.display = 'flex';
     }
 }
 
 // Logout
 async function logout() {
+    stopPolling();
     try {
         const client = ensureSupabase();
         if (client) {
@@ -853,12 +876,8 @@ function renderTasks(tasksToRender) {
 // Supabase schema: task.title, task.due_date, task.assigned_to
 function createTaskCard(task) {
     const dueDate = new Date(task.due_date);
-    const formattedDate = dueDate.toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric'
-    });
-
-    const isOverdue = new Date() > dueDate && task.status !== 'completed';
+    const formattedDate = formatDateSafe(task.due_date, { month: 'short', day: 'numeric' }) || 'No date';
+    const isOverdue = !isNaN(dueDate.getTime()) && new Date() > dueDate && task.status !== 'completed';
     const isCompleted = task.status === 'completed';
 
     const project = projects.find(p => p.id === task.project_id);
@@ -1068,11 +1087,11 @@ function viewTaskDetails(id) {
     const project = projects.find(p => p.id === task.project_id);
 
     const dueDate = new Date(task.due_date);
-    const formattedDate = dueDate.toLocaleDateString('en-US', {
+    const formattedDate = formatDateSafe(task.due_date, {
         year: 'numeric',
         month: 'long',
         day: 'numeric'
-    });
+    }) || 'No date';
 
     const priority = (typeof task.priority === 'string' ? task.priority : 'none').toLowerCase().trim();
     const priorityColors = { high: '#ef4444', medium: '#f59e0b', low: '#10b981' };
@@ -1235,17 +1254,9 @@ async function handleTaskSubmit(e) {
 
         closeTaskModal();
         closeTaskDetailsModal();
+        updateUI();
 
-        if (taskId) {
-            const idx = tasks.findIndex(t => t.id === taskId);
-            if (idx !== -1) tasks[idx] = { ...tasks[idx], ...taskData };
-            updateUI();
-        } else {
-            tasks.unshift(result);
-            renderTasks(filterTasks());
-            updateStats();
-            switchView('all');
-        }
+        await loadTasks();
 
         showSuccess(taskId ? 'Task updated successfully!' : 'Task created successfully!');
     } catch (error) {
