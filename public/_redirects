@@ -1,1 +1,2 @@
 /api/* https://team-task-manager.moovmyway.workers.dev/api/:splat 200
+/signup.html /login.html 301
