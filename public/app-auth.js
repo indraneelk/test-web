@@ -265,6 +265,13 @@ function setupEventListeners() {
     const userSettingsForm = document.getElementById('userSettingsForm');
     if (userSettingsForm) {
         userSettingsForm.addEventListener('submit', handleUserSettingsSubmit);
+        document.getElementById('profileName').addEventListener('input', function() {
+            const parts = this.value.trim().split(/\s+/);
+            const initials = parts.length === 1
+                ? parts[0].substring(0, 2)
+                : (parts[0][0] + parts[parts.length - 1][0]);
+            document.getElementById('profileInitials').value = initials.toUpperCase();
+        });
     }
 
     const desktopAvatar = document.getElementById('userAvatar');
@@ -464,9 +471,7 @@ async function openUserSettings() {
     }
     document.getElementById('userId').value = currentUser.id || '';
     document.getElementById('profileName').value = currentUser.name || '';
-    document.getElementById('profileEmail').value = currentUser.email || '';
     document.getElementById('profileInitials').value = currentUser.initials || '';
-    document.getElementById('profilePassword').value = '';
 
     document.getElementById('userSettingsModal').classList.add('active');
 }
@@ -483,29 +488,13 @@ async function handleUserSettingsSubmit(e) {
     btn.textContent = 'Saving...';
 
     const payload = {
-        name: document.getElementById('profileName').value,
-        initials: document.getElementById('profileInitials').value
+        name: document.getElementById('profileName').value.trim(),
+        initials: document.getElementById('profileInitials').value.trim().toUpperCase()
     };
-
-    const newPassword = document.getElementById('profilePassword').value;
-    const newEmail = document.getElementById('profileEmail').value;
 
     try {
         const client = ensureSupabase();
         if (!client) throw new Error('Not connected');
-
-        // Note: auth updates and profile update are not transactional. If auth email
-        // change succeeds but profile update fails below, a confirmation email will
-        // already be in flight. Acceptable tradeoff given Supabase's architecture.
-        if (newEmail && newEmail !== currentUser.email) {
-            const { error: emailError } = await client.auth.updateUser({ email: newEmail });
-            if (emailError) throw new Error('Email update failed: ' + emailError.message);
-        }
-
-        if (newPassword) {
-            const { error: pwError } = await client.auth.updateUser({ password: newPassword });
-            if (pwError) throw new Error('Password update failed: ' + pwError.message);
-        }
 
         const { data: updatedProfile, error: profileError } = await client
             .from('profiles')
