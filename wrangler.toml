@@ -1,4 +1,4 @@
-name = "mmw-tm"
+name = "mmwtasks"
 compatibility_date = "2024-09-23"
 compatibility_flags = ["nodejs_compat"]
 pages_build_output_dir = "public"
@@ -15,7 +15,7 @@ ENVIRONMENT = "production"
 SUPABASE_URL = "https://oxbaswpyxryvygamgtsu.supabase.co"
 
 # Secrets (add these with: wrangler secret put <NAME>)
-# For Pages, use: wrangler pages secret put <NAME> --project-name=mmw-tm
+# For Pages, use: wrangler pages secret put <NAME> --project-name=mmwtasks
 # wrangler pages secret put SUPABASE_ANON_KEY
 # wrangler pages secret put SUPABASE_SERVICE_ROLE_KEY
 # wrangler pages secret put SUPABASE_JWT_SECRET
