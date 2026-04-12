@@ -526,12 +526,7 @@
           <span>Profile</span>
         </button>
         <button class="tab" data-tab="password">
-          <span class="tab-icon">🔒</span>
           <span>Password</span>
-        </button>
-        <button class="tab" data-tab="discord">
-          <span class="tab-icon">💬</span>
-          <span>Discord</span>
         </button>
       </div>
     </div>
@@ -549,12 +544,6 @@
         <div id="profileSuccess" class="success"></div>
 
         <form id="profileForm">
-          <div class="input-group">
-            <label for="username">Username</label>
-            <input id="username" type="text" placeholder="username">
-            <small class="form-help">Your unique username for the system</small>
-          </div>
-
           <div class="input-row">
             <div class="input-group">
               <label for="name">Full Name</label>
@@ -608,54 +597,6 @@
         </form>
       </div>
 
-      <!-- Discord Tab -->
-      <div class="tab-panel" data-panel="discord">
-        <div class="panel-header">
-          <h2>Discord Integration</h2>
-          <p>Connect your Discord account to use the task bot</p>
-        </div>
-
-        <div id="discordError" class="error"></div>
-        <div id="discordSuccess" class="success"></div>
-
-        <div class="discord-card">
-          <div class="discord-header">
-            <span class="discord-icon">💬</span>
-            <div>
-              <h3>Link Discord Account</h3>
-            </div>
-          </div>
-
-          <div class="input-group">
-            <label for="discordHandle">Discord Username</label>
-            <input id="discordHandle" type="text" placeholder="Not linked" disabled>
-          </div>
-
-          <div id="discordStatus"></div>
-
-          <div id="discordCodeSection" style="display: none;">
-            <div class="discord-code-display">
-              <div class="discord-code-label">Your Link Code</div>
-              <div class="discord-code" id="discordCode">LINK-XXXX</div>
-              <div class="discord-code-expiry" id="discordExpiry">Expires in 5 minutes</div>
-            </div>
-
-            <div class="discord-instructions">
-              <div class="discord-instructions-title">📋 How to link your account:</div>
-              <ol>
-                <li>Open Discord and find the Task Manager bot</li>
-                <li>Send a direct message to the bot with: <code>link YOUR-CODE</code></li>
-                <li>For example: <code>link LINK-ABC12</code></li>
-                <li>The bot will confirm when your account is linked</li>
-              </ol>
-            </div>
-          </div>
-
-          <button type="button" class="btn btn-primary btn-full" id="linkDiscordBtn" onclick="linkDiscord()">
-            Generate Link
-          </button>
-        </div>
-      </div>
     </div>
   </div>
 
@@ -726,16 +667,10 @@
       if (error || !profile) { window.location.href = '/login.html'; return; }
 
       currentUser = { ...profile, email: session.user.email };
-      document.getElementById('username').value = profile.name || '';
       document.getElementById('name').value = profile.name || '';
       document.getElementById('initials').value = (profile.initials || '').toUpperCase();
       selectedColor = profile.color || '#4ECDC4';
       renderColors(selectedColor);
-    }
-
-    // Load Discord Status — not available without Express, hide the tab
-    async function loadDiscordStatus() {
-      // Discord integration removed
     }
 
     // Profile Form Submit

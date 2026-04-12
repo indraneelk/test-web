@@ -463,7 +463,6 @@ async function openUserSettings() {
         return;
     }
     document.getElementById('userId').value = currentUser.id || '';
-    document.getElementById('profileUsername').value = currentUser.username || '';
     document.getElementById('profileName').value = currentUser.name || '';
     document.getElementById('profileEmail').value = currentUser.email || '';
     document.getElementById('profileInitials').value = currentUser.initials || '';
@@ -484,7 +483,6 @@ async function handleUserSettingsSubmit(e) {
     btn.textContent = 'Saving...';
 
     const payload = {
-        username: document.getElementById('profileUsername').value,
         name: document.getElementById('profileName').value,
         initials: document.getElementById('profileInitials').value
     };
@@ -496,6 +494,9 @@ async function handleUserSettingsSubmit(e) {
         const client = ensureSupabase();
         if (!client) throw new Error('Not connected');
 
+        // Note: auth updates and profile update are not transactional. If auth email
+        // change succeeds but profile update fails below, a confirmation email will
+        // already be in flight. Acceptable tradeoff given Supabase's architecture.
         if (newEmail && newEmail !== currentUser.email) {
             const { error: emailError } = await client.auth.updateUser({ email: newEmail });
             if (emailError) throw new Error('Email update failed: ' + emailError.message);
@@ -1254,9 +1255,8 @@ async function handleTaskSubmit(e) {
 
         closeTaskModal();
         closeTaskDetailsModal();
-        updateUI();
-
         await loadTasks();
+        updateUI();
 
         showSuccess(taskId ? 'Task updated successfully!' : 'Task created successfully!');
     } catch (error) {

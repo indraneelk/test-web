@@ -8,11 +8,16 @@ let users = [];
 let currentFilter = 'all';
 let currentView = 'invitations';
 let supaClient = null;
-let adminJwt = null;
+let currentAdminId = null;
 
 function getClient() {
     if (!supaClient) supaClient = window.getSupabaseClient();
     return supaClient;
+}
+
+async function getFreshJwt() {
+    const { data: { session } } = await getClient().auth.getSession();
+    return session?.access_token || null;
 }
 
 // ── Auth & admin check ──────────────────────────────────────────────────────
@@ -27,7 +32,7 @@ async function checkAdminAccess() {
             return false;
         }
 
-        adminJwt = session.access_token;
+        currentAdminId = session.user.id;
 
         const { data: profile, error: profileError } = await client
             .from('profiles')
@@ -93,7 +98,7 @@ function renderInvitations() {
             '</div>' +
             '<div class="invitation-actions">' +
                 (inv.status === 'pending'
-                    ? '<button class="btn-resend" onclick="resendInvitation(\'' + escapeHtml(inv.email) + '\')">Resend</button>'
+                    ? '<button class="btn-resend" data-email="' + escapeHtml(inv.email) + '">Resend</button>'
                     : '') +
             '</div>' +
         '</div>'
@@ -107,11 +112,12 @@ async function sendInvitation(email) {
     submitBtn.textContent = 'Sending...';
 
     try {
+        const jwt = await getFreshJwt();
         const res = await fetch(SUPABASE_FUNCTIONS_URL + '/admin-invite', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': 'Bearer ' + adminJwt
+                'Authorization': 'Bearer ' + jwt
             },
             body: JSON.stringify({ email })
         });
@@ -131,21 +137,26 @@ async function sendInvitation(email) {
 }
 
 async function resendInvitation(email) {
-    const res = await fetch(SUPABASE_FUNCTIONS_URL + '/admin-invite', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer ' + adminJwt
-        },
-        body: JSON.stringify({ email })
-    });
+    try {
+        const jwt = await getFreshJwt();
+        const res = await fetch(SUPABASE_FUNCTIONS_URL + '/admin-invite', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer ' + jwt
+            },
+            body: JSON.stringify({ email })
+        });
 
-    const data = await res.json();
-    if (!res.ok) {
-        showStatus(data.error || 'Failed to resend', 'error');
-    } else {
-        showStatus('Invitation resent to ' + email + '!', 'success');
-        loadInvitations();
+        const data = await res.json();
+        if (!res.ok) {
+            showStatus(data.error || 'Failed to resend', 'error');
+        } else {
+            showStatus('Invitation resent to ' + email + '!', 'success');
+            loadInvitations();
+        }
+    } catch (err) {
+        showStatus(err.message || 'Failed to resend', 'error');
     }
 }
 
@@ -198,9 +209,11 @@ function renderUsers() {
                 '</div>' +
             '</div>' +
             '<div class="user-actions">' +
-                (!user.is_admin
-                    ? '<button class="btn-delete" onclick="confirmDeleteUser(\'' + escapeHtml(user.id) + '\',\'' + escapeHtml(user.name || user.email) + '\')">Remove</button>'
-                    : '<span style="color:#888;font-size:0.875rem;">You</span>') +
+                (user.id === currentAdminId
+                    ? '<span style="color:#888;font-size:0.875rem;">You</span>'
+                    : user.is_admin
+                        ? '<span style="color:#888;font-size:0.875rem;">Admin</span>'
+                        : '<button class="btn-delete" data-user-id="' + escapeHtml(user.id) + '" data-user-name="' + escapeHtml(user.name || user.email) + '">Remove</button>') +
             '</div>' +
         '</div>';
     }).join('');
@@ -216,11 +229,12 @@ function confirmDeleteUser(userId, name) {
 
 async function deleteUser(userId, name) {
     try {
+        const jwt = await getFreshJwt();
         const res = await fetch(SUPABASE_FUNCTIONS_URL + '/admin-delete-user', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': 'Bearer ' + adminJwt
+                'Authorization': 'Bearer ' + jwt
             },
             body: JSON.stringify({ userId: userId })
         });
@@ -301,6 +315,16 @@ document.addEventListener('DOMContentLoaded', async function() {
     if (!ok) return;
 
     loadInvitations();
+
+    document.getElementById('invitationsList').addEventListener('click', function(e) {
+        var btn = e.target.closest('.btn-resend');
+        if (btn) resendInvitation(btn.dataset.email);
+    });
+
+    document.getElementById('usersList').addEventListener('click', function(e) {
+        var btn = e.target.closest('.btn-delete');
+        if (btn) confirmDeleteUser(btn.dataset.userId, btn.dataset.userName);
+    });
 
     document.getElementById('inviteForm').addEventListener('submit', function(e) {
         e.preventDefault();
