@@ -191,7 +191,7 @@ router.put('/:id', requireAuth, async (req, res, next) => {
         }
 
         const updates = { updated_at: new Date().toISOString() };
-        if (title !== undefined) updates.title = title.trim();
+        if (title !== undefined) updates.title = typeof title === 'string' ? title.trim() : title;
         if (description !== undefined) updates.description = description;
         if (assigned_to !== undefined) updates.assigned_to = assigned_to;
         if (priority !== undefined) updates.priority = priority;

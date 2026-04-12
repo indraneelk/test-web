@@ -18,7 +18,7 @@ const PRIORITY_LABEL = {
 
 const STATUS_COLOR = {
     pending: pc.yellow,
-    'in-progress': pc.blue,
+    in_progress: pc.blue,
     completed: pc.green
 };
 

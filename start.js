@@ -29,7 +29,6 @@ if (fs.existsSync(envPath)) {
 // Validation checks
 const checks = {
     nodeModules: fs.existsSync(path.join(__dirname, 'node_modules')),
-    sessionSecret: !!process.env.SESSION_SECRET,
     hasData: fs.existsSync(path.join(__dirname, 'data')) ||
              (process.env.CLOUDFLARE_ACCOUNT_ID &&
               process.env.CLOUDFLARE_D1_DATABASE_ID &&
@@ -46,13 +45,6 @@ if (!checks.nodeModules) {
     process.exit(1);
 }
 console.log('✅ Dependencies installed');
-
-if (!checks.sessionSecret) {
-    console.log('❌ SESSION_SECRET not configured');
-    console.log('   Run: npm run setup\n');
-    process.exit(1);
-}
-console.log('✅ Session secret configured');
 
 if (checks.hasData) {
     if (process.env.CLOUDFLARE_ACCOUNT_ID) {

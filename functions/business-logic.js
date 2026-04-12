@@ -319,7 +319,7 @@ async function updateProject(dataService, userId, projectId, updates) {
     const updateData = { updated_at: getCurrentTimestamp() };
     if (name !== undefined) updateData.name = sanitizeString(name, VALIDATION.PROJECT_NAME_MAX);
     if (description !== undefined) updateData.description = sanitizeString(description, VALIDATION.PROJECT_DESCRIPTION_MAX);
-    if (color !== undefined) updateData.color = color.toLowerCase().trim();
+    if (color !== undefined) updateData.color = typeof color === 'string' ? color.toLowerCase().trim() : color;
 
     await dataService.updateProject(projectId, updateData);
 
