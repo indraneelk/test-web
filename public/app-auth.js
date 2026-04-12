@@ -962,6 +962,8 @@ function openTaskModal() {
     document.getElementById('taskId').value = '';
     document.getElementById('taskModalTitle').textContent = 'Create New Task';
     document.getElementById('taskSubmitBtnText').textContent = 'Create Task';
+    const createMarkDoneBtn = document.getElementById('markDoneFromEditBtn');
+    if (createMarkDoneBtn) createMarkDoneBtn.style.display = 'none';
 
     document.getElementById('taskDate').value = new Date().toISOString().split('T')[0];
 
@@ -1052,6 +1054,11 @@ function editTask(id) {
 
         document.getElementById('taskModalTitle').textContent = 'Edit Task';
         document.getElementById('taskSubmitBtnText').textContent = 'Update Task';
+        const editMarkDoneBtn = document.getElementById('markDoneFromEditBtn');
+        if (editMarkDoneBtn) {
+            const t = tasks.find(t => t.id === taskId);
+            editMarkDoneBtn.style.display = (t && t.status !== 'completed') ? '' : 'none';
+        }
 
         document.getElementById('taskModal').classList.add('active');
     } catch (error) {
@@ -1117,6 +1124,9 @@ function viewTaskDetails(id) {
     statusBadge.textContent = (task.status || '').replace('-', ' ');
     statusBadge.className = 'task-status ' + task.status;
 
+    const markDoneBtn = document.getElementById('markDoneFromDetailsBtn');
+    if (markDoneBtn) markDoneBtn.style.display = task.status === 'completed' ? 'none' : '';
+
     document.getElementById('taskDetailsModal').classList.add('active');
 }
 
@@ -1130,6 +1140,53 @@ function editTaskFromDetails() {
     const taskId = currentTaskDetailsId;
     closeTaskDetailsModal();
     editTask(taskId);
+}
+
+async function markTaskDoneFromDetails() {
+    if (!currentTaskDetailsId) return;
+    const taskId = currentTaskDetailsId;
+    closeTaskDetailsModal();
+    await markTaskDone(taskId);
+}
+
+async function markTaskDoneFromEdit() {
+    const taskId = document.getElementById('taskId').value;
+    if (!taskId) return;
+    closeTaskModal();
+    await markTaskDone(taskId);
+}
+
+async function markTaskDone(taskId) {
+    const task = tasks.find(t => t.id === taskId);
+    if (!task || task.status === 'completed') return;
+
+    const originalStatus = task.status;
+    task.status = 'completed';
+    updateUI();
+
+    try {
+        const client = ensureSupabase();
+        if (!client) throw new Error('Not connected');
+
+        const { data: updatedTask, error } = await client
+            .from('tasks')
+            .update({ status: 'completed', updated_at: new Date().toISOString() })
+            .eq('id', taskId)
+            .select()
+            .single();
+
+        if (error) throw new Error(error.message);
+
+        const idx = tasks.findIndex(t => t.id === taskId);
+        if (idx !== -1) tasks[idx] = updatedTask;
+
+        celebrate();
+        showSuccess('\uD83C\uDF89 Awesome! Task completed!');
+    } catch (err) {
+        task.status = originalStatus;
+        updateUI();
+        showError(err.message);
+    }
 }
 
 async function deleteTaskFromDetails() {
@@ -2290,6 +2347,8 @@ window.switchToProject = switchToProject;
 window.switchProjectSettingsTab = switchProjectSettingsTab;
 window.editTaskFromDetails = editTaskFromDetails;
 window.deleteTaskFromDetails = deleteTaskFromDetails;
+window.markTaskDoneFromDetails = markTaskDoneFromDetails;
+window.markTaskDoneFromEdit = markTaskDoneFromEdit;
 window.quickCompleteTask = quickCompleteTask;
 window.viewTaskDetails = viewTaskDetails;
 window.deleteCurrentProject = deleteCurrentProject;

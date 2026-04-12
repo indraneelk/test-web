@@ -293,6 +293,7 @@
                     <button type="button" class="btn btn-secondary" onclick="deleteTaskFromDetails()">Delete Task</button>
                 </div>
                 <div class="footer-right">
+                    <button type="button" class="btn btn-success" id="markDoneFromDetailsBtn" onclick="markTaskDoneFromDetails()">Mark Done</button>
                     <button type="button" class="btn btn-primary" onclick="editTaskFromDetails()">Edit Task</button>
                 </div>
             </div>
@@ -353,10 +354,15 @@
                     </div>
                 </div>
 
-                <div class="modal-footer">
-                    <button type="submit" class="btn btn-primary">
-                        <span id="taskSubmitBtnText">Create Task</span>
-                    </button>
+                <div class="modal-footer split">
+                    <div class="footer-left">
+                        <button type="button" class="btn btn-success" id="markDoneFromEditBtn" style="display:none" onclick="markTaskDoneFromEdit()">Mark Done</button>
+                    </div>
+                    <div class="footer-right">
+                        <button type="submit" class="btn btn-primary">
+                            <span id="taskSubmitBtnText">Create Task</span>
+                        </button>
+                    </div>
                 </div>
             </form>
         </div>
