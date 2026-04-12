@@ -32,12 +32,12 @@ let currentFilters = {
     status: '',
     search: '',
     priority: '',
-    sort: '',
-    showArchived: false
+    sort: ''
 };
 
 function saveFilters() {
-    localStorage.setItem('tm_filters', JSON.stringify(currentFilters));
+    const { showArchived: _, ...persistable } = currentFilters;
+    localStorage.setItem('tm_filters', JSON.stringify(persistable));
 }
 
 function loadSavedFilters() {
@@ -52,8 +52,6 @@ function syncFilterUI() {
     if (pf) pf.value = currentFilters.priority || '';
     const ss = document.getElementById('sortSelect');
     if (ss) ss.value = currentFilters.sort || '';
-    const sa = document.getElementById('showArchivedToggle');
-    if (sa) sa.checked = !!currentFilters.showArchived;
     const si = document.getElementById('searchInput');
     if (si) si.value = currentFilters.search || '';
     updateFilterBadge();
@@ -65,7 +63,6 @@ function updateFilterBadge() {
     const isActive = !!(
         currentFilters.priority ||
         currentFilters.sort ||
-        currentFilters.showArchived ||
         currentFilters.search
     );
     badge.style.display = isActive ? 'inline-flex' : 'none';
@@ -74,7 +71,6 @@ function updateFilterBadge() {
 function clearAllFilters() {
     currentFilters.priority = '';
     currentFilters.sort = '';
-    currentFilters.showArchived = false;
     currentFilters.search = '';
     saveFilters();
     syncFilterUI();
@@ -122,7 +118,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     loadSavedFilters();
     setupEventListeners();
     syncFilterUI();
-    await loadData();
 
     hideLoadingSpinner();
 
@@ -171,11 +166,15 @@ async function checkAuth() {
             return false;
         }
 
-        const { data: profile, error } = await client
+        const profilePromise = client
             .from('profiles')
             .select('*')
             .eq('id', session.user.id)
             .single();
+
+        const dataPromise = loadData();
+
+        const [{ data: profile, error }] = await Promise.all([profilePromise, dataPromise]);
 
         if (error || !profile) {
             console.error('Failed to load profile:', error);
@@ -293,16 +292,6 @@ function setupEventListeners() {
         });
     }
 
-    const showArchivedToggleEl = document.getElementById('showArchivedToggle');
-    if (showArchivedToggleEl) {
-        showArchivedToggleEl.addEventListener('change', (e) => {
-            currentFilters.showArchived = e.target.checked;
-            saveFilters();
-            updateFilterBadge();
-            renderTasks(filterTasks());
-        });
-    }
-
     document.getElementById('searchInput').addEventListener('input', (e) => {
         currentFilters.search = e.target.value.toLowerCase();
         saveFilters();
@@ -399,16 +388,7 @@ function initMobileUI() {
         });
     }
 
-    const mobileShowArchived = document.getElementById('mobileShowArchived');
-    if (mobileShowArchived) {
-        mobileShowArchived.checked = !!currentFilters.showArchived;
-        mobileShowArchived.addEventListener('change', (e) => {
-            currentFilters.showArchived = e.target.checked;
-            saveFilters();
-            updateFilterBadge();
-            renderTasks(filterTasks());
-        });
-    }
+
 
     function updateFooterCompact() {
         document.querySelectorAll('.mobile-footer .custom-select-trigger').forEach(tr => {
@@ -802,10 +782,6 @@ function filterTasks() {
         filtered = filtered.filter(t => (t.priority || 'none').toLowerCase() === currentFilters.priority);
     }
 
-    if (!currentFilters.showArchived) {
-        filtered = filtered.filter(t => !t.archived);
-    }
-
     if (currentFilters.search) {
         filtered = filtered.filter(t =>
             (t.title || '').toLowerCase().includes(currentFilters.search) ||
@@ -887,15 +863,10 @@ function createTaskCard(task) {
 
     const project = projects.find(p => p.id === task.project_id);
 
-    let projectAbbr = '';
+    let projectLabel = '';
     let projectColor = '#cccccc';
     if (project) {
-        if (project.name.toLowerCase().includes('personal')) {
-            projectAbbr = 'Personal';
-        } else {
-            const name = project.name.substring(0, 8);
-            projectAbbr = name.charAt(0).toUpperCase() + name.slice(1);
-        }
+        projectLabel = project.name.toLowerCase();
         projectColor = getProjectColor(project);
     }
 
@@ -938,8 +909,8 @@ function createTaskCard(task) {
         '</div>' +
         (project ?
             '<div class="task-project-badge">' +
-            '<span class="project-abbr">' + escapeHtml(projectAbbr) + '</span>' +
             '<span class="project-color-dot" style="background-color: ' + projectColor + '"></span>' +
+            '<span class="project-name-label">' + escapeHtml(projectLabel) + '</span>' +
             '</div>'
             : '') +
         '</div>' +
@@ -997,7 +968,7 @@ function openTaskModal() {
 
     const projectSelect = document.getElementById('taskProject');
     projectSelect.innerHTML = '<option value="">Select project...</option>' +
-        projects.map(p => '<option value="' + p.id + '">' + escapeHtml(p.name) + '</option>').join('');
+        projects.map(p => '<option value="' + p.id + '" data-color="' + getProjectColor(p) + '">' + escapeHtml(p.name) + '</option>').join('');
 
     const assigneeSelect = document.getElementById('taskAssignee');
     assigneeSelect.disabled = false;
@@ -1064,7 +1035,7 @@ function editTask(id) {
 
         const projectSelect = document.getElementById('taskProject');
         projectSelect.innerHTML = '<option value="">Select project...</option>' +
-            projects.map(p => '<option value="' + p.id + '">' + escapeHtml(p.name) + '</option>').join('');
+            projects.map(p => '<option value="' + p.id + '" data-color="' + getProjectColor(p) + '">' + escapeHtml(p.name) + '</option>').join('');
         projectSelect.value = task.project_id || '';
 
         if (task.project_id) {
@@ -1264,12 +1235,16 @@ async function handleTaskSubmit(e) {
 
         closeTaskModal();
         closeTaskDetailsModal();
-        await loadTasks();
-        // Stay in the current view after editing; only switch to all-tasks after creating new
-        if (!taskId) {
-            switchView('all');
-        } else {
+
+        if (taskId) {
+            const idx = tasks.findIndex(t => t.id === taskId);
+            if (idx !== -1) tasks[idx] = { ...tasks[idx], ...taskData };
             updateUI();
+        } else {
+            tasks.unshift(result);
+            renderTasks(filterTasks());
+            updateStats();
+            switchView('all');
         }
 
         showSuccess(taskId ? 'Task updated successfully!' : 'Task created successfully!');
@@ -1369,11 +1344,14 @@ async function confirmDelete() {
         if (error) throw new Error(error.message);
 
         closeDeleteModal();
-        await loadTasks();
-        updateUI();
+        const deletedId = taskToDelete;
+        tasks = tasks.filter(t => t.id !== deletedId);
+        renderTasks(filterTasks());
+        updateStats();
         showSuccess('Task deleted successfully');
     } catch (error) {
         showError('Failed to delete task');
+        await loadTasks();
     } finally {
         deleteBtn.disabled = false;
         cancelBtn.disabled = false;
@@ -1752,8 +1730,7 @@ async function _doLeaveProject() {
         if (error) throw new Error(error.message);
 
         closeProjectSettingsModal();
-        await loadProjects();
-        await loadTasks();
+        await Promise.all([loadProjects(), loadTasks()]);
         if (currentProjectId === currentProjectForSettings) switchView('all');
         showSuccess('Left project successfully');
     } catch (error) {
@@ -2076,6 +2053,13 @@ class CustomSelect {
                 const label = document.createElement('span');
                 label.textContent = option.textContent;
                 optionBtn.appendChild(label);
+            } else if (this.selectElement.id === 'taskProject' && option.value) {
+                const dot = document.createElement('span');
+                dot.style.cssText = 'width:10px;height:10px;border-radius:50%;background:' + (option.dataset.color || '#cccccc') + ';display:inline-block;flex-shrink:0;';
+                optionBtn.appendChild(dot);
+                const label = document.createElement('span');
+                label.textContent = option.textContent;
+                optionBtn.appendChild(label);
             } else {
                 optionBtn.textContent = option.textContent;
             }
@@ -2104,6 +2088,10 @@ class CustomSelect {
                 } else {
                     this.selectedDot.style.display = 'none';
                 }
+            } else if (this.selectElement.id === 'taskProject') {
+                const color = selectedOption.dataset.color || '#cccccc';
+                this.selectedDot.className = '';
+                this.selectedDot.style.cssText = 'width:10px;height:10px;border-radius:50%;background:' + color + ';display:inline-block;flex-shrink:0;';
             } else {
                 this.selectedDot.style.display = 'none';
             }
