@@ -496,6 +496,16 @@ async function handleUserSettingsSubmit(e) {
         const client = ensureSupabase();
         if (!client) throw new Error('Not connected');
 
+        if (newEmail && newEmail !== currentUser.email) {
+            const { error: emailError } = await client.auth.updateUser({ email: newEmail });
+            if (emailError) throw new Error('Email update failed: ' + emailError.message);
+        }
+
+        if (newPassword) {
+            const { error: pwError } = await client.auth.updateUser({ password: newPassword });
+            if (pwError) throw new Error('Password update failed: ' + pwError.message);
+        }
+
         const { data: updatedProfile, error: profileError } = await client
             .from('profiles')
             .update(payload)
@@ -504,16 +514,6 @@ async function handleUserSettingsSubmit(e) {
             .single();
 
         if (profileError) throw new Error(profileError.message);
-
-        if (newEmail && newEmail !== currentUser.email) {
-            const { error: emailError } = await client.auth.updateUser({ email: newEmail });
-            if (emailError) throw new Error(emailError.message);
-        }
-
-        if (newPassword) {
-            const { error: pwError } = await client.auth.updateUser({ password: newPassword });
-            if (pwError) throw new Error(pwError.message);
-        }
 
         currentUser = { ...currentUser, ...updatedProfile };
         updateUserInfo();
@@ -2157,6 +2157,10 @@ class CustomSelect {
             this.scroller.removeEventListener('scroll', this._onScroll);
             this._onScroll = null;
         }
+        if (this._observer) {
+            this._observer.disconnect();
+            this._observer = null;
+        }
     }
 
     refresh() {
@@ -2187,10 +2191,10 @@ class CustomSelect {
             }
         });
 
-        const observer = new MutationObserver(() => {
+        this._observer = new MutationObserver(() => {
             this.refresh();
         });
-        observer.observe(this.selectElement, { childList: true, subtree: true });
+        this._observer.observe(this.selectElement, { childList: true, subtree: true });
     }
 
     getScrollContainer() {

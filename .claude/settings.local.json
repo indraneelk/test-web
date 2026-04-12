@@ -61,7 +61,9 @@
       "mcp__plugin_supabase_supabase__get_logs",
       "mcp__plugin_supabase_supabase__execute_sql",
       "mcp__plugin_supabase_supabase__get_advisors",
-      "Bash(grep -E \"\\\\.\\(html|js\\)$\")"
+      "Bash(grep -E \"\\\\.\\(html|js\\)$\")",
+      "mcp__plugin_supabase_supabase__list_edge_functions",
+      "mcp__plugin_supabase_supabase__deploy_edge_function"
     ],
     "deny": [],
     "ask": []
