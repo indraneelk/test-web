@@ -691,6 +691,97 @@ body {
 
     /* Mobile-specific styles for member buttons (already handled in main styles) */
 
+    /* Search input - fluid in header (header hidden on mobile, but keep responsive) */
+    .search-input {
+        width: 100%;
+        max-width: 300px;
+    }
+
+    /* Task details modal - stack two-col rows on mobile */
+    #taskDetailsModal .details-row {
+        grid-template-columns: 1fr;
+        gap: 1rem;
+    }
+
+    /* Task card footer - prevent overflow on tiny screens */
+    .task-card-footer {
+        gap: 0.25rem;
+    }
+
+    .task-due {
+        font-size: 0.75rem;
+    }
+
+    .project-abbr {
+        font-size: 0.6875rem;
+    }
+
+    .task-card-compact .task-footer-left {
+        gap: 0.375rem;
+    }
+
+    /* Project Settings modal - full-width on mobile */
+    #projectSettingsModal .modal-content {
+        max-height: 90vh;
+    }
+
+    #projectSettingsModal .settings-section {
+        padding: 0.75rem;
+    }
+
+    .info-row {
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+
+    .info-label {
+        width: auto;
+        flex-shrink: 0;
+    }
+
+    /* Task modal form - full width on mobile */
+    #taskForm,
+    #projectForm {
+        padding: 1rem;
+    }
+
+    /* Form groups more compact on mobile */
+    .form-group {
+        margin-bottom: 1rem;
+    }
+
+    /* Color presets wrap on mobile */
+    .color-presets {
+        gap: 0.375rem;
+    }
+
+    .color-preset {
+        width: 28px;
+        height: 28px;
+    }
+
+    /* Add member section stacks on mobile */
+    .add-member-section {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .add-member-section .form-select {
+        min-width: 0;
+        max-width: none;
+        width: 100%;
+    }
+
+    .add-member-section .btn-primary {
+        width: 100%;
+        justify-content: center;
+    }
+
+    /* Members list items compact on mobile */
+    .members-list {
+        max-height: 200px;
+    }
+
     /* Mobile Tab Optimizations */
     .modal-tabs {
         margin: 0 -1.25rem; /* Extend to modal edges */
@@ -717,6 +808,10 @@ body {
         .tab-btn {
             flex-direction: column;
             gap: 0.125rem;
+        }
+
+        .task-card-compact .project-abbr {
+            display: none;
         }
     }
 
