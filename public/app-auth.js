@@ -1,4 +1,4 @@
-// Authentication-enabled Task Manager Frontend
+// Task Manager Frontend — Supabase direct (no Express API)
 
 // Configuration
 const ADMIN_EMAIL = 'indraneel.kasmalkar@gmail.com';
@@ -13,7 +13,6 @@ function hideLoadingSpinner() {
     const overlay = document.getElementById('loadingOverlay');
     if (overlay) {
         overlay.classList.add('hidden');
-        // Remove from DOM after animation completes
         setTimeout(() => {
             if (overlay.parentNode) {
                 overlay.parentNode.removeChild(overlay);
@@ -33,116 +32,105 @@ let currentFilters = {
     status: '',
     search: '',
     priority: '',
-    sort: '', // none (no sorting)
+    sort: '',
     showArchived: false
 };
+
+function saveFilters() {
+    localStorage.setItem('tm_filters', JSON.stringify(currentFilters));
+}
+
+function loadSavedFilters() {
+    try {
+        const saved = localStorage.getItem('tm_filters');
+        if (saved) Object.assign(currentFilters, JSON.parse(saved));
+    } catch (_) {}
+}
+
+function syncFilterUI() {
+    const pf = document.getElementById('priorityFilter');
+    if (pf) pf.value = currentFilters.priority || '';
+    const ss = document.getElementById('sortSelect');
+    if (ss) ss.value = currentFilters.sort || '';
+    const sa = document.getElementById('showArchivedToggle');
+    if (sa) sa.checked = !!currentFilters.showArchived;
+    const si = document.getElementById('searchInput');
+    if (si) si.value = currentFilters.search || '';
+    updateFilterBadge();
+}
+
+function updateFilterBadge() {
+    const badge = document.getElementById('activeFilterBadge');
+    if (!badge) return;
+    const isActive = !!(
+        currentFilters.priority ||
+        currentFilters.sort ||
+        currentFilters.showArchived ||
+        currentFilters.search
+    );
+    badge.style.display = isActive ? 'inline-flex' : 'none';
+}
+
+function clearAllFilters() {
+    currentFilters.priority = '';
+    currentFilters.sort = '';
+    currentFilters.showArchived = false;
+    currentFilters.search = '';
+    saveFilters();
+    syncFilterUI();
+    updateFilterBadge();
+    renderTasks(filterTasks());
+}
+window.clearAllFilters = clearAllFilters;
 let taskToDelete = null;
 let currentProjectForSettings = null;
 let currentProjectDetailsId = null;
 let projectToDelete = null;
 
-// Date helpers (DD/MM/YYYY <-> ISO YYYY-MM-DD)
-function formatDateToDMY(iso) {
-    if (!iso) return '';
-    const [y, m, d] = String(iso).split('-');
-    if (!y || !m || !d) return '';
-    return `${d.padStart(2,'0')}/${m.padStart(2,'0')}/${y}`;
-}
-function parseDMYToISO(dmy) {
-    if (!dmy) return null;
-    const parts = String(dmy).replace(/[^0-9/]/g,'').split('/');
-    if (parts.length !== 3) return null;
-    let [dd, mm, yyyy] = parts;
-    if (!dd || !mm || !yyyy) return null;
-    if (yyyy.length !== 4) return null;
-    const d = parseInt(dd, 10), m = parseInt(mm, 10), y = parseInt(yyyy, 10);
-    if (!(d>=1 && d<=31) || !(m>=1 && m<=12) || !(y>=1900)) return null;
-    // Basic validity check using Date
-    const iso = `${y.toString().padStart(4,'0')}-${m.toString().padStart(2,'0')}-${d.toString().padStart(2,'0')}`;
-    const dt = new Date(iso + 'T00:00:00Z');
-    if (isNaN(dt.getTime())) return null;
-    return iso;
+// Confirmation modal functions
+function showConfirmModal(title, message, onConfirm) {
+    document.getElementById('confirmModalTitle').textContent = title;
+    document.getElementById('confirmModalMessage').textContent = message;
+    const okBtn = document.getElementById('confirmModalOkBtn');
+    const fresh = okBtn.cloneNode(true);
+    okBtn.parentNode.replaceChild(fresh, okBtn);
+    fresh.addEventListener('click', () => {
+        closeConfirmModal();
+        onConfirm();
+    });
+    document.getElementById('confirmModal').style.display = 'flex';
 }
 
-// API URLs
-const API_AUTH = '/api/auth';
-const API_USERS = '/api/users';
-const API_PROJECTS = '/api/projects';
-const API_TASKS = '/api/tasks';
-
-// Supabase client + Bearer token helper
-let supa = null;
-async function ensureSupabase() {
-    if (supa) return supa;
-    try {
-        const cfgResp = await fetch('/api/config/public', { credentials: 'include' });
-        if (!cfgResp.ok) return null;
-        const cfg = await cfgResp.json();
-        if (window.supabase && cfg.supabaseUrl && cfg.supabaseAnonKey) {
-            supa = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey);
-        }
-    } catch (_) {}
-    return supa;
+function closeConfirmModal() {
+    document.getElementById('confirmModal').style.display = 'none';
 }
 
-async function getAccessToken() {
-    // Prefer supabase-js session; do not duplicate tokens in storage
-    try {
-        const client = await ensureSupabase();
-        if (client) {
-            const { data } = await client.auth.getSession();
-            if (data?.session?.access_token) return data.session.access_token;
-        }
-    } catch (_) {}
-    return null;
-}
-
-async function authFetch(url, options = {}) {
-    const origOptions = { ...options };
-    let token = await getAccessToken();
-    let headers = new Headers(options.headers || {});
-    if (token) headers.set('Authorization', `Bearer ${token}`);
-    let resp = await fetch(url, { ...options, headers, credentials: token ? undefined : 'include' });
-    if (resp.status !== 401) return resp;
-    // Attempt one silent refresh via supabase-js and retry once
-    try {
-        const client = await ensureSupabase();
-        if (client) {
-            await client.auth.refreshSession();
-            const { data } = await client.auth.getSession();
-            const newToken = data?.session?.access_token || null;
-            if (newToken && newToken !== token) {
-                const retryHeaders = new Headers(origOptions.headers || {});
-                retryHeaders.set('Authorization', `Bearer ${newToken}`);
-                return await fetch(url, { ...origOptions, headers: retryHeaders, credentials: undefined });
-            }
-        }
-    } catch (_) { /* ignore and fall through */ }
-    return resp;
+// Supabase client helper
+function ensureSupabase() {
+    return window.getSupabaseClient ? window.getSupabaseClient() : null;
 }
 
 // Initialize app
 document.addEventListener('DOMContentLoaded', async () => {
-    // Spinner is already visible with "Checking authentication" text
     const isAuthenticated = await checkAuth();
     if (!isAuthenticated) {
-        // User will be redirected to login, spinner will disappear with page navigation
         return;
     }
 
-    // Update spinner text for data loading phase
     updateLoadingText('Loading projects and tasks...');
 
+    loadSavedFilters();
     setupEventListeners();
+    syncFilterUI();
     await loadData();
 
-    // Hide spinner after data is loaded
     hideLoadingSpinner();
 
     initMobileUI();
-    // Plan B: Supabase Realtime subscription (optional)
+
+    // Supabase Realtime subscription
     try {
-        const client = await ensureSupabase();
+        const client = ensureSupabase();
         if (client) {
             const ch = client.channel('task-updates');
             ch.on('broadcast', { event: 'task-created' }, () => loadData());
@@ -155,12 +143,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     } catch (_) {}
 
-    // Plan A: Polling for updates (every 60 seconds)
+    // Polling fallback (every 60 seconds)
     setInterval(async () => {
         await loadData();
-    }, 60000); // 60 seconds
+    }, 60000);
 
-    // Plan A: Refetch when tab becomes visible
+    // Refetch when tab becomes visible
     document.addEventListener('visibilitychange', async () => {
         if (!document.hidden) {
             await loadData();
@@ -168,18 +156,34 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 });
 
-// Check authentication
+// Check authentication via Supabase session
 async function checkAuth() {
     try {
-        const response = await authFetch(`${API_AUTH}/me`);
-
-        if (!response.ok) {
+        const client = ensureSupabase();
+        if (!client) {
             window.location.href = '/login.html';
             return false;
         }
 
-        const data = await response.json();
-        currentUser = data.user;
+        const { data: { session } } = await client.auth.getSession();
+        if (!session) {
+            window.location.href = '/login.html';
+            return false;
+        }
+
+        const { data: profile, error } = await client
+            .from('profiles')
+            .select('*')
+            .eq('id', session.user.id)
+            .single();
+
+        if (error || !profile) {
+            console.error('Failed to load profile:', error);
+            window.location.href = '/login.html';
+            return false;
+        }
+
+        currentUser = profile;
         updateUserInfo();
         return true;
     } catch (error) {
@@ -194,29 +198,23 @@ function updateUserInfo() {
     document.getElementById('userName').textContent = currentUser.username || currentUser.name;
     const avatar = document.getElementById('userAvatar');
     if (avatar) {
-        const initials = (currentUser.initials && currentUser.initials.trim())
-            ? currentUser.initials.trim().toUpperCase()
-            : (currentUser.username || currentUser.name).split(/\s+/).map(w => w[0]).slice(0,2).join('').toUpperCase();
+        const initials = (currentUser.username || currentUser.name)
+            .split(/\s+/).map(w => w[0]).slice(0,2).join('').toUpperCase();
         avatar.textContent = initials;
-        // Set color if user has one
         if (currentUser.color) {
             avatar.style.backgroundColor = currentUser.color;
         }
     }
-    // Update mobile avatar
     const mobileAvatar = document.getElementById('mobileUserAvatar');
     if (mobileAvatar) {
-        const initials = (currentUser.initials && currentUser.initials.trim())
-            ? currentUser.initials.trim().toUpperCase()
-            : (currentUser.username || currentUser.name).split(/\s+/).map(w => w[0]).slice(0,2).join('').toUpperCase();
+        const initials = (currentUser.username || currentUser.name)
+            .split(/\s+/).map(w => w[0]).slice(0,2).join('').toUpperCase();
         mobileAvatar.textContent = initials;
-        // Set color if user has one
         if (currentUser.color) {
             mobileAvatar.style.backgroundColor = currentUser.color;
         }
     }
 
-    // Show admin link for super admin
     const adminLink = document.getElementById('adminLink');
     if (adminLink && currentUser.email && currentUser.email.toLowerCase() === ADMIN_EMAIL) {
         adminLink.style.display = 'flex';
@@ -226,21 +224,13 @@ function updateUserInfo() {
 // Logout
 async function logout() {
     try {
-        // Sign out from Supabase first
-        const client = await ensureSupabase();
+        const client = ensureSupabase();
         if (client) {
             await client.auth.signOut();
         }
-
-        // Then clear server-side session
-        await authFetch(`${API_AUTH}/logout`, {
-            method: 'POST',
-            credentials: 'include'
-        });
     } catch (error) {
         console.error('Logout error:', error);
     } finally {
-        // Always redirect to login, even if API call failed
         window.location.href = '/login.html';
     }
 }
@@ -255,7 +245,6 @@ function setupEventListeners() {
         userSettingsForm.addEventListener('submit', handleUserSettingsSubmit);
     }
 
-    // Desktop avatar opens profile update
     const desktopAvatar = document.getElementById('userAvatar');
     if (desktopAvatar) {
         desktopAvatar.addEventListener('click', () => {
@@ -263,7 +252,6 @@ function setupEventListeners() {
         });
     }
 
-    // Project dropdown change listener for task modal
     const taskProjectSelect = document.getElementById('taskProject');
     if (taskProjectSelect) {
         taskProjectSelect.addEventListener('change', (e) => {
@@ -271,7 +259,6 @@ function setupEventListeners() {
             if (e.target.value) {
                 loadProjectMembers(e.target.value);
             } else {
-                // Reset assignee if no project selected
                 assigneeSelect.disabled = false;
                 assigneeSelect.innerHTML = '<option value="">Select person...</option>';
             }
@@ -290,6 +277,8 @@ function setupEventListeners() {
     if (priorityFilterEl) {
         priorityFilterEl.addEventListener('change', (e) => {
             currentFilters.priority = e.target.value;
+            saveFilters();
+            updateFilterBadge();
             renderTasks(filterTasks());
         });
     }
@@ -298,6 +287,8 @@ function setupEventListeners() {
     if (sortSelectEl) {
         sortSelectEl.addEventListener('change', (e) => {
             currentFilters.sort = e.target.value;
+            saveFilters();
+            updateFilterBadge();
             renderTasks(filterTasks());
         });
     }
@@ -306,28 +297,29 @@ function setupEventListeners() {
     if (showArchivedToggleEl) {
         showArchivedToggleEl.addEventListener('change', (e) => {
             currentFilters.showArchived = e.target.checked;
+            saveFilters();
+            updateFilterBadge();
             renderTasks(filterTasks());
         });
     }
 
     document.getElementById('searchInput').addEventListener('input', (e) => {
         currentFilters.search = e.target.value.toLowerCase();
+        saveFilters();
+        updateFilterBadge();
         renderTasks(filterTasks());
     });
 
-    // Close modals on escape
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') {
             closeTaskDetailsModal();
             closeTaskModal();
             closeProjectModal();
-            // Project Details modal deprecated
             closeProjectSettingsModal();
             closeDeleteModal();
         }
     });
 
-    // Color preset buttons
     document.querySelectorAll('.color-preset').forEach(btn => {
         btn.addEventListener('click', (e) => {
             const color = e.currentTarget.getAttribute('data-color');
@@ -335,11 +327,15 @@ function setupEventListeners() {
             updateColorPresetSelection(color);
         });
     });
+
+    ['taskName', 'taskDate'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('input', () => el.classList.remove('input-error'));
+    });
 }
 
 // MOBILE UI FUNCTIONS
 function initMobileUI() {
-    // Mobile project dropdown
     const mobileProjectSelect = document.getElementById('mobileProjectSelect');
     if (mobileProjectSelect) {
         renderMobileProjectOptions();
@@ -347,7 +343,6 @@ function initMobileUI() {
             const value = e.target.value;
             if (value === 'add-project') {
                 openProjectModal();
-                // Reset to current selection
                 e.target.value = currentProjectId || '';
                 return;
             }
@@ -359,7 +354,6 @@ function initMobileUI() {
         });
     }
 
-    // Mobile project settings button
     const mobileProjectSettingsBtn = document.getElementById('mobileProjectSettingsBtn');
     if (mobileProjectSettingsBtn) {
         mobileProjectSettingsBtn.addEventListener('click', () => {
@@ -371,7 +365,6 @@ function initMobileUI() {
         });
     }
 
-    // Mobile user avatar click
     const mobileUserAvatar = document.getElementById('mobileUserAvatar');
     if (mobileUserAvatar) {
         mobileUserAvatar.addEventListener('click', () => {
@@ -379,43 +372,44 @@ function initMobileUI() {
         });
     }
 
-    // Mobile create task button
     const mobileCreateTaskBtn = document.getElementById('mobileCreateTaskBtn');
     if (mobileCreateTaskBtn) {
         mobileCreateTaskBtn.addEventListener('click', openTaskModal);
     }
 
-    // Mobile sort dropdown
     const mobileSortSelect = document.getElementById('mobileSortSelect');
     if (mobileSortSelect) {
         mobileSortSelect.value = currentFilters.sort || '';
         mobileSortSelect.addEventListener('change', (e) => {
             currentFilters.sort = e.target.value;
+            saveFilters();
+            updateFilterBadge();
             renderTasks(filterTasks());
         });
     }
 
-    // Mobile priority filter dropdown
     const mobilePriorityFilter = document.getElementById('mobilePriorityFilter');
     if (mobilePriorityFilter) {
         mobilePriorityFilter.value = currentFilters.priority || '';
         mobilePriorityFilter.addEventListener('change', (e) => {
             currentFilters.priority = e.target.value;
+            saveFilters();
+            updateFilterBadge();
             renderTasks(filterTasks());
         });
     }
 
-    // Mobile archived toggle
     const mobileShowArchived = document.getElementById('mobileShowArchived');
     if (mobileShowArchived) {
         mobileShowArchived.checked = !!currentFilters.showArchived;
         mobileShowArchived.addEventListener('change', (e) => {
             currentFilters.showArchived = e.target.checked;
+            saveFilters();
+            updateFilterBadge();
             renderTasks(filterTasks());
         });
     }
 
-    // Compact footer selects when space is tight: hide text, keep arrow only
     function updateFooterCompact() {
         document.querySelectorAll('.mobile-footer .custom-select-trigger').forEach(tr => {
             const w = tr.clientWidth || 0;
@@ -435,19 +429,17 @@ function renderMobileProjectOptions() {
     if (!select) return;
 
     const options = [
-        `<option value="">All Tasks</option>`,
-        ...projects.map(p => `<option value="${p.id}" ${currentProjectId === p.id ? 'selected' : ''}>${escapeHtml(p.name)}</option>`),
-        `<option value="add-project">+ Add Project</option>`
+        '<option value="">All Tasks</option>',
+        ...projects.map(p => '<option value="' + p.id + '"' + (currentProjectId === p.id ? ' selected' : '') + '>' + escapeHtml(p.name) + '</option>'),
+        '<option value="add-project">+ Add Project</option>'
     ];
 
     select.innerHTML = options.join('');
 
-    // Ensure correct selection
     if (!currentProjectId) {
         select.value = '';
     }
 
-    // Refresh custom select UI (mobile topbar) to match the app aesthetic
     if (select._customSelect) {
         select._customSelect.refresh();
     } else if (typeof initCustomSelects === 'function') {
@@ -458,11 +450,9 @@ function renderMobileProjectOptions() {
 // USER SETTINGS
 async function openUserSettings() {
     if (!currentUser) {
-        console.error('Cannot open user settings: currentUser is null');
-        console.log('Attempting to reload user data...');
         checkAuth().then(() => {
             if (currentUser) {
-                openUserSettings(); // Retry after loading
+                openUserSettings();
             } else {
                 alert('Unable to load user data. Please refresh the page.');
             }
@@ -476,117 +466,11 @@ async function openUserSettings() {
     document.getElementById('profileInitials').value = currentUser.initials || '';
     document.getElementById('profilePassword').value = '';
 
-    // Load Discord handle
-    try {
-        const resp = await authFetch(`${API_AUTH}/user/discord-handle`);
-        if (resp.ok) {
-            const data = await resp.json();
-            if (data.discord_handle) {
-                document.getElementById('discordHandle').value = data.discord_handle;
-                document.getElementById('discordStatus').innerHTML = '<span style="color: #13ce66;">✓ Linked</span>';
-            } else {
-                document.getElementById('discordHandle').value = '';
-                document.getElementById('discordStatus').innerHTML = '';
-            }
-        }
-    } catch (error) {
-        console.error('Failed to load Discord handle:', error);
-    }
-
     document.getElementById('userSettingsModal').classList.add('active');
 }
 
 function closeUserSettings() {
     document.getElementById('userSettingsModal').classList.remove('active');
-}
-
-let linkingPollInterval = null;
-
-async function linkDiscord() {
-    const statusEl = document.getElementById('discordStatus');
-    statusEl.innerHTML = '<span style="color: #4f46e5;">Generating code...</span>';
-
-    try {
-        // Generate link code
-        const resp = await authFetch(`${API_AUTH}/discord/generate-link-code`, {
-            method: 'POST'
-        });
-
-        const data = await resp.json();
-
-        if (!resp.ok) {
-            throw new Error(data.error || 'Failed to generate link code');
-        }
-
-        const code = data.code;
-        const expiresIn = data.expiresIn;
-
-        // Calculate expiry time
-        const expiryTime = new Date(Date.now() + expiresIn * 1000);
-
-        // Show instructions with code
-        const instructions = `🔗 Link Your Discord Account
-
-1. Open Discord (desktop or mobile)
-2. Find the TaskBot or DM it
-3. Send this message:
-
-   link ${code}
-
-⏱ Code expires in ${Math.floor(expiresIn / 60)} minutes
-
-Click OK and waiting for you to link...`;
-
-        alert(instructions);
-
-        // Update status to show waiting
-        let countdown = Math.floor(expiresIn);
-        statusEl.innerHTML = `<span style="color: #4f46e5;">⏱ Waiting for Discord link... (${Math.floor(countdown / 60)}:${String(countdown % 60).padStart(2, '0')})</span>`;
-
-        // Start polling for link status
-        if (linkingPollInterval) {
-            clearInterval(linkingPollInterval);
-        }
-
-        linkingPollInterval = setInterval(async () => {
-            try {
-                countdown -= 2;
-
-                // Update countdown display
-                if (countdown > 0) {
-                    const mins = Math.floor(countdown / 60);
-                    const secs = countdown % 60;
-                    statusEl.innerHTML = `<span style="color: #4f46e5;">⏱ Waiting for Discord link... (${mins}:${String(secs).padStart(2, '0')})</span>`;
-                }
-
-                // Check link status
-                const statusResp = await authFetch(`${API_AUTH}/discord/link-status/${code}`);
-                const statusData = await statusResp.json();
-
-                if (statusData.status === 'linked') {
-                    clearInterval(linkingPollInterval);
-                    linkingPollInterval = null;
-
-                    document.getElementById('discordHandle').value = statusData.discord_handle;
-                    statusEl.innerHTML = '<span style="color: #13ce66;">✓ Successfully linked!</span>';
-
-                    setTimeout(() => {
-                        statusEl.innerHTML = '<span style="color: #13ce66;">✓ Linked</span>';
-                    }, 3000);
-                } else if (statusData.status === 'expired' || countdown <= 0) {
-                    clearInterval(linkingPollInterval);
-                    linkingPollInterval = null;
-                    statusEl.innerHTML = '<span style="color: #ff4949;">✗ Code expired. Please try again.</span>';
-                }
-            } catch (pollError) {
-                console.error('Polling error:', pollError);
-            }
-        }, 2000); // Poll every 2 seconds
-
-    } catch (error) {
-        console.error('Failed to generate Discord link code:', error);
-        statusEl.innerHTML = `<span style="color: #ff4949;">✗ ${escapeHtml(error.message)}</span>`;
-    }
 }
 
 async function handleUserSettingsSubmit(e) {
@@ -599,21 +483,36 @@ async function handleUserSettingsSubmit(e) {
     const payload = {
         username: document.getElementById('profileUsername').value,
         name: document.getElementById('profileName').value,
-        email: document.getElementById('profileEmail').value,
-        initials: document.getElementById('profileInitials').value,
-        password: document.getElementById('profilePassword').value
+        initials: document.getElementById('profileInitials').value
     };
-    if (!payload.password) delete payload.password;
+
+    const newPassword = document.getElementById('profilePassword').value;
+    const newEmail = document.getElementById('profileEmail').value;
 
     try {
-        const resp = await authFetch(`${API_AUTH}/me`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
-        const data = await resp.json();
-        if (!resp.ok) throw new Error(data.error || 'Failed to update profile');
-        currentUser = data.user;
+        const client = ensureSupabase();
+        if (!client) throw new Error('Not connected');
+
+        const { data: updatedProfile, error: profileError } = await client
+            .from('profiles')
+            .update(payload)
+            .eq('id', currentUser.id)
+            .select()
+            .single();
+
+        if (profileError) throw new Error(profileError.message);
+
+        if (newEmail && newEmail !== currentUser.email) {
+            const { error: emailError } = await client.auth.updateUser({ email: newEmail });
+            if (emailError) throw new Error(emailError.message);
+        }
+
+        if (newPassword) {
+            const { error: pwError } = await client.auth.updateUser({ password: newPassword });
+            if (pwError) throw new Error(pwError.message);
+        }
+
+        currentUser = { ...currentUser, ...updatedProfile };
         updateUserInfo();
         closeUserSettings();
         showSuccess('Profile updated');
@@ -625,11 +524,11 @@ async function handleUserSettingsSubmit(e) {
     }
 }
 
-// Highlight selected color preset with a black border
+// Highlight selected color preset
 function updateColorPresetSelection(selectedColor) {
     document.querySelectorAll('.color-preset').forEach(btn => {
         const c = btn.getAttribute('data-color');
-        btn.classList.toggle('selected', c?.toLowerCase() === selectedColor?.toLowerCase());
+        btn.classList.toggle('selected', c && selectedColor && c.toLowerCase() === selectedColor.toLowerCase());
     });
 }
 
@@ -643,36 +542,88 @@ async function loadData() {
     updateUI();
 }
 
-// Load users
+// Load users (profiles)
 async function loadUsers() {
     try {
-        const response = await authFetch(API_USERS);
-        users = await response.json();
+        const client = ensureSupabase();
+        if (!client) return;
+        const { data, error } = await client
+            .from('profiles')
+            .select('id, name, email, username, color, avatar_url');
+        if (error) {
+            console.error('Failed to load users:', error);
+            showError('Failed to load users: ' + (error.message || error));
+            return;
+        }
+        users = data || [];
     } catch (error) {
         console.error('Failed to load users:', error);
+        showError('Failed to load users: ' + (error.message || error));
     }
 }
 
-// Load projects
+// Load projects (with members via join)
 async function loadProjects() {
     try {
-        const response = await authFetch(API_PROJECTS);
-        projects = await response.json();
+        const client = ensureSupabase();
+        if (!client) return;
+        const { data, error } = await client
+            .from('projects')
+            .select('*, project_members(user_id, role, profiles(id, name, username, color, avatar_url))');
+        if (error) {
+            console.error('Failed to load projects:', error);
+            showError('Failed to load projects: ' + (error.message || error));
+            return;
+        }
+        projects = data || [];
         renderProjectsNav();
         renderMobileProjectOptions();
     } catch (error) {
         console.error('Failed to load projects:', error);
+        showError('Failed to load projects: ' + (error.message || error));
     }
 }
 
 // Load tasks
 async function loadTasks() {
     try {
-        const response = await authFetch(API_TASKS);
-        tasks = await response.json();
+        const client = ensureSupabase();
+        if (!client) return;
+        const { data, error } = await client
+            .from('tasks')
+            .select('*')
+            .order('created_at', { ascending: false });
+        if (error) {
+            console.error('Failed to load tasks:', error);
+            showError('Failed to load tasks: ' + (error.message || error));
+            return;
+        }
+        tasks = data || [];
     } catch (error) {
         console.error('Failed to load tasks:', error);
+        showError('Failed to load tasks: ' + (error.message || error));
     }
+}
+
+// Helper: get member user_ids from a project (from project_members join)
+function getProjectMemberIds(project) {
+    if (!project) return [];
+    const memberIds = [];
+    if (project.owner_id) memberIds.push(project.owner_id);
+    if (Array.isArray(project.project_members)) {
+        project.project_members.forEach(pm => {
+            if (pm.user_id && !memberIds.includes(pm.user_id)) {
+                memberIds.push(pm.user_id);
+            }
+        });
+    }
+    return memberIds;
+}
+
+// Get project display color from the projects table
+function getProjectColor(project) {
+    if (!project) return '#f06a6a';
+    return project.color || '#f06a6a';
 }
 
 // Switch view
@@ -680,7 +631,6 @@ function switchView(view) {
     currentView = view;
     currentProjectId = null;
 
-    // Update nav items
     document.querySelectorAll('.nav-item').forEach(item => {
         item.classList.remove('active');
         if (item.dataset.view === view) {
@@ -688,12 +638,10 @@ function switchView(view) {
         }
     });
 
-    // Update project nav
     document.querySelectorAll('.project-nav-item').forEach(item => {
         item.classList.remove('active');
     });
 
-    // Show/hide views
     if (view === 'projects') {
         document.getElementById('tasksView').style.display = 'none';
         document.getElementById('projectsView').style.display = 'block';
@@ -726,7 +674,6 @@ function switchToProject(projectId) {
     const project = projects.find(p => p.id === projectId);
     if (!project) return;
 
-    // Update nav
     document.querySelectorAll('.nav-item').forEach(item => item.classList.remove('active'));
     document.querySelectorAll('.project-nav-item').forEach(item => {
         item.classList.remove('active');
@@ -735,18 +682,26 @@ function switchToProject(projectId) {
         }
     });
 
-    // Show tasks view
     document.getElementById('tasksView').style.display = 'block';
     document.getElementById('projectsView').style.display = 'none';
     document.getElementById('addTaskBtn').style.display = 'flex';
-    // Show project color dot in the header title instead of folder emoji
     const titleEl = document.getElementById('pageTitle');
-    const projectColor = project.color || '#f06a6a';
-    titleEl.innerHTML = `
-        <span class=\"project-color-dot\" style=\"width:10px;height:10px;background-color:${projectColor};display:inline-block;vertical-align:middle;\"></span>
-        ${escapeHtml(project.name)}
-        <button class=\"icon-btn title-gear\" type=\"button\" onclick=\"openProjectSettings('${project.id}')\" title=\"Project settings\">⚙️</button>
-    `;
+    const projectColor = getProjectColor(project);
+    // Build title using safe DOM manipulation
+    titleEl.textContent = '';
+    const dot = document.createElement('span');
+    dot.className = 'project-color-dot';
+    dot.style.cssText = 'width:10px;height:10px;background-color:' + projectColor + ';display:inline-block;vertical-align:middle;';
+    const nameText = document.createTextNode(' ' + project.name + ' ');
+    const gearBtn = document.createElement('button');
+    gearBtn.className = 'icon-btn title-gear';
+    gearBtn.type = 'button';
+    gearBtn.setAttribute('onclick', "openProjectSettings('" + project.id + "')");
+    gearBtn.title = 'Project settings';
+    gearBtn.textContent = '\u2699\uFE0F';
+    titleEl.appendChild(dot);
+    titleEl.appendChild(nameText);
+    titleEl.appendChild(gearBtn);
 
     renderTasks(filterTasks());
     updateStats();
@@ -757,21 +712,34 @@ function switchToProject(projectId) {
 function renderProjectsNav() {
     const nav = document.getElementById('projectsNav');
     if (projects.length === 0) {
-        nav.innerHTML = '<p style="padding: 0.5rem 0.75rem; color: var(--text-secondary); font-size: 0.875rem;">No projects yet</p>';
+        nav.textContent = '';
+        const p = document.createElement('p');
+        p.style.cssText = 'padding: 0.5rem 0.75rem; color: var(--text-secondary); font-size: 0.875rem;';
+        p.textContent = 'No projects yet';
+        nav.appendChild(p);
         return;
     }
 
-    nav.innerHTML = projects.map(project => {
-        const projectColor = project.color || '#f06a6a';
-        return `
-            <button class="project-nav-item" data-project-id="${project.id}" onclick="switchToProject('${project.id}')">
-                <span style="display: flex; align-items: center; gap: 0.5rem;">
-                    <span class="project-color-indicator" style="background-color: ${projectColor}"></span>
-                    ${escapeHtml(project.name)}
-                </span>
-            </button>
-        `;
-    }).join('');
+    nav.textContent = '';
+    projects.forEach(project => {
+        const projectColor = getProjectColor(project);
+        const btn = document.createElement('button');
+        btn.className = 'project-nav-item';
+        btn.dataset.projectId = project.id;
+        btn.setAttribute('onclick', "switchToProject('" + project.id + "')");
+
+        const span = document.createElement('span');
+        span.style.cssText = 'display: flex; align-items: center; gap: 0.5rem;';
+
+        const colorDot = document.createElement('span');
+        colorDot.className = 'project-color-indicator';
+        colorDot.style.backgroundColor = projectColor;
+
+        span.appendChild(colorDot);
+        span.appendChild(document.createTextNode(project.name));
+        btn.appendChild(span);
+        nav.appendChild(btn);
+    });
 }
 
 // Render projects grid
@@ -780,114 +748,96 @@ function renderProjectsGrid() {
     const emptyState = document.getElementById('projectsEmptyState');
 
     if (projects.length === 0) {
-        grid.innerHTML = '';
+        grid.textContent = '';
         emptyState.style.display = 'block';
         return;
     }
 
     emptyState.style.display = 'none';
+    // Build cards via innerHTML with escapeHtml — safe since all user data is escaped
     grid.innerHTML = projects.map(project => {
         const isOwner = project.owner_id === currentUser.id;
         const projectTasks = tasks.filter(t => t.project_id === project.id);
         const completedCount = projectTasks.filter(t => t.status === 'completed').length;
-        const memberCount = (project.members?.length || 0) + 1; // +1 for owner
+        const memberCount = getProjectMemberIds(project).length;
+        const color = getProjectColor(project);
 
-        return `
-            <div class=\"project-card\" onclick=\"openProjectSettings('${project.id}')\">
-                <div class="project-card-header">
-                    <div>
-                        <h3 class="project-card-title">
-                            <span class="project-color-indicator" style="background-color: ${project.color || '#f06a6a'}; margin-right: 6px;"></span>
-                            ${escapeHtml(project.name)}
-                        </h3>
-                        ${isOwner ? '<span class="project-owner-badge">Owner</span>' : ''}
-                    </div>
-                    ${isOwner ? `
-                        <button class="icon-btn" onclick="event.stopPropagation(); openProjectSettings('${project.id}')" title="Settings">⚙️</button>
-                    ` : ''}
-                </div>
-                <p class="project-card-description">${escapeHtml(project.description || 'No description')}</p>
-                <div class="project-card-stats">
-                    <div class="project-stat">
-                        <span>📝</span>
-                        <span><span class="project-stat-number">${projectTasks.length}</span> tasks</span>
-                    </div>
-                    <div class="project-stat">
-                        <span>✅</span>
-                        <span><span class="project-stat-number">${completedCount}</span> done</span>
-                    </div>
-                    <div class="project-stat">
-                        <span>👥</span>
-                        <span><span class="project-stat-number">${memberCount}</span> members</span>
-                    </div>
-                </div>
-            </div>
-        `;
+        return '<div class="project-card" onclick="openProjectSettings(\'' + project.id + '\')">' +
+            '<div class="project-card-header">' +
+            '<div>' +
+            '<h3 class="project-card-title">' +
+            '<span class="project-color-indicator" style="background-color: ' + color + '; margin-right: 6px;"></span>' +
+            escapeHtml(project.name) +
+            '</h3>' +
+            (isOwner ? '<span class="project-owner-badge">Owner</span>' : '') +
+            '</div>' +
+            (isOwner ? '<button class="icon-btn" onclick="event.stopPropagation(); openProjectSettings(\'' + project.id + '\')" title="Settings">\u2699\uFE0F</button>' : '') +
+            '</div>' +
+            '<p class="project-card-description">' + escapeHtml(project.description || 'No description') + '</p>' +
+            '<div class="project-card-stats">' +
+            '<div class="project-stat"><span>\uD83D\uDCDD</span><span><span class="project-stat-number">' + projectTasks.length + '</span> tasks</span></div>' +
+            '<div class="project-stat"><span>\u2705</span><span><span class="project-stat-number">' + completedCount + '</span> done</span></div>' +
+            '<div class="project-stat"><span>\uD83D\uDC65</span><span><span class="project-stat-number">' + memberCount + '</span> members</span></div>' +
+            '</div>' +
+            '</div>';
     }).join('');
 }
 
-// Filter tasks based on view and filters
+// Filter tasks
+// Supabase schema: task.title, task.due_date, task.assigned_to
 function filterTasks() {
     let filtered = [...tasks];
 
-    // Filter by view
     if (currentView === 'my-tasks') {
-        filtered = filtered.filter(t => t.assigned_to_id === currentUser.id);
+        filtered = filtered.filter(t => t.assigned_to === currentUser.id);
     } else if (currentView === 'project' && currentProjectId) {
         filtered = filtered.filter(t => t.project_id === currentProjectId);
     }
 
-    // Filter by status (legacy; no UI currently sets this)
     if (currentFilters.status) {
         filtered = filtered.filter(t => t.status === currentFilters.status);
     }
 
-    // Filter by priority
     if (currentFilters.priority) {
         filtered = filtered.filter(t => (t.priority || 'none').toLowerCase() === currentFilters.priority);
     }
 
-    // Filter archived tasks (exclude by default unless showArchived is true)
     if (!currentFilters.showArchived) {
         filtered = filtered.filter(t => !t.archived);
     }
 
-    // Filter by search
     if (currentFilters.search) {
         filtered = filtered.filter(t =>
-            t.name.toLowerCase().includes(currentFilters.search) ||
-            t.description.toLowerCase().includes(currentFilters.search)
+            (t.title || '').toLowerCase().includes(currentFilters.search) ||
+            (t.description || '').toLowerCase().includes(currentFilters.search)
         );
     }
 
-    // Sort
     const sortMode = currentFilters.sort || '';
     if (sortMode === 'priority') {
         const rank = { high: 1, medium: 2, low: 3, none: 4 };
         filtered.sort((a, b) => {
-            const ra = rank[(a.priority || 'none').toLowerCase()] ?? 99;
-            const rb = rank[(b.priority || 'none').toLowerCase()] ?? 99;
+            const ra = rank[(a.priority || 'none').toLowerCase()] || 99;
+            const rb = rank[(b.priority || 'none').toLowerCase()] || 99;
             if (ra !== rb) return ra - rb;
-            const ad = new Date(a.date || a.created_at || 0).getTime();
-            const bd = new Date(b.date || b.created_at || 0).getTime();
+            const ad = new Date(a.due_date || a.created_at || 0).getTime();
+            const bd = new Date(b.due_date || b.created_at || 0).getTime();
             return bd - ad;
         });
     } else if (sortMode === 'due') {
         filtered.sort((a, b) => {
-            // Ascending by due date (earliest first). Missing dates go last.
-            const ad = new Date(a.date || 0).getTime();
-            const bd = new Date(b.date || 0).getTime();
+            const ad = new Date(a.due_date || 0).getTime();
+            const bd = new Date(b.due_date || 0).getTime();
             const aDue = isNaN(ad) ? Infinity : ad;
             const bDue = isNaN(bd) ? Infinity : bd;
             if (aDue !== bDue) return aDue - bDue;
-            // Tie-breaker: newest created first
             const ac = new Date(a.created_at || 0).getTime();
             const bc = new Date(b.created_at || 0).getTime();
             return bc - ac;
         });
     }
 
-    // Final sort: Always put pending tasks before completed tasks
+    // Pending before completed
     filtered.sort((a, b) => {
         const aCompleted = a.status === 'completed' ? 1 : 0;
         const bCompleted = b.status === 'completed' ? 1 : 0;
@@ -903,9 +853,15 @@ function renderTasks(tasksToRender) {
     const emptyState = document.getElementById('emptyState');
 
     if (!tasksToRender || tasksToRender.length === 0) {
-        taskList.innerHTML = '';
-        emptyState.style.display = 'block';
-        // Hide mobile create button when showing empty state button to avoid duplicates
+        taskList.textContent = '';
+        if (emptyState) {
+            // Ensure the empty state always has a clear message
+            const msgEl = emptyState.querySelector('.empty-state-text, p, h3') || emptyState;
+            if (!msgEl.dataset.defaultText) {
+                msgEl.dataset.defaultText = msgEl.textContent || 'No tasks yet';
+            }
+            emptyState.style.display = 'block';
+        }
         const mobileCreate = document.querySelector('.mobile-create-wrap');
         if (mobileCreate) mobileCreate.style.display = 'none';
         return;
@@ -913,14 +869,14 @@ function renderTasks(tasksToRender) {
 
     emptyState.style.display = 'none';
     taskList.innerHTML = tasksToRender.map(task => createTaskCard(task)).join('');
-    // Show mobile create button when there are tasks
     const mobileCreate = document.querySelector('.mobile-create-wrap');
     if (mobileCreate) mobileCreate.style.display = '';
 }
 
 // Create task card HTML
+// Supabase schema: task.title, task.due_date, task.assigned_to
 function createTaskCard(task) {
-    const dueDate = new Date(task.date);
+    const dueDate = new Date(task.due_date);
     const formattedDate = dueDate.toLocaleDateString('en-US', {
         month: 'short',
         day: 'numeric'
@@ -931,72 +887,63 @@ function createTaskCard(task) {
 
     const project = projects.find(p => p.id === task.project_id);
 
-    // Generate project abbreviation (max 8 characters)
     let projectAbbr = '';
     let projectColor = '#cccccc';
     if (project) {
-        // Special case for personal projects
         if (project.name.toLowerCase().includes('personal')) {
             projectAbbr = 'Personal';
         } else {
-            // Use project name, truncated to 8 characters with first letter capitalized
             const name = project.name.substring(0, 8);
             projectAbbr = name.charAt(0).toUpperCase() + name.slice(1);
         }
-        projectColor = project.color || '#f06a6a';
+        projectColor = getProjectColor(project);
     }
 
-    // Priority indicator colors (normalize value)
     const priority = (typeof task.priority === 'string' ? task.priority : 'none').toLowerCase().trim();
     const priorityColors = {
-        'high': '#ef4444',      // red
-        'medium': '#f59e0b',    // orange/yellow
-        'low': '#10b981'        // green
+        'high': '#ef4444',
+        'medium': '#f59e0b',
+        'low': '#10b981'
     };
     const priorityColor = priorityColors[priority];
     const showPriorityTriangle = priority !== 'none' && priorityColor;
 
-    // Get assignee and use their profile initials and color
-    const assignee = users.find(u => u.id === task.assigned_to_id);
+    const assignee = users.find(u => u.id === task.assigned_to);
     let assigneeInitials = '';
     let assigneeColor = '#667eea';
     if (assignee) {
-        // Use the initials from the user's profile
-        assigneeInitials = assignee.initials || '';
-
-        // Use the color from the user's profile
+        assigneeInitials = (assignee.username || assignee.name || '?')
+            .split(/\s+/).map(w => w[0]).slice(0,2).join('').toUpperCase();
         assigneeColor = assignee.color || '#667eea';
     }
 
-    return `
-        <div class="task-card-compact ${task.status}" onclick="viewTaskDetails('${task.id}')" style="border-left-color: ${projectColor};">
-            ${showPriorityTriangle ? `<div class="priority-triangle" style="border-color: transparent ${priorityColor} transparent transparent;" title="Priority: ${priority}"></div>` : ''}
-            <div class="task-card-main">
-                <button class="task-checkbox ${isCompleted ? 'checked' : ''}"
-                        onclick="quickCompleteTask(event, '${task.id}', ${!isCompleted})"
-                        title="${isCompleted ? 'Mark as incomplete' : 'Mark as complete'}">
-                    ${isCompleted ? '<span class="checkmark">✓</span>' : ''}
-                </button>
-                <h3 class="task-title-compact">${escapeHtml(task.name)}</h3>
-            </div>
-            <div class="task-card-footer">
-                <div class="task-footer-left">
-                    ${assignee ? `
-                        <div class="assignee-circle" style="background-color: ${assigneeColor}" title="${escapeHtml(assignee.name)}">
-                            ${escapeHtml(assigneeInitials)}
-                        </div>
-                    ` : ''}
-                    <span class="task-due ${isOverdue ? 'overdue' : ''}">${formattedDate}</span>
-                </div>
-                ${project ? `
-                    <div class="task-project-badge">
-                        <span class="project-abbr">${escapeHtml(projectAbbr)}</span>
-                        <span class="project-color-dot" style="background-color: ${projectColor}"></span>
-                    </div>
-                ` : ''}
-            </div>
-        </div>
-    `;
+    return '<div class="task-card-compact ' + task.status + '" onclick="viewTaskDetails(\'' + task.id + '\')" style="border-left-color: ' + projectColor + ';">' +
+        (showPriorityTriangle ? '<div class="priority-triangle" style="border-color: transparent ' + priorityColor + ' transparent transparent;" title="Priority: ' + priority + '"></div>' : '') +
+        '<div class="task-card-main">' +
+        '<button class="task-checkbox ' + (isCompleted ? 'checked' : '') + '"' +
+            ' onclick="quickCompleteTask(event, \'' + task.id + '\', ' + (!isCompleted) + ')"' +
+            ' title="' + (isCompleted ? 'Mark as incomplete' : 'Mark as complete') + '">' +
+            (isCompleted ? '<span class="checkmark">\u2713</span>' : '') +
+        '</button>' +
+        '<h3 class="task-title-compact">' + escapeHtml(task.title || '') + '</h3>' +
+        '</div>' +
+        '<div class="task-card-footer">' +
+        '<div class="task-footer-left">' +
+        (assignee ?
+            '<div class="assignee-circle" style="background-color: ' + assigneeColor + '" title="' + escapeHtml(assignee.name || assignee.username || '') + '">' +
+            escapeHtml(assigneeInitials) +
+            '</div>'
+            : '') +
+        '<span class="task-due ' + (isOverdue ? 'overdue' : '') + '">' + formattedDate + '</span>' +
+        '</div>' +
+        (project ?
+            '<div class="task-project-badge">' +
+            '<span class="project-abbr">' + escapeHtml(projectAbbr) + '</span>' +
+            '<span class="project-color-dot" style="background-color: ' + projectColor + '"></span>' +
+            '</div>'
+            : '') +
+        '</div>' +
+        '</div>';
 }
 
 // Update stats
@@ -1013,6 +960,18 @@ function updateStats() {
 
 // Update UI
 function updateUI() {
+    const filtered = filterTasks();
+    const total = filtered.length;
+    const done = filtered.filter(t => t.status === 'completed').length;
+    const pending = total - done;
+
+    const mTotal = document.getElementById('mobileStatTotal');
+    const mDone = document.getElementById('mobileStatDone');
+    const mPending = document.getElementById('mobileStatPending');
+    if (mTotal) mTotal.textContent = total;
+    if (mDone) mDone.textContent = done;
+    if (mPending) mPending.textContent = pending;
+
     if (currentView === 'projects') {
         renderProjectsGrid();
     } else {
@@ -1028,31 +987,22 @@ function openTaskModal() {
     document.getElementById('taskModalTitle').textContent = 'Create New Task';
     document.getElementById('taskSubmitBtnText').textContent = 'Create Task';
 
-    // Set default date (DD/MM/YYYY)
-    const now = new Date();
-    const dd = String(now.getDate()).padStart(2,'0');
-    const mm = String(now.getMonth()+1).padStart(2,'0');
-    const yyyy = String(now.getFullYear());
-    document.getElementById('taskDate').value = `${dd}/${mm}/${yyyy}`;
+    document.getElementById('taskDate').value = new Date().toISOString().split('T')[0];
 
-    // Ensure priority default reflects in custom select UI
     const prioritySelect = document.getElementById('taskPriority');
     if (prioritySelect) {
         prioritySelect.value = 'none';
         prioritySelect.dispatchEvent(new Event('change', { bubbles: true }));
     }
 
-    // Populate project dropdown
     const projectSelect = document.getElementById('taskProject');
     projectSelect.innerHTML = '<option value="">Select project...</option>' +
-        projects.map(p => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('');
+        projects.map(p => '<option value="' + p.id + '">' + escapeHtml(p.name) + '</option>').join('');
 
-    // Reset assignee dropdown to default state
     const assigneeSelect = document.getElementById('taskAssignee');
     assigneeSelect.disabled = false;
     assigneeSelect.innerHTML = '<option value="">Select person...</option>';
 
-    // Pre-select current project if in project view
     if (currentProjectId) {
         projectSelect.value = currentProjectId;
         loadProjectMembers(currentProjectId);
@@ -1061,7 +1011,6 @@ function openTaskModal() {
     document.getElementById('taskModal').classList.add('active');
 }
 
-// Ensure global access for inline handlers used in HTML (e.g., empty-state button, close X)
 window.openTaskModal = window.openTaskModal || openTaskModal;
 window.closeTaskModal = window.closeTaskModal || closeTaskModal;
 
@@ -1071,18 +1020,21 @@ function loadProjectMembers(projectId) {
     if (!project) return;
 
     const assigneeSelect = document.getElementById('taskAssignee');
-    const memberIds = [project.owner_id, ...(project.members || [])];
+    const memberIds = getProjectMemberIds(project);
     const projectMembers = users.filter(u => memberIds.includes(u.id));
 
-    // For personal projects, disable the dropdown and auto-select the owner
     if (project.is_personal) {
         assigneeSelect.disabled = true;
-        assigneeSelect.innerHTML = projectMembers.map(u => `<option value="${u.id}">${escapeHtml(u.username || u.name)}</option>`).join('');
+        assigneeSelect.innerHTML = projectMembers.map(u =>
+            '<option value="' + u.id + '">' + escapeHtml(u.username || u.name) + '</option>'
+        ).join('');
         assigneeSelect.value = project.owner_id;
     } else {
         assigneeSelect.disabled = false;
         assigneeSelect.innerHTML = '<option value="">Select person...</option>' +
-            projectMembers.map(u => `<option value="${u.id}">${escapeHtml(u.username || u.name)}</option>`).join('');
+            projectMembers.map(u =>
+                '<option value="' + u.id + '">' + escapeHtml(u.username || u.name) + '</option>'
+            ).join('');
     }
 }
 
@@ -1101,34 +1053,30 @@ function editTask(id) {
         }
 
         document.getElementById('taskId').value = task.id;
-        document.getElementById('taskName').value = task.name || '';
+        document.getElementById('taskName').value = task.title || '';
         document.getElementById('taskDescription').value = task.description || '';
-        document.getElementById('taskDate').value = formatDateToDMY(task.date) || '';
+        document.getElementById('taskDate').value = task.due_date ? task.due_date.split('T')[0] : '';
         const prioSel = document.getElementById('taskPriority');
         if (prioSel) {
             prioSel.value = (typeof task.priority === 'string' ? task.priority : 'none').toLowerCase().trim();
             prioSel.dispatchEvent(new Event('change', { bubbles: true }));
         }
 
-        // Populate dropdowns
         const projectSelect = document.getElementById('taskProject');
         projectSelect.innerHTML = '<option value="">Select project...</option>' +
-            projects.map(p => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('');
+            projects.map(p => '<option value="' + p.id + '">' + escapeHtml(p.name) + '</option>').join('');
         projectSelect.value = task.project_id || '';
 
-        // Load project members and set assignee
         if (task.project_id) {
             loadProjectMembers(task.project_id);
-            // Set assignee after a brief delay to ensure dropdown is populated
             setTimeout(() => {
-                document.getElementById('taskAssignee').value = task.assigned_to_id || '';
+                document.getElementById('taskAssignee').value = task.assigned_to || '';
             }, 0);
         }
 
         document.getElementById('taskModalTitle').textContent = 'Edit Task';
         document.getElementById('taskSubmitBtnText').textContent = 'Update Task';
 
-        // Open modal without resetting form
         document.getElementById('taskModal').classList.add('active');
     } catch (error) {
         console.error('Error in editTask:', error);
@@ -1141,83 +1089,128 @@ let currentTaskDetailsId = null;
 
 function viewTaskDetails(id) {
     const task = tasks.find(t => t.id === id);
-    if (!task) {
-        return;
-    }
+    if (!task) return;
 
     currentTaskDetailsId = id;
 
-    const assignee = users.find(u => u.id === task.assigned_to_id);
+    const assignee = users.find(u => u.id === task.assigned_to);
     const project = projects.find(p => p.id === task.project_id);
 
-    const dueDate = new Date(task.date);
+    const dueDate = new Date(task.due_date);
     const formattedDate = dueDate.toLocaleDateString('en-US', {
         year: 'numeric',
         month: 'long',
         day: 'numeric'
     });
 
-    // Priority display with triangle marker
     const priority = (typeof task.priority === 'string' ? task.priority : 'none').toLowerCase().trim();
     const priorityColors = { high: '#ef4444', medium: '#f59e0b', low: '#10b981' };
     const pColor = priorityColors[priority];
-    const priorityDisplay = pColor && priority !== 'none'
-        ? `<span class="priority-triangle-inline" style="border-left-color: ${pColor}; margin-right: 6px;"></span>${priority.charAt(0).toUpperCase() + priority.slice(1)}`
-        : `<span class="priority-triangle-inline" style="border-left-color: transparent; margin-right: 6px;"></span>${priority.charAt(0).toUpperCase() + priority.slice(1)}`;
+    const priorityLabel = priority.charAt(0).toUpperCase() + priority.slice(1);
 
-    document.getElementById('detailsTaskName').textContent = task.name;
+    document.getElementById('detailsTaskName').textContent = task.title || '';
     document.getElementById('detailsTaskDescription').textContent = task.description || 'No description';
-    const projColor = project ? (project.color || '#f06a6a') : '#cccccc';
-    document.getElementById('detailsTaskProject').innerHTML = project
-        ? `<span class="project-color-dot" style="background-color: ${projColor}; margin-right: 6px;"></span>${escapeHtml(project.name)}`
-        : 'No project';
-    document.getElementById('detailsTaskAssignee').textContent = assignee ? (assignee.username || assignee.name) : 'Unassigned';
+
+    const projEl = document.getElementById('detailsTaskProject');
+    if (project) {
+        const projColor = getProjectColor(project);
+        projEl.textContent = '';
+        const colorDot = document.createElement('span');
+        colorDot.className = 'project-color-dot';
+        colorDot.style.cssText = 'background-color: ' + projColor + '; margin-right: 6px;';
+        projEl.appendChild(colorDot);
+        projEl.appendChild(document.createTextNode(project.name));
+    } else {
+        projEl.textContent = 'No project';
+    }
+
+    document.getElementById('detailsTaskAssignee').textContent = assignee
+        ? (assignee.username || assignee.name)
+        : 'Unassigned';
     document.getElementById('detailsTaskDate').textContent = formattedDate;
-    document.getElementById('detailsTaskPriority').innerHTML = priorityDisplay;
+
+    const prioEl = document.getElementById('detailsTaskPriority');
+    prioEl.textContent = '';
+    const tri = document.createElement('span');
+    tri.className = 'priority-triangle-inline';
+    tri.style.cssText = 'border-left-color: ' + (pColor && priority !== 'none' ? pColor : 'transparent') + '; margin-right: 6px;';
+    prioEl.appendChild(tri);
+    prioEl.appendChild(document.createTextNode(priorityLabel));
 
     const statusBadge = document.getElementById('detailsTaskStatus');
-    statusBadge.textContent = task.status.replace('-', ' ');
-    statusBadge.className = `task-status ${task.status}`;
+    statusBadge.textContent = (task.status || '').replace('-', ' ');
+    statusBadge.className = 'task-status ' + task.status;
 
     document.getElementById('taskDetailsModal').classList.add('active');
 }
 
-// Close task details modal
 function closeTaskDetailsModal() {
     document.getElementById('taskDetailsModal').classList.remove('active');
     currentTaskDetailsId = null;
 }
 
-// Edit task from details modal
 function editTaskFromDetails() {
     if (!currentTaskDetailsId) return;
-    const taskId = currentTaskDetailsId; // Store ID before closing modal
+    const taskId = currentTaskDetailsId;
     closeTaskDetailsModal();
     editTask(taskId);
 }
 
-// Delete task from details modal
 async function deleteTaskFromDetails() {
     if (!currentTaskDetailsId) return;
-    const taskId = currentTaskDetailsId; // Store ID before closing modal
+    const taskId = currentTaskDetailsId;
     closeTaskDetailsModal();
     await deleteTask(taskId);
+}
+
+function validateTaskForm() {
+    let valid = true;
+
+    document.querySelectorAll('#taskModal .form-input').forEach(el => {
+        el.classList.remove('input-error');
+    });
+
+    const title = document.getElementById('taskName').value.trim();
+    if (!title) {
+        document.getElementById('taskName').classList.add('input-error');
+        valid = false;
+    }
+
+    const projectId = document.getElementById('taskProject').value;
+    const projectSelect = document.getElementById('taskProject');
+    if (!projectId) {
+        const trigger = projectSelect?.closest('.custom-select-wrapper')?.querySelector('.custom-select-trigger');
+        if (trigger) trigger.classList.add('input-error');
+        valid = false;
+    }
+
+    const dateVal = document.getElementById('taskDate').value;
+    if (!dateVal) {
+        document.getElementById('taskDate').classList.add('input-error');
+        valid = false;
+    }
+
+    if (!valid) {
+        showError('Please fill in all required fields');
+    }
+
+    return valid;
 }
 
 // Handle task submit
 async function handleTaskSubmit(e) {
     e.preventDefault();
 
+    if (!validateTaskForm()) return;
+
     const submitBtn = e.target.querySelector('button[type="submit"]');
     const submitBtnText = document.getElementById('taskSubmitBtnText');
     const originalText = submitBtnText.textContent;
 
-    // Disable form
     submitBtn.disabled = true;
     submitBtnText.textContent = 'Saving...';
 
     const taskId = document.getElementById('taskId').value;
-    const previousTask = taskId ? tasks.find(t => t.id === taskId) : null;
 
     const prioSelect = document.getElementById('taskPriority');
     const selectedPriority = prioSelect && prioSelect._customSelect
@@ -1225,60 +1218,64 @@ async function handleTaskSubmit(e) {
         : (prioSelect ? prioSelect.value : 'none');
     const normalizedPriority = (typeof selectedPriority === 'string' ? selectedPriority : 'none').toLowerCase().trim();
 
-    // Convert UI date (DD/MM/YYYY) to ISO for API
-    const isoDate = parseDMYToISO(document.getElementById('taskDate').value);
-    if (!isoDate) {
-        showError('Please enter a valid date in DD/MM/YYYY format');
-        submitBtn.disabled = false;
-        submitBtnText.textContent = originalText;
-        return;
-    }
+    const isoDate = document.getElementById('taskDate').value || null;
 
+    // Supabase schema: title, due_date, assigned_to
     const taskData = {
-        name: document.getElementById('taskName').value,
+        title: document.getElementById('taskName').value,
         description: document.getElementById('taskDescription').value,
-        date: isoDate,
-        project_id: document.getElementById('taskProject').value,
-        assigned_to_id: document.getElementById('taskAssignee').value,
+        due_date: isoDate,
+        project_id: document.getElementById('taskProject').value || null,
+        assigned_to: document.getElementById('taskAssignee').value || null,
         priority: normalizedPriority
     };
 
     try {
-        const url = taskId ? `${API_TASKS}/${taskId}` : API_TASKS;
-        const method = taskId ? 'PUT' : 'POST';
+        const client = ensureSupabase();
+        if (!client) throw new Error('Not connected');
 
-        const response = await authFetch(url, {
-            method,
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(taskData)
-        });
+        let result, error;
 
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.error || 'Failed to save task');
+        if (taskId) {
+            ({ data: result, error } = await client
+                .from('tasks')
+                .update({ ...taskData, updated_at: new Date().toISOString() })
+                .eq('id', taskId)
+                .select()
+                .single());
+        } else {
+            ({ data: result, error } = await client
+                .from('tasks')
+                .insert({ ...taskData, created_by: currentUser.id, status: 'pending' })
+                .select()
+                .single());
         }
 
-        const result = await response.json();
+        if (error) throw new Error(error.message);
+
+        // Log activity
+        try {
+            await client.from('activity_log').insert({
+                user_id: currentUser.id,
+                action: taskId ? 'task_updated' : 'task_created',
+                details: { task_id: result.id, title: result.title }
+            });
+        } catch (_) {}
 
         closeTaskModal();
-        // Also ensure details modal is closed and return to All Tasks view
         closeTaskDetailsModal();
         await loadTasks();
-        if (typeof switchView === 'function') {
+        // Stay in the current view after editing; only switch to all-tasks after creating new
+        if (!taskId) {
             switchView('all');
         } else {
             updateUI();
         }
 
-        // Ensure both modals are closed to return to the main list view
-        closeTaskDetailsModal();
-
-        // Success message (celebration only happens via checkbox)
         showSuccess(taskId ? 'Task updated successfully!' : 'Task created successfully!');
     } catch (error) {
         showError(error.message);
     } finally {
-        // Re-enable form
         submitBtn.disabled = false;
         submitBtnText.textContent = originalText;
     }
@@ -1291,67 +1288,49 @@ async function quickCompleteTask(event, id, checked) {
     const task = tasks.find(t => t.id === id);
     if (!task) return;
 
-    // Prevent multiple clicks
     const checkbox = event.target.closest('.task-checkbox');
     if (checkbox.dataset.loading === 'true') return;
     checkbox.dataset.loading = 'true';
 
     const newStatus = checked ? 'completed' : 'pending';
-
-    // Store original state for rollback
     const originalStatus = task.status;
 
-    // OPTIMISTIC UPDATE: Update local state immediately
+    // Optimistic update
     task.status = newStatus;
-
-    // Add visual indicator for in-flight request
     checkbox.classList.add('updating');
-
-    // Re-render UI immediately with optimistic state
     updateUI();
 
     try {
-        // Send API request in background
-        const response = await authFetch(`${API_TASKS}/${id}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ...task, status: newStatus })
-        });
+        const client = ensureSupabase();
+        if (!client) throw new Error('Not connected');
 
-        if (!response.ok) throw new Error('Failed to update task');
+        const { data: updatedTask, error } = await client
+            .from('tasks')
+            .update({ status: newStatus, updated_at: new Date().toISOString() })
+            .eq('id', id)
+            .select()
+            .single();
 
-        // Success: Update with server response to ensure consistency
-        const updatedTask = await response.json();
+        if (error) throw new Error(error.message);
+
         const taskIndex = tasks.findIndex(t => t.id === id);
         if (taskIndex !== -1) {
             tasks[taskIndex] = updatedTask;
         }
 
-        // Remove visual indicator (no re-render needed, optimistic state is correct)
         checkbox.classList.remove('updating');
 
-        // Celebrate on completion
         if (newStatus === 'completed') {
             celebrate();
-            showSuccess('🎉 Awesome! Task completed!');
+            showSuccess('\uD83C\uDF89 Awesome! Task completed!');
         }
 
-        // No updateUI() call here - optimistic update is already showing correct state
-
     } catch (error) {
-        // ROLLBACK: Revert to original state on failure
         console.error('Task update failed:', error);
         task.status = originalStatus;
-
-        // Remove visual indicator
         checkbox.classList.remove('updating');
-
-        // Re-render with original state
         updateUI();
-
-        // Show error to user
         showError('Failed to update task. Please try again.');
-
     } finally {
         checkbox.dataset.loading = 'false';
     }
@@ -1374,18 +1353,20 @@ async function confirmDelete() {
     const deleteBtn = document.querySelector('#deleteModal button.btn-danger');
     const cancelBtn = document.querySelector('#deleteModal button.btn-secondary');
 
-    // Disable buttons
     deleteBtn.disabled = true;
     cancelBtn.disabled = true;
     deleteBtn.textContent = 'Deleting...';
 
     try {
-        const response = await authFetch(`${API_TASKS}/${taskToDelete}`, {
-            method: 'DELETE',
-            credentials: 'include'
-        });
+        const client = ensureSupabase();
+        if (!client) throw new Error('Not connected');
 
-        if (!response.ok) throw new Error('Failed to delete task');
+        const { error } = await client
+            .from('tasks')
+            .delete()
+            .eq('id', taskToDelete);
+
+        if (error) throw new Error(error.message);
 
         closeDeleteModal();
         await loadTasks();
@@ -1394,7 +1375,6 @@ async function confirmDelete() {
     } catch (error) {
         showError('Failed to delete task');
     } finally {
-        // Re-enable buttons
         deleteBtn.disabled = false;
         cancelBtn.disabled = false;
         deleteBtn.textContent = 'Delete';
@@ -1403,7 +1383,6 @@ async function confirmDelete() {
 
 // PROJECT MANAGEMENT
 
-// Open project modal
 function openProjectModal() {
     document.getElementById('projectForm').reset();
     document.getElementById('projectId').value = '';
@@ -1412,32 +1391,27 @@ function openProjectModal() {
     document.getElementById('projectModalTitle').textContent = 'Create New Project';
     document.getElementById('projectSubmitBtnText').textContent = 'Create Project';
 
-    // No delete button in create/edit modal per new UI
-    // Member management removed from project modal - now only in project settings
-
     document.getElementById('projectModal').classList.add('active');
 }
 
-// Render member checkboxes for project creation
 function renderProjectMembersCheckboxes() {
     const container = document.getElementById('projectMembersCheckboxList');
-    // Filter out current user since they'll be the owner
+    if (!container) return;
     const availableUsers = users.filter(u => u.id !== currentUser.id);
 
     if (availableUsers.length === 0) {
-        container.innerHTML = '<p style="color: var(--text-secondary); font-size: 0.875rem; margin: 0;">No other users available</p>';
+        container.textContent = 'No other users available';
         return;
     }
 
-    container.innerHTML = availableUsers.map(user => `
-        <label style="display: flex; align-items: center; padding: 0.5rem; cursor: pointer; border-radius: 0.25rem; transition: background 0.15s;">
-            <input type="checkbox" name="projectMember" value="${user.id}" style="margin-right: 0.75rem; cursor: pointer;">
-            <span style="flex: 1;">${escapeHtml(user.name)}</span>
-        </label>
-    `).join('');
+    container.innerHTML = availableUsers.map(user =>
+        '<label style="display: flex; align-items: center; padding: 0.5rem; cursor: pointer; border-radius: 0.25rem; transition: background 0.15s;">' +
+        '<input type="checkbox" name="projectMember" value="' + user.id + '" style="margin-right: 0.75rem; cursor: pointer;">' +
+        '<span style="flex: 1;">' + escapeHtml(user.name || user.username) + '</span>' +
+        '</label>'
+    ).join('');
 }
 
-// Close project modal
 function closeProjectModal() {
     document.getElementById('projectModal').classList.remove('active');
 }
@@ -1450,39 +1424,53 @@ async function handleProjectSubmit(e) {
     const submitBtnText = document.getElementById('projectSubmitBtnText');
     const originalText = submitBtnText.textContent;
 
-    // Disable form
     submitBtn.disabled = true;
     submitBtnText.textContent = 'Saving...';
 
     const projectId = document.getElementById('projectId').value;
+    const projectColor = document.getElementById('projectColor').value || '#f06a6a';
     const projectData = {
         name: document.getElementById('projectName').value,
         description: document.getElementById('projectDescription').value,
-        color: document.getElementById('projectColor').value
+        color: projectColor
     };
 
-    // Member management removed from project modal - now only in project settings
-
     try {
-        const url = projectId ? `${API_PROJECTS}/${projectId}` : API_PROJECTS;
-        const method = projectId ? 'PUT' : 'POST';
+        const client = ensureSupabase();
+        if (!client) throw new Error('Not connected');
 
-        const response = await authFetch(url, {
-            method,
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(projectData)
-        });
+        let result, error;
 
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.error || 'Failed to save project');
+        if (projectId) {
+            ({ data: result, error } = await client
+                .from('projects')
+                .update(projectData)
+                .eq('id', projectId)
+                .select()
+                .single());
+        } else {
+            ({ data: result, error } = await client
+                .from('projects')
+                .insert({ ...projectData, owner_id: currentUser.id, is_personal: false })
+                .select()
+                .single());
+
+            // Add owner as project member
+            if (!error && result) {
+                await client.from('project_members').insert({
+                    project_id: result.id,
+                    user_id: currentUser.id,
+                    role: 'owner'
+                });
+            }
         }
+
+        if (error) throw new Error(error.message);
 
         closeProjectModal();
         await loadProjects();
         renderProjectsGrid();
 
-        // If we're currently viewing this project, refresh the view to show updated color/name
         if (projectId && currentView === 'project' && currentProjectId === projectId) {
             switchToProject(projectId);
         }
@@ -1491,7 +1479,6 @@ async function handleProjectSubmit(e) {
     } catch (error) {
         showError(error.message);
     } finally {
-        // Re-enable form
         submitBtn.disabled = false;
         submitBtnText.textContent = originalText;
     }
@@ -1499,27 +1486,14 @@ async function handleProjectSubmit(e) {
 
 // Open project settings
 function openProjectSettings(projectId) {
-    // Fallback to currently selected project if none passed
     if (!projectId) projectId = currentProjectId;
     if (!projectId) { showError('Please select a project first'); return; }
     currentProjectForSettings = projectId;
     let project = projects.find(p => p.id === projectId);
     if (!project) {
-        // Fallback: reload projects then try again; if still missing, fetch directly
-        // This guards against stale local state after create/update
-        // and mismatches between dev/prod backends.
-        console.warn('Project not found locally. Reloading projects...');
-        // Note: loadProjects returns a promise; we sync via then to avoid making this function async broadly
-        // eslint-disable-next-line no-undef
-        return loadProjects().then(async () => {
+        return loadProjects().then(() => {
             project = projects.find(p => p.id === projectId);
             if (!project) {
-                const resp = await authFetch(`${API_PROJECTS}/${projectId}`);
-                if (resp.ok) {
-                    const fresh = await resp.json();
-                    projects.push(fresh);
-                    return openProjectSettings(projectId);
-                }
                 showError('Project not found');
                 return;
             }
@@ -1527,17 +1501,28 @@ function openProjectSettings(projectId) {
         });
     }
 
-    const owner = Array.isArray(users) ? users.find(u => u.id === project.owner_id) : null;
+    const memberIds = getProjectMemberIds(project);
+    const owner = users.find(u => u.id === project.owner_id);
     const isOwner = project.owner_id === currentUser.id;
 
     document.getElementById('settingsProjectName').textContent = project.name;
     document.getElementById('settingsProjectOwner').textContent = owner ? (owner.username || owner.name) : 'Unknown';
     document.getElementById('settingsProjectDescription').textContent = project.description || 'No description provided';
-    // Show project color in Project Information
+
+    const personalNotice = document.getElementById('personalProjectNotice') ||
+        (() => {
+            const el = document.createElement('p');
+            el.id = 'personalProjectNotice';
+            el.style.cssText = 'color:var(--text-secondary);font-size:0.875rem;font-style:italic;margin-top:0.5rem;';
+            el.textContent = 'This is your personal General project. It cannot be edited or deleted.';
+            document.querySelector('#projectSettingsModal .settings-section')?.appendChild(el);
+            return el;
+        })();
+    if (personalNotice) personalNotice.style.display = project.is_personal ? 'block' : 'none';
+
     const colorRowId = 'settingsProjectColor';
     let colorRowEl = document.getElementById(colorRowId);
     if (!colorRowEl) {
-        // If the row doesn't exist, create it under the existing info rows
         const infoContainer = document.querySelector('#projectSettingsModal .settings-section');
         if (infoContainer) {
             const row = document.createElement('div');
@@ -1555,11 +1540,15 @@ function openProjectSettings(projectId) {
         }
     }
     if (colorRowEl) {
-        const color = project.color || '#f06a6a';
-        colorRowEl.innerHTML = `<span class="project-color-dot project-color-dot-lg" style="background-color:${color};" title="Project color"></span>`;
+        const color = getProjectColor(project);
+        colorRowEl.textContent = '';
+        const dot = document.createElement('span');
+        dot.className = 'project-color-dot project-color-dot-lg';
+        dot.style.backgroundColor = color;
+        dot.title = 'Project color';
+        colorRowEl.appendChild(dot);
     }
 
-    // Controls visibility based on ownership and personal flag
     const editBtn = document.getElementById('editProjectSettingsBtn');
     const membersSectionEl = document.getElementById('settingsTeamMembersSection');
     const dangerZoneEl = document.getElementById('dangerZoneSection');
@@ -1570,21 +1559,20 @@ function openProjectSettings(projectId) {
     if (dangerZoneEl) dangerZoneEl.style.display = isOwner && !project.is_personal ? 'flex' : 'none';
     if (addMemberSection) addMemberSection.style.display = isOwner && !project.is_personal ? '' : 'none';
 
-    // Render members (for non-personal)
     if (!project.is_personal) {
         renderMembersList(project);
     } else {
         const membersList = document.getElementById('membersList');
-        if (membersList) membersList.innerHTML = '';
+        if (membersList) membersList.textContent = '';
     }
 
-    // Populate add member dropdown
-    const memberIds = [project.owner_id, ...(project.members || [])];
+    // Populate add member dropdown — exclude current members
     const availableUsers = users.filter(u => !memberIds.includes(u.id));
-
     const select = document.getElementById('newMemberSelect');
     select.innerHTML = '<option value="">Add team member...</option>' +
-        availableUsers.map(u => `<option value="${u.id}">${escapeHtml(u.name)}</option>`).join('');
+        availableUsers.map(u =>
+            '<option value="' + u.id + '">' + escapeHtml(u.name || u.username) + '</option>'
+        ).join('');
 
     document.getElementById('projectSettingsModal').classList.add('active');
 }
@@ -1592,16 +1580,27 @@ function openProjectSettings(projectId) {
 // Render members list
 function renderMembersList(project) {
     const membersList = document.getElementById('membersList');
-    const memberIds = project.members || [];
-    const members = users.filter(u => memberIds.includes(u.id));
     const isOwner = project.owner_id === currentUser.id;
 
+    // Build member objects from project_members join data
+    let members = [];
+    if (Array.isArray(project.project_members)) {
+        members = project.project_members
+            .filter(pm => pm.profiles)
+            .map(pm => ({ ...pm.profiles, _role: pm.role }));
+    }
+
+    // Fallback to users array
     if (members.length === 0) {
-        membersList.innerHTML = '<p style="color: var(--text-secondary); font-size: 0.875rem;">No members yet. Add team members below.</p>';
+        const memberIds = getProjectMemberIds(project);
+        members = users.filter(u => memberIds.includes(u.id));
+    }
+
+    if (members.length === 0) {
+        membersList.textContent = 'No members yet. Add team members below.';
         return;
     }
 
-    // Sort members so current user is first
     const sortedMembers = [...members].sort((a, b) => {
         if (a.id === currentUser.id) return -1;
         if (b.id === currentUser.id) return 1;
@@ -1613,33 +1612,27 @@ function renderMembersList(project) {
         const showLeaveButton = isCurrentUser && !isOwner;
         const showRemoveButton = isOwner && !isCurrentUser;
 
-        // Get member initials
-        const initials = (member.initials && member.initials.trim())
-            ? member.initials.trim().toUpperCase()
-            : (member.username || member.name || '?').split(/\s+/).map(w => w[0]).slice(0,2).join('').toUpperCase();
+        const initials = (member.username || member.name || '?')
+            .split(/\s+/).map(w => w[0]).slice(0,2).join('').toUpperCase();
+        const avatarStyle = member.color ? 'style="background-color: ' + member.color + ';"' : '';
 
-        // Get member color or use default
-        const avatarStyle = member.color ? `style="background-color: ${member.color};"` : '';
-
-        return `
-            <div class=\"member-item\">
-                <div class=\"member-info\">
-                    <div class=\"member-avatar\" ${avatarStyle}>${escapeHtml(initials)}</div>
-                    <div class=\"member-details\">
-                        <div class=\"member-name\">${escapeHtml(member.username)}</div>
-                        <div class=\"member-role\">Member</div>
-                    </div>
-                </div>
-                <div class=\"member-actions\">
-                    ${showLeaveButton ? `<button class="leave-project-btn" onclick=\"leaveProject()\" title="Leave project">×</button>` : ''}
-                    ${showRemoveButton ? `<button class="remove-member-btn" onclick=\"removeMember('${member.id}')\" title="Remove member">×</button>` : ''}
-                </div>
-            </div>
-        `;
+        return '<div class="member-item">' +
+            '<div class="member-info">' +
+            '<div class="member-avatar" ' + avatarStyle + '>' + escapeHtml(initials) + '</div>' +
+            '<div class="member-details">' +
+            '<div class="member-name">' + escapeHtml(member.username || member.name) + '</div>' +
+            '<div class="member-role">' + escapeHtml(member._role || 'Member') + '</div>' +
+            '</div>' +
+            '</div>' +
+            '<div class="member-actions">' +
+            (showLeaveButton ? '<button class="leave-project-btn" onclick="leaveProject()" title="Leave project">\xD7</button>' : '') +
+            (showRemoveButton ? '<button class="remove-member-btn" onclick="removeMember(\'' + member.id + '\')" title="Remove member">\xD7</button>' : '') +
+            '</div>' +
+            '</div>';
     }).join('');
 }
 
-// Add member
+// Add member by user_id (selected from dropdown)
 async function addMember() {
     const userId = document.getElementById('newMemberSelect').value;
     if (!userId || !currentProjectForSettings) return;
@@ -1647,38 +1640,39 @@ async function addMember() {
     const select = document.getElementById('newMemberSelect');
     const addBtn = event.target;
 
-    // Disable controls
     select.disabled = true;
     addBtn.disabled = true;
     addBtn.textContent = 'Adding...';
 
     try {
-        const response = await authFetch(`${API_PROJECTS}/${currentProjectForSettings}/members`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ user_id: userId })
-        });
+        const client = ensureSupabase();
+        if (!client) throw new Error('Not connected');
 
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.error || 'Failed to add member');
-        }
+        const { error } = await client
+            .from('project_members')
+            .insert({
+                project_id: currentProjectForSettings,
+                user_id: userId,
+                role: 'member'
+            });
+
+        if (error) throw new Error(error.message);
 
         await loadProjects();
         const project = projects.find(p => p.id === currentProjectForSettings);
         renderMembersList(project);
 
-        // Update dropdown
-        const memberIds = [project.owner_id, ...(project.members || [])];
+        const memberIds = getProjectMemberIds(project);
         const availableUsers = users.filter(u => !memberIds.includes(u.id));
         select.innerHTML = '<option value="">Add team member...</option>' +
-            availableUsers.map(u => `<option value="${u.id}">${escapeHtml(u.name)}</option>`).join('');
+            availableUsers.map(u =>
+                '<option value="' + u.id + '">' + escapeHtml(u.name || u.username) + '</option>'
+            ).join('');
 
         showSuccess('Member added successfully');
     } catch (error) {
         showError(error.message);
     } finally {
-        // Re-enable controls
         select.disabled = false;
         addBtn.disabled = false;
         addBtn.textContent = 'Add';
@@ -1689,84 +1683,83 @@ async function addMember() {
 async function removeMember(userId) {
     if (!currentProjectForSettings) return;
 
-    const removeBtn = event.target;
-    const originalText = removeBtn.textContent;
+    const memberUser = users.find(u => u.id === userId);
+    const memberName = memberUser ? (memberUser.name || memberUser.username || 'this member') : 'this member';
 
-    // Disable button
-    removeBtn.disabled = true;
-    removeBtn.textContent = 'Removing...';
+    showConfirmModal(
+        'Remove member',
+        `Remove ${memberName} from this project? They will lose access to all tasks.`,
+        () => _doRemoveMember(userId)
+    );
+}
 
+async function _doRemoveMember(userId) {
     try {
-        const response = await authFetch(`${API_PROJECTS}/${currentProjectForSettings}/members/${userId}`, {
-            method: 'DELETE',
-            credentials: 'include'
-        });
+        const client = ensureSupabase();
+        if (!client) throw new Error('Not connected');
 
-        if (!response.ok) throw new Error('Failed to remove member');
+        const { error } = await client
+            .from('project_members')
+            .delete()
+            .eq('project_id', currentProjectForSettings)
+            .eq('user_id', userId);
+
+        if (error) throw new Error(error.message);
 
         await loadProjects();
         const project = projects.find(p => p.id === currentProjectForSettings);
         renderMembersList(project);
 
-        // Update dropdown
-        const memberIds = [project.owner_id, ...(project.members || [])];
+        const memberIds = getProjectMemberIds(project);
         const availableUsers = users.filter(u => !memberIds.includes(u.id));
         const select = document.getElementById('newMemberSelect');
         select.innerHTML = '<option value="">Add team member...</option>' +
-            availableUsers.map(u => `<option value="${u.id}">${escapeHtml(u.name)}</option>`).join('');
+            availableUsers.map(u =>
+                '<option value="' + u.id + '">' + escapeHtml(u.name || u.username) + '</option>'
+            ).join('');
 
         showSuccess('Member removed successfully');
     } catch (error) {
         showError('Failed to remove member');
-        // Re-enable button on error
-        removeBtn.disabled = false;
-        removeBtn.textContent = originalText;
     }
 }
 
 // Leave project (for non-owners)
 async function leaveProject() {
     if (!currentProjectForSettings || !currentUser) return;
+    showConfirmModal(
+        'Leave project',
+        'You will lose access to this project and all its tasks.',
+        () => _doLeaveProject()
+    );
+}
 
-    if (!confirm('Are you sure you want to leave this project? You will lose access to all its tasks.')) {
-        return;
-    }
-
-    const leaveBtn = event.target;
-    const originalText = leaveBtn.textContent;
-
-    // Disable button
-    leaveBtn.disabled = true;
-    leaveBtn.textContent = 'Leaving...';
+async function _doLeaveProject() {
+    const leaveBtn = document.querySelector('.leave-project-btn');
+    const originalText = leaveBtn ? leaveBtn.textContent : '×';
+    if (leaveBtn) { leaveBtn.disabled = true; leaveBtn.textContent = '...'; }
 
     try {
-        const response = await authFetch(`${API_PROJECTS}/${currentProjectForSettings}/members/${currentUser.id}`, {
-            method: 'DELETE',
-            credentials: 'include'
-        });
+        const client = ensureSupabase();
+        if (!client) throw new Error('Not connected');
 
-        if (!response.ok) {
-            const errorData = await response.json().catch(() => ({}));
-            console.error('Leave project failed:', response.status, errorData);
-            throw new Error(errorData.error || 'Failed to leave project');
-        }
+        const { error } = await client
+            .from('project_members')
+            .delete()
+            .eq('project_id', currentProjectForSettings)
+            .eq('user_id', currentUser.id);
 
+        if (error) throw new Error(error.message);
+
+        closeProjectSettingsModal();
         await loadProjects();
         await loadTasks();
-
-        // Close modal and reset view
-        closeProjectSettingsModal();
-
-        // Switch to All Tasks view
-        switchView('all');
-
+        if (currentProjectId === currentProjectForSettings) switchView('all');
         showSuccess('Left project successfully');
     } catch (error) {
         console.error('Leave project error:', error);
         showError(error.message || 'Failed to leave project');
-        // Re-enable button on error
-        leaveBtn.disabled = false;
-        leaveBtn.textContent = originalText;
+        if (leaveBtn) { leaveBtn.disabled = false; leaveBtn.textContent = originalText; }
     }
 }
 
@@ -1774,13 +1767,11 @@ async function leaveProject() {
 function closeProjectSettingsModal() {
     document.getElementById('projectSettingsModal').classList.remove('active');
     currentProjectForSettings = null;
-    // Reset to details tab when closing
     switchProjectSettingsTab('details');
 }
 
 // Switch between tabs in Project Settings modal
 function switchProjectSettingsTab(tabName) {
-    // Update tab buttons
     const tabButtons = document.querySelectorAll('#projectSettingsModal .tab-btn');
     tabButtons.forEach(btn => {
         if (btn.dataset.tab === tabName) {
@@ -1790,7 +1781,6 @@ function switchProjectSettingsTab(tabName) {
         }
     });
 
-    // Update tab panels
     const detailsTab = document.getElementById('projectDetailsTab');
     const membersTab = document.getElementById('projectMembersTab');
 
@@ -1814,35 +1804,37 @@ function editProjectFromSettings() {
 // Delete current project
 async function deleteCurrentProject() {
     if (!currentProjectForSettings) return;
+    const project = projects.find(p => p.id === currentProjectForSettings);
+    const projectName = project ? project.name : 'this project';
+    showConfirmModal(
+        'Delete project',
+        `Delete "${projectName}"? All tasks in this project will be permanently deleted. This cannot be undone.`,
+        () => _doDeleteProject()
+    );
+}
 
-    if (!confirm('Are you sure you want to delete this project? All tasks will be deleted. This cannot be undone.')) {
-        return;
-    }
+async function _doDeleteProject() {
+    const deleteBtn = document.querySelector('.danger-zone .btn-danger');
+    const originalText = deleteBtn ? deleteBtn.textContent : 'Delete';
 
-    const deleteBtn = event.target;
-    const originalText = deleteBtn.textContent;
-
-    // Disable button
-    deleteBtn.disabled = true;
-    deleteBtn.textContent = 'Deleting...';
+    if (deleteBtn) { deleteBtn.disabled = true; deleteBtn.textContent = 'Deleting...'; }
 
     try {
-        const response = await authFetch(`${API_PROJECTS}/${currentProjectForSettings}`, {
-            method: 'DELETE',
-            credentials: 'include'
-        });
+        const client = ensureSupabase();
+        if (!client) throw new Error('Not connected');
 
-        if (!response.ok) throw new Error('Failed to delete project');
+        const { error } = await client
+            .from('projects')
+            .delete()
+            .eq('id', currentProjectForSettings);
 
-        // Reset button state before closing modal
-        deleteBtn.disabled = false;
-        deleteBtn.textContent = originalText;
+        if (error) throw new Error(error.message);
 
+        const deletedId = currentProjectForSettings;
         closeProjectSettingsModal();
         await Promise.all([loadProjects(), loadTasks()]);
 
-        // Switch to all tasks view if we're viewing the deleted project
-        if (currentProjectId === currentProjectForSettings) {
+        if (currentProjectId === deletedId) {
             switchView('all');
         } else {
             updateUI();
@@ -1851,13 +1843,9 @@ async function deleteCurrentProject() {
         showSuccess('Project deleted successfully');
     } catch (error) {
         showError('Failed to delete project');
-        // Re-enable button on error
-        deleteBtn.disabled = false;
-        deleteBtn.textContent = originalText;
+        if (deleteBtn) { deleteBtn.disabled = false; deleteBtn.textContent = originalText; }
     }
 }
-
-// Legacy Project Details UI removed. All project management now uses Project Settings modal.
 
 function openProjectDeleteModal(projectId) {
     projectToDelete = projectId;
@@ -1883,16 +1871,23 @@ async function confirmDeleteProject() {
     if (deleteBtn) deleteBtn.disabled = true;
     if (cancelBtn) cancelBtn.disabled = true;
     if (deleteBtn) deleteBtn.textContent = 'Deleting...';
+
     try {
-        const resp = await authFetch(`${API_PROJECTS}/${id}`, { method: 'DELETE' });
-        if (!resp.ok) throw new Error('Failed');
+        const client = ensureSupabase();
+        if (!client) throw new Error('Not connected');
+
+        const { error } = await client
+            .from('projects')
+            .delete()
+            .eq('id', id);
+
+        if (error) throw new Error(error.message);
+
         closeProjectDeleteModal();
-        // Also close settings/details modals if open
         try { closeProjectSettingsModal(); } catch(_) {}
         if (typeof closeProjectDetailsModal === 'function') {
             try { closeProjectDetailsModal(); } catch(_) {}
         }
-        // Refresh data and go back to All Tasks if needed
         await Promise.all([loadProjects(), loadTasks()]);
         if (currentProjectId === id) {
             switchView('all');
@@ -1910,21 +1905,13 @@ async function confirmDeleteProject() {
 
 // Edit project
 function editProject(projectId) {
-    // Fallback to currently selected project if none passed
     if (!projectId) projectId = currentProjectId;
     if (!projectId) { showError('Please select a project first'); return; }
     let project = projects.find(p => p.id === projectId);
     if (!project) {
-        console.warn('Project not found locally. Reloading projects...');
-        return loadProjects().then(async () => {
+        return loadProjects().then(() => {
             project = projects.find(p => p.id === projectId);
             if (!project) {
-                const resp = await authFetch(`${API_PROJECTS}/${projectId}`);
-                if (resp.ok) {
-                    const fresh = await resp.json();
-                    projects.push(fresh);
-                    return editProject(projectId);
-                }
                 showError('Project not found');
                 return;
             }
@@ -1937,9 +1924,7 @@ function editProject(projectId) {
         return;
     }
 
-    // Check if current user is the owner
     if (project.owner_id !== currentUser.id) {
-        // Non-owners should see read-only view (project settings modal)
         openProjectSettings(projectId);
         return;
     }
@@ -1947,140 +1932,14 @@ function editProject(projectId) {
     document.getElementById('projectId').value = project.id;
     document.getElementById('projectName').value = project.name || '';
     document.getElementById('projectDescription').value = project.description || '';
-    const colorVal = project.color || '#f06a6a';
+    const colorVal = getProjectColor(project);
     document.getElementById('projectColor').value = colorVal;
     updateColorPresetSelection(colorVal);
     document.getElementById('projectModalTitle').textContent = 'Edit Project';
     document.getElementById('projectSubmitBtnText').textContent = 'Update Project';
 
-    // No delete button in edit modal per new UI
-    // Member management removed from edit modal - now only in project settings
-
     document.getElementById('projectModal').classList.add('active');
 }
-
-// Legacy Project Details UI removed (use Project Settings)
-
-// closeProjectDetailsModal deprecated
-
-// editProjectFromDetails deprecated
-
-// deleteProjectFromDetails deprecated
-
-// Legacy leaveProjectFromDetails removed with Project Details UI.
-// Old leaveProject(projectId) function removed - now using the one in Project Settings section
-
-// These functions are deprecated - member management moved to project settings modal only
-// Keeping commented for reference
-/*
-// Render project members list in edit modal
-function renderProjectMembersList(project) {
-    const membersList = document.getElementById('projectMembersList');
-    const memberIds = project.members || [];
-    const members = users.filter(u => memberIds.includes(u.id));
-
-    if (members.length === 0) {
-        membersList.innerHTML = '<p style="color: var(--text-secondary); font-size: 0.875rem; margin: 0.5rem 0;">No members yet</p>';
-        return;
-    }
-
-    membersList.innerHTML = members.map(member => `
-        <div class="member-item-inline">
-            <span>${escapeHtml(member.name)}</span>
-            <button type="button" class="remove-member-btn" onclick="removeProjectMember('${member.id}')" title="Remove member">×</button>
-        </div>
-    `).join('');
-}
-
-// Add project member (when editing)
-async function addProjectMember() {
-    const userId = document.getElementById('projectNewMemberSelect').value;
-    const projectId = document.getElementById('projectId').value;
-
-    if (!userId || !projectId) return;
-
-    const select = document.getElementById('projectNewMemberSelect');
-    const addBtn = event.target;
-
-    // Disable controls
-    select.disabled = true;
-    addBtn.disabled = true;
-    addBtn.textContent = 'Adding...';
-
-    try {
-        const response = await authFetch(`${API_PROJECTS}/${projectId}/members`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ user_id: userId })
-        });
-
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.error || 'Failed to add member');
-        }
-
-        await loadProjects();
-        const project = projects.find(p => p.id === projectId);
-        renderProjectMembersList(project);
-
-        // Update dropdown
-        const memberIds = [project.owner_id, ...(project.members || [])];
-        const availableUsers = users.filter(u => !memberIds.includes(u.id));
-        select.innerHTML = '<option value="">Add team member...</option>' +
-            availableUsers.map(u => `<option value="${u.id}">${escapeHtml(u.name)}</option>`).join('');
-
-        showSuccess('Member added successfully');
-    } catch (error) {
-        showError(error.message);
-    } finally {
-        // Re-enable controls
-        select.disabled = false;
-        addBtn.disabled = false;
-        addBtn.textContent = 'Add';
-    }
-}
-
-// Remove project member (when editing)
-async function removeProjectMember(userId) {
-    const projectId = document.getElementById('projectId').value;
-    if (!projectId) return;
-
-    const removeBtn = event.target;
-    const originalText = removeBtn.textContent;
-
-    // Disable button
-    removeBtn.disabled = true;
-    removeBtn.textContent = 'Removing...';
-
-    try {
-        const response = await authFetch(`${API_PROJECTS}/${projectId}/members/${userId}`, {
-            method: 'DELETE'
-        });
-
-        if (!response.ok) throw new Error('Failed to remove member');
-
-        await loadProjects();
-        const project = projects.find(p => p.id === projectId);
-        renderProjectMembersList(project);
-
-        // Update dropdown
-        const memberIds = [project.owner_id, ...(project.members || [])];
-        const availableUsers = users.filter(u => !memberIds.includes(u.id));
-        const select = document.getElementById('projectNewMemberSelect');
-        select.innerHTML = '<option value="">Add team member...</option>' +
-            availableUsers.map(u => `<option value="${u.id}">${escapeHtml(u.name)}</option>`).join('');
-
-        showSuccess('Member removed successfully');
-    } catch (error) {
-        showError('Failed to remove member');
-        // Re-enable button on error
-        removeBtn.disabled = false;
-        removeBtn.textContent = originalText;
-    }
-}
-*/
-
-// Delete project from edit modal removed per new UI
 
 // CELEBRATION ANIMATION
 function celebrate() {
@@ -2088,7 +1947,6 @@ function celebrate() {
         return Math.random() * (max - min) + min;
     }
 
-    // Create one burst of confetti
     for (let i = 0; i < 30; i++) {
         createConfetti(randomInRange(0.1, 0.9), randomInRange(0.1, 0.3));
     }
@@ -2099,19 +1957,7 @@ function createConfetti(x, y) {
     const colors = ['#f06a6a', '#13ce66', '#ffc82c', '#4f46e5', '#ff4949'];
     const color = colors[Math.floor(Math.random() * colors.length)];
 
-    confetti.style.cssText = `
-        position: fixed;
-        width: 10px;
-        height: 10px;
-        background-color: ${color};
-        left: ${x * 100}%;
-        top: ${y * 100}%;
-        opacity: 1;
-        transform: rotate(0deg);
-        animation: confetti-fall 0.5s linear forwards;
-        z-index: 10000;
-        border-radius: ${Math.random() > 0.5 ? '50%' : '0'};
-    `;
+    confetti.style.cssText = 'position: fixed; width: 10px; height: 10px; background-color: ' + color + '; left: ' + (x * 100) + '%; top: ' + (y * 100) + '%; opacity: 1; transform: rotate(0deg); animation: confetti-fall 0.5s linear forwards; z-index: 10000; border-radius: ' + (Math.random() > 0.5 ? '50%' : '0') + ';';
 
     document.body.appendChild(confetti);
     setTimeout(() => confetti.remove(), 500);
@@ -2131,19 +1977,7 @@ function escapeHtml(text) {
 
 function showSuccess(message) {
     const notification = document.createElement('div');
-    notification.style.cssText = `
-        position: fixed;
-        top: 20px;
-        right: 20px;
-        background-color: rgba(19, 206, 102, 0.8);
-        color: white;
-        padding: 1rem 1.5rem;
-        border-radius: 0.5rem;
-        box-shadow: var(--shadow-lg);
-        z-index: 10000;
-        animation: slideInRight 0.3s;
-        backdrop-filter: blur(10px);
-    `;
+    notification.style.cssText = 'position: fixed; top: 20px; right: 20px; background-color: rgba(19, 206, 102, 0.8); color: white; padding: 1rem 1.5rem; border-radius: 0.5rem; box-shadow: var(--shadow-lg); z-index: 10000; animation: slideInRight 0.3s; backdrop-filter: blur(10px);';
     notification.textContent = message;
     document.body.appendChild(notification);
     setTimeout(() => {
@@ -2154,19 +1988,7 @@ function showSuccess(message) {
 
 function showError(message) {
     const notification = document.createElement('div');
-    notification.style.cssText = `
-        position: fixed;
-        top: 20px;
-        right: 20px;
-        background-color: rgba(255, 73, 73, 0.8);
-        color: white;
-        padding: 1rem 1.5rem;
-        border-radius: 0.5rem;
-        box-shadow: var(--shadow-lg);
-        z-index: 10000;
-        animation: slideInRight 0.3s;
-        backdrop-filter: blur(10px);
-    `;
+    notification.style.cssText = 'position: fixed; top: 20px; right: 20px; background-color: rgba(255, 73, 73, 0.8); color: white; padding: 1rem 1.5rem; border-radius: 0.5rem; box-shadow: var(--shadow-lg); z-index: 10000; animation: slideInRight 0.3s; backdrop-filter: blur(10px);';
     notification.textContent = message;
     document.body.appendChild(notification);
     setTimeout(() => {
@@ -2177,20 +1999,7 @@ function showError(message) {
 
 // Add animations CSS
 const style = document.createElement('style');
-style.textContent = `
-    @keyframes slideInRight {
-        from { transform: translateX(100%); opacity: 0; }
-        to { transform: translateX(0); opacity: 1; }
-    }
-    @keyframes slideOutRight {
-        from { transform: translateX(0); opacity: 1; }
-        to { transform: translateX(100%); opacity: 0; }
-    }
-    @keyframes confetti-fall {
-        0% { transform: translateY(0) rotate(0deg); opacity: 1; }
-        100% { transform: translateY(100vh) rotate(720deg); opacity: 0; }
-    }
-`;
+style.textContent = '@keyframes slideInRight { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } } @keyframes slideOutRight { from { transform: translateX(0); opacity: 1; } to { transform: translateX(100%); opacity: 0; } } @keyframes confetti-fall { 0% { transform: translateY(0) rotate(0deg); opacity: 1; } 100% { transform: translateY(100vh) rotate(720deg); opacity: 0; } }';
 document.head.appendChild(style);
 
 // CUSTOM SELECT DROPDOWN
@@ -2201,7 +2010,6 @@ class CustomSelect {
         this.isOpen = false;
         this.create();
         this.addEventListeners();
-        // mark and expose instance for potential refreshes
         this.selectElement.dataset.customized = 'true';
         this.selectElement._customSelect = this;
         this.scroller = null;
@@ -2210,16 +2018,13 @@ class CustomSelect {
     }
 
     create() {
-        // Create custom select container
         this.container = document.createElement('div');
         this.container.className = 'custom-select';
 
-        // Create trigger button
         this.trigger = document.createElement('button');
         this.trigger.type = 'button';
         this.trigger.className = 'custom-select-trigger';
 
-        // Create selected content (dot + text for priority select)
         this.selectedContainer = document.createElement('span');
         this.selectedContainer.className = 'selected-container';
         this.selectedContainer.style.display = 'inline-flex';
@@ -2230,7 +2035,6 @@ class CustomSelect {
         this.selectedDot.className = 'priority-triangle-inline';
         this.selectedDot.style.display = 'none';
 
-        // Create selected text span
         this.selectedText = document.createElement('span');
         this.updateSelectedText();
 
@@ -2238,23 +2042,18 @@ class CustomSelect {
         this.selectedContainer.appendChild(this.selectedText);
         this.trigger.appendChild(this.selectedContainer);
 
-        // Create arrow
         const arrow = document.createElement('span');
         arrow.className = 'arrow';
         this.trigger.appendChild(arrow);
 
-        // Create dropdown
         this.dropdown = document.createElement('div');
         this.dropdown.className = 'custom-select-dropdown';
 
-        // Create options
         this.createOptions();
 
-        // Assemble
         this.container.appendChild(this.trigger);
         this.container.appendChild(this.dropdown);
 
-        // Replace original select
         this.selectElement.style.display = 'none';
         this.selectElement.parentNode.insertBefore(this.container, this.selectElement);
     }
@@ -2268,7 +2067,6 @@ class CustomSelect {
             optionBtn.type = 'button';
             optionBtn.className = 'custom-select-option';
 
-            // If this is the priority select, add colored dot
             if (this.selectElement.id === 'taskPriority') {
                 const tri = document.createElement('span');
                 tri.className = 'priority-triangle-inline';
@@ -2297,7 +2095,6 @@ class CustomSelect {
         if (selectedOption && selectedOption.value) {
             this.selectedText.textContent = selectedOption.textContent;
             this.selectedText.classList.remove('placeholder');
-            // If this is the priority select, show color dot
             if (this.selectElement.id === 'taskPriority') {
                 const value = selectedOption.value;
                 const color = this.getPriorityColor(value);
@@ -2311,7 +2108,7 @@ class CustomSelect {
                 this.selectedDot.style.display = 'none';
             }
         } else {
-            this.selectedText.textContent = this.selectElement.options[0]?.textContent || 'Select...';
+            this.selectedText.textContent = (this.selectElement.options[0] && this.selectElement.options[0].textContent) || 'Select...';
             this.selectedText.classList.add('placeholder');
             this.selectedDot.style.display = 'none';
         }
@@ -2321,11 +2118,9 @@ class CustomSelect {
         this.selectedValue = value;
         this.selectElement.value = value;
 
-        // Trigger change event on original select
         const event = new Event('change', { bubbles: true });
         this.selectElement.dispatchEvent(event);
 
-        // Update UI
         this.updateSelectedText();
         this.dropdown.querySelectorAll('.custom-select-option').forEach(opt => {
             opt.classList.toggle('selected', opt.dataset.value === value);
@@ -2341,10 +2136,8 @@ class CustomSelect {
     open() {
         this.isOpen = true;
         this.container.classList.add('open');
-        // position dropdown based on available space in nearest scroll container
         this.scroller = this.getScrollContainer();
         this.positionDropdown();
-        // Reposition on resize/scroll
         this._onResize = () => this.positionDropdown();
         window.addEventListener('resize', this._onResize);
         if (this.scroller) {
@@ -2379,18 +2172,15 @@ class CustomSelect {
             this.toggle();
         });
 
-        // Close when clicking outside
         document.addEventListener('click', (e) => {
             if (!this.container.contains(e.target)) {
                 this.close();
             }
         });
 
-        // Keep UI in sync when the original select's value changes programmatically
         this.selectElement.addEventListener('change', () => {
             this.selectedValue = this.selectElement.value;
             this.updateSelectedText();
-            // update option highlight state
             if (this.dropdown) {
                 this.dropdown.querySelectorAll('.custom-select-option').forEach(opt => {
                     opt.classList.toggle('selected', opt.dataset.value === this.selectedValue);
@@ -2398,14 +2188,12 @@ class CustomSelect {
             }
         });
 
-        // Observe changes to the original select options
         const observer = new MutationObserver(() => {
             this.refresh();
         });
         observer.observe(this.selectElement, { childList: true, subtree: true });
     }
 
-    // Find nearest scrollable ancestor to compute available space
     getScrollContainer() {
         let el = this.container.parentElement;
         while (el && el !== document.body) {
@@ -2416,10 +2204,9 @@ class CustomSelect {
             }
             el = el.parentElement;
         }
-        return window; // fallback to viewport
+        return window;
     }
 
-    // Position dropdown above or below based on available space
     positionDropdown() {
         const gap = 8;
         const desiredMax = 250;
@@ -2428,10 +2215,8 @@ class CustomSelect {
         let spaceAbove, spaceBelow;
 
         if (this.scroller === window) {
-            const viewportTop = 0;
-            const viewportBottom = window.innerHeight;
-            spaceAbove = triggerRect.top - viewportTop - gap;
-            spaceBelow = viewportBottom - triggerRect.bottom - gap;
+            spaceAbove = triggerRect.top - gap;
+            spaceBelow = window.innerHeight - triggerRect.bottom - gap;
         } else {
             const scrollRect = this.scroller.getBoundingClientRect();
             spaceAbove = triggerRect.top - scrollRect.top - gap;
@@ -2442,28 +2227,23 @@ class CustomSelect {
         this.container.classList.toggle('open-up', openUp);
 
         const maxForDirection = Math.max(120, Math.min(desiredMax, openUp ? spaceAbove : spaceBelow));
-        this.dropdown.style.maxHeight = `${maxForDirection}px`;
+        this.dropdown.style.maxHeight = maxForDirection + 'px';
 
-        // Expand dropdown width for very narrow triggers (mobile readability)
         const inMobileContext = !!(this.container.closest('.mobile-topbar') || this.container.closest('.mobile-footer'));
         const triggerIsNarrow = triggerRect.width < 160;
         if (inMobileContext && triggerIsNarrow) {
             const viewportW = window.innerWidth;
-            const margin = 12; // viewport margin
-            const minW = 220;  // minimum readable width
+            const margin = 12;
+            const minW = 220;
             const maxW = Math.max(minW, Math.min(360, viewportW - margin * 2));
             const desiredW = Math.min(maxW, Math.max(minW, triggerRect.width));
-            // Center dropdown relative to trigger, clamped to viewport
             let leftDesired = triggerRect.left + (triggerRect.width / 2) - (desiredW / 2);
             leftDesired = Math.max(margin, Math.min(leftDesired, viewportW - margin - desiredW));
-            // Convert to container-local offset
             const leftOffset = leftDesired - containerRect.left;
-            // Apply explicit width and left; clear right to allow expansion
-            this.dropdown.style.width = `${desiredW}px`;
-            this.dropdown.style.left = `${leftOffset}px`;
+            this.dropdown.style.width = desiredW + 'px';
+            this.dropdown.style.left = leftOffset + 'px';
             this.dropdown.style.right = 'auto';
         } else {
-            // Reset to default: stretch to container width
             this.dropdown.style.width = '';
             this.dropdown.style.left = '';
             this.dropdown.style.right = '';
@@ -2471,9 +2251,8 @@ class CustomSelect {
     }
 }
 
-// Helper for priority colors used by CustomSelect
 CustomSelect.prototype.getPriorityColor = function(value) {
-    const map = { high: '#ef4444', medium: '#f59e0b', low: '#3b82f6' };
+    const map = { high: '#ef4444', medium: '#f59e0b', low: '#10b981' };
     const key = (typeof value === 'string' ? value : '').toLowerCase().trim();
     return map[key] || '';
 };
@@ -2485,13 +2264,11 @@ function initCustomSelects() {
         if (!select.dataset.customized) {
             new CustomSelect(select);
         } else if (select._customSelect) {
-            // refresh to reflect any programmatic value changes
             select._customSelect.refresh();
         }
     });
 }
 
-// Call after DOM is ready and whenever modals open
 document.addEventListener('DOMContentLoaded', () => {
     setTimeout(initCustomSelects, 100);
 });
@@ -2502,24 +2279,36 @@ window.openTaskModal = function() {
     setTimeout(initCustomSelects, 50);
 };
 
-// Expose all close functions on window for inline onclick handlers
+// Expose close functions for inline onclick handlers
 window.closeTaskModal = closeTaskModal;
 window.closeTaskDetailsModal = closeTaskDetailsModal;
+window.closeConfirmModal = closeConfirmModal;
 window.closeUserSettings = closeUserSettings;
 window.closeProjectModal = closeProjectModal;
 window.closeProjectSettingsModal = closeProjectSettingsModal;
 window.closeDeleteModal = closeDeleteModal;
 
-// Expose open functions
+// Expose open/action functions
 window.openUserSettings = openUserSettings;
-
-// Expose other inline handler functions
+window.logout = logout;
 window.switchView = switchView;
+window.switchToProject = switchToProject;
 window.switchProjectSettingsTab = switchProjectSettingsTab;
 window.editTaskFromDetails = editTaskFromDetails;
 window.deleteTaskFromDetails = deleteTaskFromDetails;
-// window.addProjectMember - removed (deprecated function)
-// window.deleteProjectFromEdit - removed (deprecated function)
+window.quickCompleteTask = quickCompleteTask;
+window.viewTaskDetails = viewTaskDetails;
+window.deleteCurrentProject = deleteCurrentProject;
+window.editProjectFromSettings = editProjectFromSettings;
+window.addMember = addMember;
+window.removeMember = removeMember;
+window.leaveProject = leaveProject;
+window._doLeaveProject = _doLeaveProject;
+window._doDeleteProject = _doDeleteProject;
+window.confirmDelete = confirmDelete;
+window.openProjectDeleteModal = openProjectDeleteModal;
+window.closeProjectDeleteModal = closeProjectDeleteModal;
+window.confirmDeleteProject = confirmDeleteProject;
 
 const originalOpenProjectModal = openProjectModal;
 window.openProjectModal = function() {
@@ -2544,8 +2333,3 @@ window.editProject = function(projectId) {
     originalEditProject(projectId);
     setTimeout(initCustomSelects, 50);
 };
-
-// Expose project delete modal helpers
-window.openProjectDeleteModal = openProjectDeleteModal;
-window.closeProjectDeleteModal = closeProjectDeleteModal;
-window.confirmDeleteProject = confirmDeleteProject;

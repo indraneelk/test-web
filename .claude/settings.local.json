@@ -48,7 +48,20 @@
       "Bash(pkill:*)",
       "Bash(GUILD_ID=1326718373978963988 node register-guild-commands.js:*)",
       "Bash(npm run dev:*)",
-      "Bash(npm run sync:shared:*)"
+      "Bash(npm run sync:shared:*)",
+      "Bash(grep -E \"\\\\.\\(html|js|css\\)$\")",
+      "Bash(wc -l /Users/indra/Desktop/indraneelk/Documents/Moovmyway/techstack/tm/public/*.js /Users/indra/Desktop/indraneelk/Documents/Moovmyway/techstack/tm/data-service.js /Users/indra/Desktop/indraneelk/Documents/Moovmyway/techstack/tm/discord-bot.js)",
+      "mcp__plugin_supabase_supabase__list_projects",
+      "mcp__plugin_supabase_supabase__list_tables",
+      "mcp__plugin_supabase_supabase__get_project_url",
+      "mcp__plugin_supabase_supabase__get_publishable_keys",
+      "mcp__plugin_supabase_supabase__apply_migration",
+      "Bash(npx serve:*)",
+      "mcp__plugin_supabase_supabase__get_project",
+      "mcp__plugin_supabase_supabase__get_logs",
+      "mcp__plugin_supabase_supabase__execute_sql",
+      "mcp__plugin_supabase_supabase__get_advisors",
+      "Bash(grep -E \"\\\\.\\(html|js\\)$\")"
     ],
     "deny": [],
     "ask": []

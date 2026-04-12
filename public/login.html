@@ -14,7 +14,6 @@
             justify-content: center;
             padding: 2rem;
         }
-
         .login-container {
             max-width: 440px;
             width: 100%;
@@ -24,28 +23,23 @@
             border-radius: 0.75rem;
             box-shadow: var(--shadow);
         }
-
         .login-header {
             text-align: center;
             margin-bottom: 2rem;
         }
-
         .login-header h1 {
             font-size: 1.75rem;
             font-weight: 600;
             margin-bottom: 0.5rem;
             color: var(--text-primary);
         }
-
         .login-header p {
             color: var(--text-secondary);
             font-size: 0.9375rem;
         }
-
         .input-group {
             margin-bottom: 1.25rem;
         }
-
         .input-group label {
             display: block;
             margin-bottom: 0.5rem;
@@ -53,7 +47,6 @@
             font-weight: 600;
             font-size: 0.875rem;
         }
-
         .input-group input {
             width: 100%;
             padding: 0.75rem 1rem;
@@ -66,14 +59,12 @@
             transition: all 0.2s;
             box-sizing: border-box;
         }
-
         .input-group input:focus {
             outline: none;
             border-color: var(--primary-color);
             box-shadow: 0 0 0 3px rgba(240, 106, 106, 0.1);
         }
-
-        .btn-login {
+        .btn-primary {
             width: 100%;
             padding: 0.875rem 1.5rem;
             background: var(--primary-color);
@@ -86,18 +77,15 @@
             transition: all 0.2s;
             margin-top: 0.75rem;
         }
-
-        .btn-login:hover {
+        .btn-primary:hover:not(:disabled) {
             background: var(--primary-hover);
             box-shadow: var(--shadow-sm);
         }
-
-        .btn-login:disabled {
+        .btn-primary:disabled {
             background: var(--text-secondary);
             cursor: not-allowed;
             opacity: 0.6;
         }
-
         .error-message {
             padding: 1rem;
             background: #fee2e2;
@@ -108,7 +96,6 @@
             display: none;
             font-size: 0.875rem;
         }
-
         .success-message {
             padding: 1rem;
             background: #dcfce7;
@@ -119,7 +106,6 @@
             display: none;
             font-size: 0.875rem;
         }
-
         .loading-spinner {
             display: inline-block;
             width: 14px;
@@ -129,59 +115,30 @@
             border-top-color: white;
             animation: spin 0.8s linear infinite;
             margin-right: 0.5rem;
+            vertical-align: middle;
         }
-
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-
-        .divider {
-            text-align: center;
-            margin: 1.5rem 0;
-            position: relative;
-            color: var(--text-secondary);
-            font-size: 0.875rem;
-        }
-
-        .divider::before,
-        .divider::after {
-            content: '';
-            position: absolute;
-            top: 50%;
-            width: 42%;
-            height: 1px;
-            background: var(--border-color);
-        }
-
-        .divider::before {
-            left: 0;
-        }
-
-        .divider::after {
-            right: 0;
-        }
-
+        @keyframes spin { to { transform: rotate(360deg); } }
         .footer-text {
             text-align: center;
             margin-top: 1.5rem;
             color: var(--text-secondary);
             font-size: 0.875rem;
         }
-
-        .footer-text a {
-            color: var(--primary-color);
-            text-decoration: none;
-            font-weight: 600;
+        .forgot-link {
+            text-align: center;
+            margin-top: 1rem;
         }
-
-        .footer-text a:hover {
+        .forgot-link a {
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 0.875rem;
+        }
+        .forgot-link a:hover {
+            color: var(--primary-color);
             text-decoration: underline;
         }
-
         @media (max-width: 640px) {
-            .login-container {
-                padding: 2rem 1.5rem;
-            }
+            .login-container { padding: 2rem 1.5rem; }
         }
     </style>
 </head>
@@ -195,337 +152,301 @@
         <div class="error-message" id="errorMessage"></div>
         <div class="success-message" id="successMessage"></div>
 
+        <!-- Sign In Form -->
         <form id="loginForm">
             <div class="input-group">
                 <label for="email">Email Address</label>
-                <input
-                    type="email"
-                    id="email"
-                    name="email"
-                    placeholder="you@example.com"
-                    required
-                    autocomplete="email"
-                >
+                <input type="email" id="email" name="email" placeholder="you@example.com" required autocomplete="email">
             </div>
-
             <div class="input-group">
                 <label for="password">Password</label>
-                <input
-                    type="password"
-                    id="password"
-                    name="password"
-                    placeholder="Enter your password"
-                    required
-                    autocomplete="current-password"
-                >
+                <input type="password" id="password" name="password" placeholder="Enter your password" required autocomplete="current-password">
             </div>
-
-            <button type="submit" class="btn-login" id="submitBtn">
-                Sign In
-            </button>
+            <button type="submit" class="btn-primary" id="submitBtn">Sign In</button>
         </form>
 
-        <div class="forgot-password-link" style="text-align: center; margin-top: 1rem;">
-            <a href="#" id="forgotPasswordLink" style="color: var(--primary-color); text-decoration: none; font-size: 0.875rem;">Forgot your password?</a>
+        <div class="forgot-link" id="forgotLinkContainer">
+            <a href="#" id="forgotPasswordLink">Forgot your password?</a>
         </div>
 
         <!-- Forgot Password Form -->
-        <form id="forgotPasswordForm" style="display: none;">
+        <form id="forgotPasswordForm" style="display:none;">
             <div class="input-group">
                 <label for="resetEmail">Email Address</label>
-                <input
-                    type="email"
-                    id="resetEmail"
-                    name="resetEmail"
-                    placeholder="you@example.com"
-                    required
-                    autocomplete="email"
-                >
+                <input type="email" id="resetEmail" name="resetEmail" placeholder="you@example.com" required autocomplete="email">
             </div>
-            <button type="submit" class="btn-login" id="resetBtn">
-                Send Reset Link
-            </button>
-            <div style="text-align: center; margin-top: 1rem;">
-                <a href="#" id="backToLoginLink" style="color: var(--text-secondary); text-decoration: none; font-size: 0.875rem;">Back to Sign In</a>
+            <button type="submit" class="btn-primary" id="resetBtn">Send Reset Link</button>
+            <div class="forgot-link" style="margin-top:1rem;">
+                <a href="#" id="backToLoginLink">Back to Sign In</a>
             </div>
         </form>
 
-        <div class="footer-text">
-            Need to set up your account? Contact your admin for an invite link.
+        <!-- Sign Up Form -->
+        <form id="signupForm" style="display:none;">
+            <div class="input-group">
+                <label for="signupName">Full Name</label>
+                <input type="text" id="signupName" name="signupName" placeholder="Your name" required autocomplete="name">
+            </div>
+            <div class="input-group">
+                <label for="signupEmail">Email Address</label>
+                <input type="email" id="signupEmail" name="signupEmail" placeholder="you@example.com" required autocomplete="email">
+            </div>
+            <div class="input-group">
+                <label for="signupPassword">Password</label>
+                <input type="password" id="signupPassword" name="signupPassword" placeholder="At least 6 characters" required autocomplete="new-password" minlength="6">
+            </div>
+            <button type="submit" class="btn-primary" id="signupBtn">Create Account</button>
+            <div class="forgot-link" style="margin-top:1rem;">
+                <a href="#" id="backToLoginFromSignup">Already have an account? Sign in</a>
+            </div>
+        </form>
+
+        <div class="footer-text" id="footerText">
+            Don't have an account? <a href="#" id="showSignupLink" style="color:var(--primary-color);text-decoration:none;">Sign up</a>
         </div>
-
-        <!-- Profile Setup (shown if backend says needsProfileSetup) -->
-        <form id="profileSetupForm" style="display:none; margin-top:1.5rem;">
-            <div class="input-group">
-                <label for="psUsername">Username</label>
-                <input type="text" id="psUsername" placeholder="username" required>
-            </div>
-            <div class="input-group">
-                <label for="psName">Full Name</label>
-                <input type="text" id="psName" placeholder="Full name" required>
-            </div>
-            <div class="input-group">
-                <label for="psInitials">Initials (1–4 letters)</label>
-                <input type="text" id="psInitials" maxlength="4" placeholder="e.g., JD" required>
-            </div>
-            <button type="submit" class="btn-login" id="psSubmitBtn">Create Profile</button>
-        </form>
     </div>
 
     <script src="/vendor/supabase.js"></script>
     <script src="/auth-helper.js"></script>
     <script>
-        let supa = null;
-        async function initSupabase() {
-            if (supa) return supa;
-            const resp = await fetch('/api/config/public', { credentials: 'include' });
-            const cfg = await resp.json();
-            if (!cfg.supabaseUrl || !cfg.supabaseAnonKey) {
-                throw new Error('Supabase config missing');
-            }
-            supa = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey);
-            return supa;
+        var loginForm = document.getElementById('loginForm');
+        var forgotPasswordForm = document.getElementById('forgotPasswordForm');
+        var emailInput = document.getElementById('email');
+        var passwordInput = document.getElementById('password');
+        var submitBtn = document.getElementById('submitBtn');
+        var errorEl = document.getElementById('errorMessage');
+        var successEl = document.getElementById('successMessage');
+        var forgotPasswordLink = document.getElementById('forgotPasswordLink');
+        var backToLoginLink = document.getElementById('backToLoginLink');
+        var forgotLinkContainer = document.getElementById('forgotLinkContainer');
+        var resetEmailInput = document.getElementById('resetEmail');
+        var resetBtn = document.getElementById('resetBtn');
+
+        function showError(msg) {
+            errorEl.textContent = msg;
+            errorEl.style.display = 'block';
+            successEl.style.display = 'none';
         }
-
-        const form = document.getElementById('loginForm');
-        const emailInput = document.getElementById('email');
-        const passwordInput = document.getElementById('password');
-        const submitBtn = document.getElementById('submitBtn');
-        const errorMessage = document.getElementById('errorMessage');
-        const successMessage = document.getElementById('successMessage');
-
-        function showError(message) {
-            errorMessage.textContent = message;
-            errorMessage.style.display = 'block';
-            successMessage.style.display = 'none';
+        function showSuccess(msg) {
+            successEl.textContent = msg;
+            successEl.style.display = 'block';
+            errorEl.style.display = 'none';
         }
-
-        function showSuccess(message) {
-            successMessage.textContent = message;
-            successMessage.style.display = 'block';
-            errorMessage.style.display = 'none';
-        }
-
         function hideMessages() {
-            errorMessage.style.display = 'none';
-            successMessage.style.display = 'none';
+            errorEl.style.display = 'none';
+            successEl.style.display = 'none';
+        }
+        function setLoading(btn, loading, loadingText, defaultText) {
+            if (loading) {
+                btn.disabled = true;
+                var spinner = document.createElement('span');
+                spinner.className = 'loading-spinner';
+                btn.textContent = loadingText;
+                btn.insertBefore(spinner, btn.firstChild);
+            } else {
+                btn.disabled = false;
+                btn.textContent = defaultText;
+            }
         }
 
-        // Check if already logged in - wait for Supabase session first
-        (async () => {
+        // Check if already logged in — redirect to app if so
+        (async function() {
             try {
-                // Wait for Supabase to be ready with timeout
-                const timeoutPromise = new Promise((_, reject) =>
-                    setTimeout(() => reject(new Error('Timeout')), 3000)
-                );
-
-                const authCheckPromise = (async () => {
-                    if (window.supabase) {
-                        const resp = await fetch('/api/config/public');
-                        const cfg = await resp.json();
-                        if (cfg.supabaseUrl && cfg.supabaseAnonKey) {
-                            const client = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey);
-                            // Ensure session is loaded before checking auth
-                            await client.auth.getSession();
-                        }
-                    }
-
-                    const response = await fetch('/api/auth/me', {
-                        credentials: 'include'
-                    });
-
-                    if (response.ok) {
-                        // Already logged in, redirect to app
+                var client = window.getSupabaseClient ? window.getSupabaseClient() : null;
+                if (client) {
+                    var sessionData = await client.auth.getSession();
+                    if (sessionData.data && sessionData.data.session) {
                         window.location.href = '/';
                     }
-                })();
-
-                // Race between auth check and timeout
-                await Promise.race([authCheckPromise, timeoutPromise]);
-            } catch (error) {
-                // Not logged in or timeout, stay on login page
-                console.log('Auth check skipped:', error.message);
-            }
+                }
+            } catch (_) { /* not logged in */ }
         })();
 
-        let lastAccessToken = null;
-
-        form.addEventListener('submit', async (e) => {
+        // Sign In — direct Supabase auth, no server call needed
+        loginForm.addEventListener('submit', async function(e) {
             e.preventDefault();
             hideMessages();
 
-            const email = emailInput.value.trim();
-            const password = passwordInput.value;
+            var email = emailInput.value.trim();
+            var password = passwordInput.value;
 
             if (!email || !password) {
-                showError('Please enter both email and password');
+                showError('Please enter both email and password.');
                 return;
             }
 
-            submitBtn.disabled = true;
-            submitBtn.innerHTML = '<span class="loading-spinner"></span> Signing in...';
+            setLoading(submitBtn, true, 'Signing in...', 'Sign In');
 
             try {
-                // Sign in with Supabase
-                const client = await initSupabase();
-                const { data, error } = await client.auth.signInWithPassword({
-                    email: email,
-                    password: password
-                });
+                var client = window.getSupabaseClient();
+                if (!client) throw new Error('Authentication service unavailable. Please refresh the page.');
+
+                var result = await client.auth.signInWithPassword({ email: email, password: password });
+                var data = result.data;
+                var error = result.error;
 
                 if (error) {
+                    if (error.message.indexOf('Invalid login credentials') !== -1) {
+                        throw new Error('Incorrect email or password. Please try again.');
+                    }
+                    if (error.message.indexOf('Email not confirmed') !== -1) {
+                        throw new Error('Please confirm your email address before signing in.');
+                    }
                     throw new Error(error.message);
                 }
 
                 if (!data.session) {
-                    throw new Error('No session returned from Supabase');
+                    throw new Error('Sign in failed. Please try again.');
                 }
 
-                // Do not duplicate tokens in storage; rely on supabase-js session
-                try { sessionStorage.removeItem('sb_at'); } catch(err) {}
-                // Create server session with the access token (optional fallback)
-                const response = await fetch('/api/auth/supabase-login', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    credentials: 'include',
-                    body: JSON.stringify({
-                        access_token: data.session.access_token
-                    })
-                });
+                showSuccess('Signed in! Redirecting...');
+                submitBtn.textContent = 'Success!';
+                setTimeout(function() { window.location.href = '/'; }, 500);
 
-                const result = await response.json();
-
-                if (!response.ok) {
-                    if (response.status === 404 && result.needsProfileSetup) {
-                        lastAccessToken = data.session.access_token;
-                        showSuccess('Finish setting up your profile');
-                        form.style.display = 'none';
-                        document.getElementById('profileSetupForm').style.display = 'block';
-                        return;
-                    }
-                    throw new Error(result.error || 'Login failed');
-                }
-
-                showSuccess('Login successful! Redirecting...');
-                submitBtn.innerHTML = '✓ Success!';
-
-                // Redirect to app
-                setTimeout(() => {
-                    window.location.href = '/';
-                }, 500);
-
-            } catch (error) {
-                console.error('Login error:', error);
-                showError(error.message || 'Failed to sign in. Please check your credentials.');
-                submitBtn.disabled = false;
-                submitBtn.innerHTML = 'Sign In';
-            }
-        });
-
-        // Profile setup submit
-        document.getElementById('profileSetupForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            hideMessages();
-            const psBtn = document.getElementById('psSubmitBtn');
-            psBtn.disabled = true;
-            psBtn.textContent = 'Creating...';
-            try {
-                const payload = {
-                    access_token: lastAccessToken,
-                    username: document.getElementById('psUsername').value.trim(),
-                    name: document.getElementById('psName').value.trim(),
-                    initials: document.getElementById('psInitials').value.trim()
-                };
-                const resp = await fetch('/api/auth/profile-setup', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    credentials: 'include',
-                    body: JSON.stringify(payload)
-                });
-                const data = await resp.json();
-                if (!resp.ok) throw new Error(data.error || 'Failed to create profile');
-                showSuccess('Profile created! Redirecting...');
-                setTimeout(() => window.location.href = '/', 500);
             } catch (err) {
-                showError(err.message);
-            } finally {
-                psBtn.disabled = false;
-                psBtn.textContent = 'Create Profile';
+                console.error('Login error:', err);
+                showError(err.message || 'Failed to sign in. Please check your credentials.');
+                setLoading(submitBtn, false, '', 'Sign In');
             }
         });
 
-        // Auto-focus email input
-        emailInput.focus();
-
-        // Forgot Password handling
-        const forgotPasswordLink = document.getElementById('forgotPasswordLink');
-        const forgotPasswordForm = document.getElementById('forgotPasswordForm');
-        const backToLoginLink = document.getElementById('backToLoginLink');
-        const resetEmailInput = document.getElementById('resetEmail');
-        const resetBtn = document.getElementById('resetBtn');
-        const forgotPasswordLinkContainer = document.querySelector('.forgot-password-link');
-
-        forgotPasswordLink.addEventListener('click', (e) => {
+        // Forgot password toggle
+        forgotPasswordLink.addEventListener('click', function(e) {
             e.preventDefault();
             hideMessages();
-            form.style.display = 'none';
-            forgotPasswordLinkContainer.style.display = 'none';
+            loginForm.style.display = 'none';
+            forgotLinkContainer.style.display = 'none';
             forgotPasswordForm.style.display = 'block';
-            resetEmailInput.value = emailInput.value; // Pre-fill if email was entered
+            resetEmailInput.value = emailInput.value;
             resetEmailInput.focus();
         });
 
-        backToLoginLink.addEventListener('click', (e) => {
+        backToLoginLink.addEventListener('click', function(e) {
             e.preventDefault();
             hideMessages();
             forgotPasswordForm.style.display = 'none';
-            form.style.display = 'block';
-            forgotPasswordLinkContainer.style.display = 'block';
+            loginForm.style.display = 'block';
+            forgotLinkContainer.style.display = 'block';
             emailInput.focus();
         });
 
-        forgotPasswordForm.addEventListener('submit', async (e) => {
+        // Password reset via Supabase
+        forgotPasswordForm.addEventListener('submit', async function(e) {
             e.preventDefault();
             hideMessages();
 
-            const email = resetEmailInput.value.trim();
+            var email = resetEmailInput.value.trim();
             if (!email) {
-                showError('Please enter your email address');
+                showError('Please enter your email address.');
                 return;
             }
 
-            resetBtn.disabled = true;
-            resetBtn.innerHTML = '<span class="loading-spinner"></span> Sending...';
+            setLoading(resetBtn, true, 'Sending...', 'Send Reset Link');
 
             try {
-                const client = await initSupabase();
-                const { error } = await client.auth.resetPasswordForEmail(email, {
+                var client = window.getSupabaseClient();
+                if (!client) throw new Error('Authentication service unavailable. Please refresh the page.');
+
+                var result = await client.auth.resetPasswordForEmail(email, {
                     redirectTo: window.location.origin + '/reset-password.html'
                 });
 
-                if (error) {
-                    throw new Error(error.message);
-                }
+                if (result.error) throw new Error(result.error.message);
 
                 showSuccess('Password reset link sent! Check your email inbox.');
-                resetBtn.innerHTML = 'Link Sent';
+                resetBtn.textContent = 'Link Sent';
 
-                // Go back to login after a delay
-                setTimeout(() => {
+                setTimeout(function() {
                     forgotPasswordForm.style.display = 'none';
-                    form.style.display = 'block';
-                    forgotPasswordLinkContainer.style.display = 'block';
-                    resetBtn.disabled = false;
-                    resetBtn.innerHTML = 'Send Reset Link';
+                    loginForm.style.display = 'block';
+                    forgotLinkContainer.style.display = 'block';
+                    setLoading(resetBtn, false, '', 'Send Reset Link');
                 }, 3000);
 
-            } catch (error) {
-                console.error('Password reset error:', error);
-                showError(error.message || 'Failed to send reset link. Please try again.');
-                resetBtn.disabled = false;
-                resetBtn.innerHTML = 'Send Reset Link';
+            } catch (err) {
+                console.error('Password reset error:', err);
+                showError(err.message || 'Failed to send reset link. Please try again.');
+                setLoading(resetBtn, false, '', 'Send Reset Link');
+            }
+        });
+
+        // Auto-focus email
+        emailInput.focus();
+
+        // Sign Up toggle
+        var signupForm = document.getElementById('signupForm');
+        var showSignupLink = document.getElementById('showSignupLink');
+        var backToLoginFromSignup = document.getElementById('backToLoginFromSignup');
+        var signupBtn = document.getElementById('signupBtn');
+        var footerText = document.getElementById('footerText');
+
+        function showSignup() {
+            hideMessages();
+            loginForm.style.display = 'none';
+            forgotLinkContainer.style.display = 'none';
+            footerText.style.display = 'none';
+            signupForm.style.display = 'block';
+            document.getElementById('signupName').focus();
+            document.querySelector('.login-header h1').textContent = 'Create Account';
+            document.querySelector('.login-header p').textContent = 'Get started with your team';
+        }
+
+        function showLogin() {
+            hideMessages();
+            signupForm.style.display = 'none';
+            forgotPasswordForm.style.display = 'none';
+            loginForm.style.display = 'block';
+            forgotLinkContainer.style.display = 'block';
+            footerText.style.display = 'block';
+            document.querySelector('.login-header h1').textContent = 'Welcome Back';
+            document.querySelector('.login-header p').textContent = 'Sign in to your account';
+            emailInput.focus();
+        }
+
+        showSignupLink.addEventListener('click', function(e) { e.preventDefault(); showSignup(); });
+        backToLoginFromSignup.addEventListener('click', function(e) { e.preventDefault(); showLogin(); });
+
+        signupForm.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            hideMessages();
+
+            var name = document.getElementById('signupName').value.trim();
+            var email = document.getElementById('signupEmail').value.trim();
+            var password = document.getElementById('signupPassword').value;
+
+            if (!name || !email || !password) {
+                showError('Please fill in all fields.');
+                return;
+            }
+
+            setLoading(signupBtn, true, 'Creating account...', 'Create Account');
+
+            try {
+                var client = window.getSupabaseClient();
+                if (!client) throw new Error('Authentication service unavailable. Please refresh the page.');
+
+                var result = await client.auth.signUp({
+                    email: email,
+                    password: password,
+                    options: { data: { name: name } }
+                });
+
+                if (result.error) throw new Error(result.error.message);
+
+                // If session returned immediately, email confirmation is disabled — go straight to app
+                if (result.data.session) {
+                    showSuccess('Account created! Redirecting...');
+                    setTimeout(function() { window.location.href = '/'; }, 800);
+                } else {
+                    showSuccess('Account created! Check your email to confirm your address, then sign in.');
+                    signupBtn.textContent = 'Check your email';
+                    setTimeout(function() { showLogin(); setLoading(signupBtn, false, '', 'Create Account'); }, 4000);
+                }
+
+            } catch (err) {
+                console.error('Signup error:', err);
+                showError(err.message || 'Failed to create account. Please try again.');
+                setLoading(signupBtn, false, '', 'Create Account');
             }
         });
     </script>

@@ -493,54 +493,15 @@
   </style>
   <script src="/vendor/supabase.js"></script>
   <script>
-    // Singleton Supabase client
+    const SUPABASE_URL = 'https://tfltkqgxxceykzbjuziv.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRmbHRrcWd4eGNleWt6Ymp1eml2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU5NTc0MDksImV4cCI6MjA5MTUzMzQwOX0.zJ6ChtJTURUp259v38CE4m8_auTY_Iou-AccpFybxVM';
+
     let supaClient = null;
-    async function ensureSupabase() {
-      if (supaClient) return supaClient;
-      try {
-        const cfgResp = await fetch('/api/config/public');
-        if (!cfgResp.ok) return null;
-        const cfg = await cfgResp.json();
-        if (window.supabase && cfg.supabaseUrl && cfg.supabaseAnonKey) {
-          supaClient = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey);
-        }
-      } catch (_) {}
+    function getClient() {
+      if (!supaClient) supaClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
       return supaClient;
     }
-
-    async function getAccessToken() {
-      try {
-        const c = await ensureSupabase();
-        if (c) {
-          const { data } = await c.auth.getSession();
-          if (data?.session?.access_token) return data.session.access_token;
-        }
-      } catch(_) {}
-      return sessionStorage.getItem('sb_at') || null;
-    }
-
-    async function authFetch(url, options = {}) {
-      const orig = { ...options };
-      let token = await getAccessToken();
-      let headers = new Headers(options.headers || {});
-      if (token) headers.set('Authorization', `Bearer ${token}`);
-      let resp = await fetch(url, { ...options, headers, credentials: token ? undefined : 'include' });
-      if (resp.status !== 401) return resp;
-      try {
-        const client = await ensureSupabase();
-        if (client) {
-          await client.auth.refreshSession();
-          const { data } = await client.auth.getSession();
-          const newToken = data?.session?.access_token || null;
-          if (newToken && newToken !== token) {
-            const retryHeaders = new Headers(orig.headers || {});
-            retryHeaders.set('Authorization', `Bearer ${newToken}`);
-            return await fetch(url, { ...orig, headers: retryHeaders, credentials: undefined });
-          }
-        }
-      } catch(_) {}
-      return resp;
-    }
+    async function ensureSupabase() { return getClient(); }
   </script>
 </head>
 <body>
@@ -752,70 +713,50 @@
 
     // Load Profile
     async function loadProfile() {
-      const resp = await authFetch('/api/auth/me');
-      if (!resp.ok) {
-        window.location.href = '/login.html';
-        return;
-      }
-      let data = await resp.json();
-      currentUser = data && data.user ? data.user : data;
+      const client = getClient();
+      const { data: { session } } = await client.auth.getSession();
+      if (!session) { window.location.href = '/login.html'; return; }
 
-      document.getElementById('username').value = currentUser.username || '';
-      document.getElementById('name').value = currentUser.name || '';
-      document.getElementById('initials').value = (currentUser.initials || '').toUpperCase();
-      selectedColor = currentUser.color || '#4ECDC4';
+      const { data: profile, error } = await client
+        .from('profiles')
+        .select('*')
+        .eq('id', session.user.id)
+        .single();
+
+      if (error || !profile) { window.location.href = '/login.html'; return; }
+
+      currentUser = { ...profile, email: session.user.email };
+      document.getElementById('username').value = profile.name || '';
+      document.getElementById('name').value = profile.name || '';
+      document.getElementById('initials').value = (profile.initials || '').toUpperCase();
+      selectedColor = profile.color || '#4ECDC4';
       renderColors(selectedColor);
-
-      // Load Discord status
-      loadDiscordStatus();
     }
 
-    // Load Discord Status
+    // Load Discord Status — not available without Express, hide the tab
     async function loadDiscordStatus() {
-      try {
-        const resp = await authFetch('/api/user/discord-handle');
-        if (resp.ok) {
-          const data = await resp.json();
-          if (data.discord_handle) {
-            document.getElementById('discordHandle').value = data.discord_handle;
-            document.getElementById('discordStatus').innerHTML = `
-              <div class="discord-status linked">
-                ✓ Your Discord account <strong>${data.discord_handle}</strong> is linked
-              </div>
-            `;
-            document.getElementById('linkDiscordBtn').textContent = 'Relink';
-          }
-        }
-      } catch (error) {
-        console.error('Failed to load Discord handle:', error);
-      }
+      // Discord integration removed
     }
 
     // Profile Form Submit
     document.getElementById('profileForm').addEventListener('submit', async (e) => {
       e.preventDefault();
+      const client = getClient();
+      const { data: { session } } = await client.auth.getSession();
+      if (!session) { window.location.href = '/login.html'; return; }
+
       const payload = {
-        username: document.getElementById('username').value.trim(),
         name: document.getElementById('name').value.trim(),
         initials: document.getElementById('initials').value.trim().toUpperCase(),
-        color: selectedColor
+        color: selectedColor,
+        updated_at: new Date().toISOString()
       };
 
       try {
-        const resp = await authFetch('/api/auth/me', {
-          method: 'PUT',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify(payload)
-        });
-        const data = await resp.json();
-        if (!resp.ok) throw new Error(data.error || 'Failed to update profile');
-
+        const { error } = await client.from('profiles').update(payload).eq('id', session.user.id);
+        if (error) throw new Error(error.message);
         showSuccess('profile', '✓ Profile updated successfully');
-
-        // Redirect back to main page after brief delay
-        setTimeout(() => {
-          window.location.href = '/';
-        }, 800);
+        setTimeout(() => { window.location.href = '/'; }, 800);
       } catch (err) {
         showError('profile', err.message);
       }
@@ -839,11 +780,7 @@
       }
 
       try {
-        const client = await ensureSupabase();
-        if (!client) {
-          throw new Error('Unable to connect to authentication service');
-        }
-
+        const client = getClient();
         const { error } = await client.auth.updateUser({
           password: newPassword
         });
@@ -859,79 +796,9 @@
       }
     });
 
-    // Discord Linking
+    // Discord integration removed
     async function linkDiscord() {
-      const statusEl = document.getElementById('discordStatus');
-      const linkBtn = document.getElementById('linkDiscordBtn');
-
-      linkBtn.disabled = true;
-      linkBtn.textContent = 'Generating code...';
-
-      try {
-        const resp = await authFetch('/api/discord/generate-link-code', {
-          method: 'POST'
-        });
-        const data = await resp.json();
-
-        if (!resp.ok) throw new Error(data.error || 'Failed to generate link code');
-
-        const code = data.code;
-        const expiresAt = data.expiresAt; // Absolute timestamp when code expires
-
-        // Clear Discord status (since we just unlinked)
-        statusEl.innerHTML = '<div class="info-value">Not linked</div>';
-
-        // Update button to show "Link Discord" instead of "Relink"
-        linkBtn.textContent = 'Link Discord';
-
-        // Show code section
-        document.getElementById('discordCodeSection').style.display = 'block';
-        document.getElementById('discordCode').textContent = code;
-
-        // Calculate time remaining
-        const now = Date.now();
-        const msRemaining = expiresAt - now;
-        const minutesRemaining = Math.floor(msRemaining / (60 * 1000));
-        document.getElementById('discordExpiry').textContent = `Expires in ${minutesRemaining} minutes`;
-
-        linkBtn.disabled = false;
-
-        // Poll for link status
-        pollDiscordLinkStatus(code);
-
-      } catch (error) {
-        showError('discord', error.message);
-        linkBtn.textContent = 'Generate Link';
-        linkBtn.disabled = false;
-      }
-    }
-
-    // Poll for Discord link status
-    let pollInterval = null;
-    async function pollDiscordLinkStatus(code) {
-      if (pollInterval) clearInterval(pollInterval);
-
-      pollInterval = setInterval(async () => {
-        try {
-          const resp = await authFetch('/api/user/discord-handle');
-          if (resp.ok) {
-            const data = await resp.json();
-            if (data.discord_handle) {
-              clearInterval(pollInterval);
-              document.getElementById('discordCodeSection').style.display = 'none';
-              showSuccess('discord', `✓ Successfully linked to ${data.discord_handle}!`);
-              loadDiscordStatus();
-            }
-          }
-        } catch (error) {
-          console.error('Poll error:', error);
-        }
-      }, 2000);
-
-      // Stop polling after 5 minutes
-      setTimeout(() => {
-        if (pollInterval) clearInterval(pollInterval);
-      }, 300000);
+      showError('discord', 'Discord integration is not available.');
     }
 
     // Initialize

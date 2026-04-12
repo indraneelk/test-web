@@ -1,68 +1,41 @@
-// Authentication Helper - Global fetch interceptor
-// This automatically adds Supabase Bearer tokens to all /api/ requests
-// Bypasses cookie issues with Cloudflare Pages -> Worker proxy
+// Authentication Helper — Supabase direct (no Express)
 
 (function() {
-    // Store original fetch
-    const originalFetch = window.fetch;
+    const SUPABASE_URL = 'https://tfltkqgxxceykzbjuziv.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRmbHRrcWd4eGNleWt6Ymp1eml2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU5NTc0MDksImV4cCI6MjA5MTUzMzQwOX0.zJ6ChtJTURUp259v38CE4m8_auTY_Iou-AccpFybxVM';
 
-    // Global Supabase client reference
-    window.supa = null;
+    let _client = null;
 
-    async function getSupabaseClient() {
-        if (!window.supa && window.supabase) {
-            try {
-                const resp = await originalFetch('/api/config/public');
-                const cfg = await resp.json();
-                if (cfg.supabaseUrl && cfg.supabaseAnonKey) {
-                    window.supa = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey);
-                }
-            } catch (error) {
-                console.error('[Auth Helper] Failed to init Supabase:', error);
+    function getSupabaseClient() {
+        if (!_client) {
+            if (!window.supabase) {
+                console.error('[Auth Helper] window.supabase not loaded yet');
+                return null;
             }
+            _client = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
         }
-        return window.supa;
+        return _client;
     }
 
-    // Override fetch globally
-    window.fetch = async function(url, options = {}) {
-        // Skip intercepting config/public to avoid circular dependency
-        if (typeof url === 'string' && url.includes('/api/config/public')) {
-            return originalFetch(url, options);
+    async function getAuthToken() {
+        try {
+            const client = getSupabaseClient();
+            if (!client) return null;
+            const { data } = await client.auth.getSession();
+            return data?.session?.access_token || null;
+        } catch (err) {
+            console.error('[Auth Helper] getAuthToken error:', err);
+            return null;
         }
+    }
 
-        // Only intercept other /api/ requests
-        if (typeof url === 'string' && url.includes('/api/')) {
-            try {
-                const client = await getSupabaseClient();
-                if (client) {
-                    const { data: { session } } = await client.auth.getSession();
+    // Expose on window — no apiFetch needed, use getSupabaseClient() directly
+    window.getSupabaseClient = getSupabaseClient;
+    window.getAuthToken = getAuthToken;
 
-                    if (session?.access_token) {
-                        // Properly merge headers - preserve existing headers like Content-Type
-                        if (!options.headers) {
-                            options.headers = {};
-                        }
-
-                        // Handle both Headers objects and plain objects
-                        if (options.headers instanceof Headers) {
-                            // Headers object - just add to it
-                            options.headers.set('Authorization', `Bearer ${session.access_token}`);
-                        } else {
-                            // Plain object - simple assignment
-                            options.headers = {
-                                ...options.headers,
-                                'Authorization': `Bearer ${session.access_token}`
-                            };
-                        }
-                    }
-                }
-            } catch (error) {
-                console.error('[Auth Helper] Error adding auth header:', error);
-            }
-        }
-
-        // Call original fetch
-        return originalFetch(url, options);
-    };
+    // Convenience alias: window.supa → getSupabaseClient()
+    Object.defineProperty(window, 'supa', {
+        get: function() { return getSupabaseClient(); },
+        configurable: true
+    });
 })();

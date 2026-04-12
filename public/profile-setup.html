@@ -426,88 +426,33 @@
         let tempToken = null;
         let userEmail = null;
 
-        // --- Auth helpers: Supabase + Bearer attachment ---
-        async function ensureSupabase() {
-            if (supabaseClient) return supabaseClient;
-            try {
-                const resp = await fetch('/api/config/public');
-                if (!resp.ok) return null;
-                const cfg = await resp.json();
-                if (window.supabase) {
-                    supabaseClient = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey);
-                    return supabaseClient;
-                }
-                console.error('Supabase UMD library not loaded');
-                return null;
-            } catch (err) {
-                console.error('Failed to initialize Supabase:', err);
-                return null;
-            }
+        // Supabase client — uses auth-helper.js singleton
+        function ensureSupabase() {
+            return window.getSupabaseClient ? window.getSupabaseClient() : null;
         }
 
-        async function getAccessToken() {
-            try {
-                const client = await ensureSupabase();
-                if (client) {
-                    const { data } = await client.auth.getSession();
-                    if (data?.session?.access_token) return data.session.access_token;
-                }
-            } catch (_) {}
-            return null;
-        }
-
-        async function authFetch(url, options = {}) {
-            const orig = { ...options };
-            let token = await getAccessToken();
-            let headers = new Headers(options.headers || {});
-            if (token) headers.set('Authorization', `Bearer ${token}`);
-            let resp = await fetch(url, { ...options, headers, credentials: token ? undefined : 'include' });
-            if (resp.status !== 401) return resp;
-            try {
-                const client = await ensureSupabase();
-                if (client) {
-                    await client.auth.refreshSession();
-                    const { data } = await client.auth.getSession();
-                    const newToken = data?.session?.access_token || null;
-                    if (newToken && newToken !== token) {
-                        const retryHeaders = new Headers(orig.headers || {});
-                        retryHeaders.set('Authorization', `Bearer ${newToken}`);
-                        return await fetch(url, { ...orig, headers: retryHeaders, credentials: undefined });
-                    }
-                }
-            } catch (_) {}
-            return resp;
-        }
-
-        // Determine mode: use Bearer if available, else magic-link handoff
+        // Init: check session and pre-fill if profile exists
         (async () => {
-            try {
-                const resp = await authFetch('/api/auth/me');
-                if (resp.ok) {
-                    const data = await resp.json();
-                    currentUser = data.user;
-                    userEmail = currentUser.email || '';
-                    emailBadge.textContent = userEmail;
+            const client = ensureSupabase();
+            if (!client) { window.location.href = '/login.html'; return; }
 
-                    // Only set update mode if user has completed profile setup (has name and initials)
-                    if (currentUser.name && currentUser.initials) {
-                        isUpdateMode = true;
-                        loadUserDataForUpdate();
-                        return;
-                    }
-                    // Otherwise, show as new user setup even though they're authenticated
-                    return;
-                }
-            } catch (_) {}
-            // Not authenticated → check magic-link artifacts
-            tempToken = sessionStorage.getItem('supabase_access_token');
-            const userData = JSON.parse(sessionStorage.getItem('supabase_user_data') || '{}');
-            if (!tempToken || !userData.email) {
-                window.location.href = '/magic-link.html';
-                return;
-            }
-            userEmail = userData.email;
+            const { data: { session } } = await client.auth.getSession();
+            if (!session) { window.location.href = '/login.html'; return; }
+
+            userEmail = session.user.email;
             emailBadge.textContent = userEmail;
+
+            const { data: profile } = await client
+                .from('profiles')
+                .select('*')
+                .eq('id', session.user.id)
+                .single();
+
+            if (profile && profile.name && profile.initials) {
+                isUpdateMode = true;
+                currentUser = { ...profile, email: userEmail };
+                loadUserDataForUpdate();
+            }
         })();
 
         function loadUserDataForUpdate() {
@@ -743,78 +688,20 @@
                     }
                 }
 
-                // Handle initial password setup for new users (optional)
-                if (password && password.trim() !== '' && !isUpdateMode) {
-                    try {
-                        const client = await ensureSupabase();
-                        if (client && tempToken) {
-                            // Establish session using tempToken
-                            try {
-                                await client.auth.setSession({
-                                    access_token: tempToken,
-                                    refresh_token: tempToken
-                                });
-                            } catch (err) {
-                                console.warn('Session setup warning:', err);
-                            }
+                // Save profile directly to Supabase
+                const client = ensureSupabase();
+                const { data: { session } } = await client.auth.getSession();
+                if (!session) { window.location.href = '/login.html'; return; }
 
-                            // Try to set password - if it fails, just warn and continue
-                            const { error: pwdError } = await client.auth.updateUser({
-                                password: password
-                            });
+                const { error: profileError } = await client
+                    .from('profiles')
+                    .update({ name, initials, color: selectedColor, updated_at: new Date().toISOString() })
+                    .eq('id', session.user.id);
 
-                            if (pwdError) {
-                                console.warn('Password not set:', pwdError.message);
-                                // Don't fail - user can still use magic link to sign in
-                                // Just log it for debugging
-                            }
-                        }
-                    } catch (err) {
-                        console.warn('Password setup failed, continuing without password:', err);
-                        // Continue anyway - magic link auth still works
-                    }
-                }
+                if (profileError) throw new Error(profileError.message);
 
-                // Update or create profile
-                const endpoint = isUpdateMode ? '/api/auth/me' : '/api/auth/profile-setup';
-                const method = isUpdateMode ? 'PUT' : 'POST';
-
-                // Generate username from email (take part before @, sanitize)
-                const username = userEmail ? userEmail.split('@')[0].replace(/[^a-zA-Z0-9_]/g, '_') : 'user';
-
-                const payload = isUpdateMode
-                    ? { name, initials, color: selectedColor }
-                    : { access_token: tempToken, username, name, initials, color: selectedColor };
-
-                const response = await (isUpdateMode
-                    ? authFetch(endpoint, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
-                    : fetch(endpoint, { method, headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify(payload) })
-                );
-
-                const data = await response.json();
-
-                if (response.ok) {
-                    if (!isUpdateMode) {
-                        sessionStorage.removeItem('supabase_access_token');
-                        sessionStorage.removeItem('supabase_user_data');
-                        // Ensure any legacy token storage is cleared
-                        sessionStorage.removeItem('sb_at');
-                    }
-
-                    if (isUpdateMode && passwordChangeAttempted) {
-                        submitBtn.innerHTML = '✓ Profile & Password Updated!';
-                    } else {
-                        submitBtn.innerHTML = isUpdateMode ? '✓ Profile Updated!' : '✓ Profile Complete!';
-                    }
-
-                    setTimeout(() => {
-                        window.location.href = '/';
-                    }, 1000);
-                } else {
-                    showError(data.error || 'Failed to update profile');
-                    submitBtn.disabled = false;
-                    submitBtn.innerHTML = isUpdateMode ? 'Update Profile' : 'Complete Setup';
-                }
+                submitBtn.textContent = isUpdateMode ? 'Profile Updated!' : 'Profile Complete!';
+                setTimeout(() => { window.location.href = '/'; }, 1000);
             } catch (error) {
                 console.error('Profile error:', error);
                 showError('Network error. Please try again.');

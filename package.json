@@ -1,42 +1,11 @@
 {
   "name": "team-task-manager",
   "version": "2.0.0",
-  "description": "A full-stack task manager application with authentication and project management",
-  "main": "server-auth.js",
   "scripts": {
-    "setup": "node setup.js",
-    "start": "node start.js",
-    "dev": "node start.js",
-    "server": "node server-auth.js",
-    "discord": "node discord-bot.js",
-    "dev-all": "npm run server & npm run discord",
-    "deploy:worker": "npx wrangler deploy --config wrangler-worker.toml",
-    "deploy:pages": "npx wrangler pages deploy public --project-name mmw-tm",
-    "deploy:discord": "npx wrangler deploy --config wrangler-discord.toml",
-    "deploy:all": "npm run deploy:worker && npm run deploy:pages",
-    "sync:shared": "cp -r shared/ functions/"
+    "start": "npx serve public -p 3000",
+    "dev": "npx serve public -p 3000"
   },
-  "keywords": [
-    "task-manager",
-    "asana",
-    "project-management",
-    "collaboration"
-  ],
-  "author": "",
-  "license": "MIT",
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.30.0",
-    "@supabase/supabase-js": "^2.80.0",
-    "axios": "^1.6.7",
-    "bcryptjs": "^2.4.3",
-    "cookie-parser": "^1.4.6",
-    "cors": "^2.8.5",
-    "discord.js": "^14.14.1",
-    "dotenv": "^16.4.1",
-    "express": "^4.18.2",
-    "express-rate-limit": "^8.2.1",
-    "express-session": "^1.17.3",
-    "helmet": "^8.1.0",
-    "jose": "^5.2.4"
+    "@supabase/supabase-js": "^2.80.0"
   }
 }

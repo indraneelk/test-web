@@ -1,187 +1,92 @@
+require('dotenv').config();
+
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
 const path = require('path');
-const fs = require('fs');
+
+const authRoutes = require('./routes/auth');
+const projectRoutes = require('./routes/projects');
+const taskRoutes = require('./routes/tasks');
+const adminRoutes = require('./routes/admin');
+const errorHandler = require('./middleware/errors');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Middleware
-app.use(cors());
-app.use(express.json());
-app.use(express.static('public'));
-
-// Data storage file
-const DATA_FILE = path.join(__dirname, 'tasks.json');
-
-// Initialize data file if it doesn't exist
-if (!fs.existsSync(DATA_FILE)) {
-    fs.writeFileSync(DATA_FILE, JSON.stringify([]));
-}
-
-// Helper functions
-const readTasks = () => {
-    try {
-        const data = fs.readFileSync(DATA_FILE, 'utf8');
-        return JSON.parse(data);
-    } catch (error) {
-        return [];
-    }
-};
-
-const writeTasks = (tasks) => {
-    fs.writeFileSync(DATA_FILE, JSON.stringify(tasks, null, 2));
-};
-
-// Generate unique ID
-const generateId = () => {
-    return Date.now().toString(36) + Math.random().toString(36).substr(2);
-};
-
-// API Routes
-
-// Get all tasks
-app.get('/api/tasks', (req, res) => {
-    try {
-        const tasks = readTasks();
-        res.json(tasks);
-    } catch (error) {
-        res.status(500).json({ error: 'Failed to fetch tasks' });
-    }
-});
-
-// Get single task by ID
-app.get('/api/tasks/:id', (req, res) => {
-    try {
-        const tasks = readTasks();
-        const task = tasks.find(t => t.id === req.params.id);
-
-        if (!task) {
-            return res.status(404).json({ error: 'Task not found' });
+// Security headers
+app.use(helmet({
+    contentSecurityPolicy: {
+        directives: {
+            defaultSrc: ["'self'"],
+            styleSrc: ["'self'", "'unsafe-inline'"],
+            scriptSrc: ["'self'", "'unsafe-inline'"],
+            scriptSrcAttr: ["'unsafe-inline'"],
+            imgSrc: ["'self'", "data:", "https:"],
+            connectSrc: ["'self'", "https://*.supabase.co", "wss://*.supabase.co"]
         }
+    }
+}));
 
-        res.json(task);
-    } catch (error) {
-        res.status(500).json({ error: 'Failed to fetch task' });
+// CORS
+const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS
+    ? process.env.ALLOWED_ORIGINS.split(',')
+    : ['http://localhost:3000', 'http://localhost:5001'];
+
+app.use(cors({
+    origin: function (origin, callback) {
+        if (!origin) return callback(null, true); // same-origin / curl
+        if (ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
+        console.warn(`Blocked CORS request from: ${origin}`);
+        callback(new Error('Not allowed by CORS'));
+    },
+    credentials: true
+}));
+
+// Body parsing
+app.use(express.json({ limit: '1mb' }));
+
+// Serve static frontend
+app.use(express.static(path.join(__dirname, 'public')));
+
+// Serve Supabase JS from local node_modules (satisfies CSP 'self')
+app.use('/vendor', express.static(path.join(__dirname, 'node_modules/@supabase/supabase-js/dist/umd')));
+
+// Public config endpoint — no auth needed
+app.get('/api/config/public', (req, res) => {
+    res.json({
+        supabaseUrl: process.env.SUPABASE_URL || '',
+        supabaseAnonKey: process.env.SUPABASE_ANON_KEY || ''
+    });
+});
+
+// API routes
+app.use('/api/auth', authRoutes);
+app.use('/api/projects', projectRoutes);
+app.use('/api/tasks', taskRoutes);
+app.use('/api/admin', adminRoutes);
+
+// Convenience alias: /api/users maps to auth users list
+app.use('/api/users', require('./routes/auth'));
+
+// Serve frontend for all non-API routes (SPA fallback)
+app.get('*', (req, res) => {
+    if (!req.path.startsWith('/api')) {
+        res.sendFile(path.join(__dirname, 'public', 'index.html'));
+    } else {
+        res.status(404).json({ error: 'Not found' });
     }
 });
 
-// Create new task
-app.post('/api/tasks', (req, res) => {
-    try {
-        const { name, description, date, project, poc, status } = req.body;
+// Global error handler — must be last
+app.use(errorHandler);
 
-        // Validation
-        if (!name || !description || !date || !project || !poc) {
-            return res.status(400).json({
-                error: 'Missing required fields: name, description, date, project, poc'
-            });
-        }
-
-        const tasks = readTasks();
-        const newTask = {
-            id: generateId(),
-            name,
-            description,
-            date,
-            project,
-            poc,
-            status: status || 'pending',
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString()
-        };
-
-        tasks.push(newTask);
-        writeTasks(tasks);
-
-        res.status(201).json(newTask);
-    } catch (error) {
-        res.status(500).json({ error: 'Failed to create task' });
-    }
-});
-
-// Update task
-app.put('/api/tasks/:id', (req, res) => {
-    try {
-        const tasks = readTasks();
-        const taskIndex = tasks.findIndex(t => t.id === req.params.id);
-
-        if (taskIndex === -1) {
-            return res.status(404).json({ error: 'Task not found' });
-        }
-
-        const { name, description, date, project, poc, status } = req.body;
-
-        // Update task with new data
-        tasks[taskIndex] = {
-            ...tasks[taskIndex],
-            name: name || tasks[taskIndex].name,
-            description: description || tasks[taskIndex].description,
-            date: date || tasks[taskIndex].date,
-            project: project || tasks[taskIndex].project,
-            poc: poc || tasks[taskIndex].poc,
-            status: status || tasks[taskIndex].status,
-            updatedAt: new Date().toISOString()
-        };
-
-        writeTasks(tasks);
-        res.json(tasks[taskIndex]);
-    } catch (error) {
-        res.status(500).json({ error: 'Failed to update task' });
-    }
-});
-
-// Delete task
-app.delete('/api/tasks/:id', (req, res) => {
-    try {
-        const tasks = readTasks();
-        const taskIndex = tasks.findIndex(t => t.id === req.params.id);
-
-        if (taskIndex === -1) {
-            return res.status(404).json({ error: 'Task not found' });
-        }
-
-        const deletedTask = tasks.splice(taskIndex, 1)[0];
-        writeTasks(tasks);
-
-        res.json({ message: 'Task deleted successfully', task: deletedTask });
-    } catch (error) {
-        res.status(500).json({ error: 'Failed to delete task' });
-    }
-});
-
-// Get tasks by POC
-app.get('/api/tasks/poc/:poc', (req, res) => {
-    try {
-        const tasks = readTasks();
-        const pocTasks = tasks.filter(t =>
-            t.poc.toLowerCase().includes(req.params.poc.toLowerCase())
-        );
-        res.json(pocTasks);
-    } catch (error) {
-        res.status(500).json({ error: 'Failed to fetch tasks' });
-    }
-});
-
-// Get tasks by project
-app.get('/api/tasks/project/:project', (req, res) => {
-    try {
-        const tasks = readTasks();
-        const projectTasks = tasks.filter(t =>
-            t.project.toLowerCase().includes(req.params.project.toLowerCase())
-        );
-        res.json(projectTasks);
-    } catch (error) {
-        res.status(500).json({ error: 'Failed to fetch tasks' });
-    }
-});
-
-// Serve frontend
-app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
-
-// Start server
 app.listen(PORT, () => {
-    console.log(`Task Manager server running on http://localhost:${PORT}`);
+    console.log(`Task Manager running on http://localhost:${PORT}`);
+    console.log(`Supabase project: ${process.env.SUPABASE_URL || '(not set)'}`);
+    if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+        console.warn('WARNING: SUPABASE_SERVICE_ROLE_KEY not set — server using anon key for DB queries');
+    }
 });
+
+module.exports = app; // for testing
