@@ -700,6 +700,15 @@
 
                 if (profileError) throw new Error(profileError.message);
 
+                // Auto-join shared General project for new users
+                if (!isUpdateMode) {
+                    await client.from('project_members').upsert({
+                        project_id: 'a0000000-0000-0000-0000-000000000001',
+                        user_id: session.user.id,
+                        role: 'member'
+                    }, { onConflict: 'project_id,user_id', ignoreDuplicates: true });
+                }
+
                 submitBtn.textContent = isUpdateMode ? 'Profile Updated!' : 'Profile Complete!';
                 setTimeout(() => { window.location.href = '/'; }, 1000);
             } catch (error) {
