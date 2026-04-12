@@ -695,7 +695,7 @@
 
                 const { error: profileError } = await client
                     .from('profiles')
-                    .update({ name, initials, color: selectedColor, updated_at: new Date().toISOString() })
+                    .update({ name, initials, color: selectedColor })
                     .eq('id', session.user.id);
 
                 if (profileError) throw new Error(profileError.message);
