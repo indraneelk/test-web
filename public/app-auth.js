@@ -896,11 +896,12 @@ function createTaskCard(task) {
     return '<div class="task-card-compact ' + task.status + '" onclick="viewTaskDetails(\'' + task.id + '\')" style="border-left-color: ' + projectColor + ';">' +
         (showPriorityTriangle ? '<div class="priority-triangle" style="border-color: transparent ' + priorityColor + ' transparent transparent;" title="Priority: ' + priority + '"></div>' : '') +
         '<div class="task-card-main">' +
-        '<button class="task-checkbox ' + (isCompleted ? 'checked' : '') + '"' +
-            ' onclick="quickCompleteTask(event, \'' + task.id + '\', ' + (!isCompleted) + ')"' +
-            ' title="' + (isCompleted ? 'Mark as incomplete' : 'Mark as complete') + '">' +
-            (isCompleted ? '<span class="checkmark">\u2713</span>' : '') +
-        '</button>' +
+        '<div class="task-status-icon ' + (task.status || 'not_started') + '"' +
+            ' onclick="showStatusDropdown(event, \'' + task.id + '\')"' +
+            ' title="Click to change status"' +
+            ' style="border-radius:50%;width:24px;height:24px;min-width:24px;min-height:24px;display:inline-flex;align-items:center;justify-content:center;font-size:12px;line-height:1;padding:0;box-sizing:border-box;">' +
+            getStatusIcon(task.status) +
+        '</div>' +
         '<h3 class="task-title-compact">' + escapeHtml(task.title || '') + '</h3>' +
         '</div>' +
         '<div class="task-card-footer">' +
@@ -927,7 +928,8 @@ function updateStats() {
     const filtered = filterTasks();
     const total = filtered.length;
     const completed = filtered.filter(t => t.status === 'completed').length;
-    const pending = filtered.filter(t => t.status === 'pending').length;
+    // Pending = not_started + in_progress + blocked + paused
+    const pending = filtered.filter(t => t.status && t.status !== 'completed').length;
 
     document.getElementById('totalTasks').textContent = total;
     document.getElementById('completedTasks').textContent = completed;
@@ -971,6 +973,16 @@ function openTaskModal() {
     if (prioritySelect) {
         prioritySelect.value = 'none';
         prioritySelect.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
+    const statusSelect = document.getElementById('taskStatus');
+    if (statusSelect) {
+        statusSelect.value = 'not_started';
+        if (statusSelect._customSelect) {
+            statusSelect._customSelect.selectedValue = 'not_started';
+            const label = statusSelect._customSelect.container.querySelector('.select-label');
+            if (label) label.textContent = '⏹ Not Started';
+        }
     }
 
     const projectSelect = document.getElementById('taskProject');
@@ -1040,6 +1052,14 @@ function editTask(id) {
             prioSel.dispatchEvent(new Event('change', { bubbles: true }));
         }
 
+        const statusSel = document.getElementById('taskStatus');
+        if (statusSel) {
+            statusSel.value = task.status || 'not_started';
+            if (statusSel._customSelect && typeof statusSel._customSelect.refresh === 'function') {
+                statusSel._customSelect.refresh();
+            }
+        }
+
         const projectSelect = document.getElementById('taskProject');
         projectSelect.innerHTML = '<option value="">Select project...</option>' +
             projects.map(p => '<option value="' + p.id + '" data-color="' + getProjectColor(p) + '">' + escapeHtml(p.name) + '</option>').join('');
@@ -1055,10 +1075,7 @@ function editTask(id) {
         document.getElementById('taskModalTitle').textContent = 'Edit Task';
         document.getElementById('taskSubmitBtnText').textContent = 'Update Task';
         const editMarkDoneBtn = document.getElementById('markDoneFromEditBtn');
-        if (editMarkDoneBtn) {
-            const t = tasks.find(t => t.id === taskId);
-            editMarkDoneBtn.style.display = (t && t.status !== 'completed') ? '' : 'none';
-        }
+        if (editMarkDoneBtn) editMarkDoneBtn.style.display = 'none';
 
         document.getElementById('taskModal').classList.add('active');
     } catch (error) {
@@ -1121,11 +1138,30 @@ function viewTaskDetails(id) {
     prioEl.appendChild(document.createTextNode(priorityLabel));
 
     const statusBadge = document.getElementById('detailsTaskStatus');
-    statusBadge.textContent = (task.status || '').replace('-', ' ');
-    statusBadge.className = 'task-status ' + task.status;
+    const taskStatus = task.status || 'not_started';
+    const statusColor = getStatusColor(taskStatus);
+    const statusIcon = getStatusIcon(taskStatus);
+    const statusLabel = getStatusLabel(taskStatus);
+    
+    statusBadge.className = 'task-status ' + taskStatus;
+    statusBadge.innerHTML = '';
+    const statusSpan = document.createElement('span');
+    statusSpan.className = 'status-badge-clickable';
+    statusSpan.style.cssText = 'background-color:' + statusColor + '20;border:1px solid ' + statusColor + ';color:' + statusColor + ';';
+    statusSpan.title = 'Click to change status';
+    const iconSpan = document.createElement('span');
+    iconSpan.className = 'status-icon';
+    iconSpan.textContent = statusIcon;
+    const labelSpan = document.createElement('span');
+    labelSpan.className = 'status-label';
+    labelSpan.textContent = statusLabel;
+    statusSpan.appendChild(iconSpan);
+    statusSpan.appendChild(labelSpan);
+    statusSpan.addEventListener('click', (e) => showStatusDropdown(e, task.id));
+    statusBadge.appendChild(statusSpan);
 
     const markDoneBtn = document.getElementById('markDoneFromDetailsBtn');
-    if (markDoneBtn) markDoneBtn.style.display = task.status === 'completed' ? 'none' : '';
+    if (markDoneBtn) markDoneBtn.style.display = 'none';
 
     document.getElementById('taskDetailsModal').classList.add('active');
 }
@@ -1254,13 +1290,17 @@ async function handleTaskSubmit(e) {
     const isoDate = document.getElementById('taskDate').value || null;
 
     // Supabase schema: title, due_date, assigned_to
+    const statusSelect = document.getElementById('taskStatus');
+    const taskStatus = statusSelect ? statusSelect.value : 'not_started';
+
     const taskData = {
         title: document.getElementById('taskName').value,
         description: document.getElementById('taskDescription').value,
         due_date: isoDate,
         project_id: document.getElementById('taskProject').value || null,
         assigned_to: document.getElementById('taskAssignee').value || null,
-        priority: normalizedPriority
+        priority: normalizedPriority,
+        status: taskStatus
     };
 
     try {
@@ -1279,7 +1319,7 @@ async function handleTaskSubmit(e) {
         } else {
             ({ data: result, error } = await client
                 .from('tasks')
-                .insert({ ...taskData, created_by: currentUser.id, status: 'pending' })
+                .insert({ ...taskData, created_by: currentUser.id })
                 .select()
                 .single());
         }
@@ -1309,7 +1349,141 @@ async function handleTaskSubmit(e) {
     }
 }
 
+// Status constants and helpers
+const STATUS_ORDER = ['not_started', 'in_progress', 'blocked', 'paused', 'completed'];
+const STATUS_COLORS = {
+    'not_started': '#9ca3af',
+    'in_progress': '#3b82f6',
+    'blocked': '#ef4444',
+    'paused': '#eab308',
+    'completed': '#22c55e'
+};
+const STATUS_ICONS = {
+    'not_started': '⏹',
+    'in_progress': '▶',
+    'blocked': '⛔',
+    'paused': '⏸',
+    'completed': '✓'
+};
+const STATUS_LABELS = {
+    'not_started': 'Not Started',
+    'in_progress': 'In Progress',
+    'blocked': 'Blocked',
+    'paused': 'Paused',
+    'completed': 'Completed'
+};
+
+function getStatusIcon(status) {
+    return STATUS_ICONS[status] || STATUS_ICONS['not_started'];
+}
+
+function getStatusLabel(status) {
+    return STATUS_LABELS[status] || 'Unknown';
+}
+
+function getStatusColor(status) {
+    return STATUS_COLORS[status] || '#9ca3af';
+}
+
+// Show status dropdown near the clicked element
+function showStatusDropdown(event, id) {
+    event.stopPropagation();
+
+    const task = tasks.find(t => t.id === id);
+    if (!task) return;
+
+    // Remove any existing dropdown
+    const existing = document.getElementById('statusDropdown');
+    if (existing) existing.remove();
+
+    const anchor = event.currentTarget;
+    const rect = anchor.getBoundingClientRect();
+
+    const dropdown = document.createElement('div');
+    dropdown.id = 'statusDropdown';
+    dropdown.className = 'status-dropdown';
+
+    STATUS_ORDER.forEach(status => {
+        const item = document.createElement('div');
+        item.className = 'status-dropdown-item' + (status === (task.status || 'not_started') ? ' active' : '');
+
+        const icon = document.createElement('span');
+        icon.className = 'status-dropdown-icon';
+        icon.style.color = getStatusColor(status);
+        icon.textContent = getStatusIcon(status);
+
+        const label = document.createElement('span');
+        label.textContent = getStatusLabel(status);
+
+        item.appendChild(icon);
+        item.appendChild(label);
+
+        item.addEventListener('click', (e) => {
+            e.stopPropagation();
+            dropdown.remove();
+            document.removeEventListener('click', outsideClick);
+            setTaskStatus(id, status);
+        });
+
+        dropdown.appendChild(item);
+    });
+
+    document.body.appendChild(dropdown);
+
+    // Position below anchor; flip up if too close to bottom
+    const dropH = STATUS_ORDER.length * 36 + 8;
+    const fitsBelow = rect.bottom + dropH + 8 < window.innerHeight;
+    dropdown.style.top = (fitsBelow ? rect.bottom + 4 : rect.top - dropH - 4) + 'px';
+    dropdown.style.left = rect.left + 'px';
+
+    function outsideClick() {
+        dropdown.remove();
+        document.removeEventListener('click', outsideClick);
+    }
+    setTimeout(() => document.addEventListener('click', outsideClick), 0);
+}
+
+// Set task status and persist to DB
+async function setTaskStatus(id, newStatus) {
+    const task = tasks.find(t => t.id === id);
+    if (!task) return;
+
+    const originalStatus = task.status;
+    task.status = newStatus;
+    updateUI();
+
+    try {
+        const client = ensureSupabase();
+        if (!client) throw new Error('Not connected');
+
+        const { data: updatedTask, error } = await client
+            .from('tasks')
+            .update({ status: newStatus, updated_at: new Date().toISOString() })
+            .eq('id', id)
+            .select()
+            .single();
+
+        if (error) throw new Error(error.message);
+
+        const taskIndex = tasks.findIndex(t => t.id === id);
+        if (taskIndex !== -1) tasks[taskIndex] = updatedTask;
+
+        if (newStatus === 'completed') celebrate();
+        showSuccess('Status changed to ' + getStatusLabel(newStatus));
+
+        // Refresh details modal if open
+        if (currentTaskDetailsId === id) viewTaskDetails(id);
+
+    } catch (error) {
+        console.error('Status update failed:', error);
+        task.status = originalStatus;
+        updateUI();
+        showError('Failed to update status. Please try again.');
+    }
+}
+
 // Quick complete task
+
 async function quickCompleteTask(event, id, checked) {
     event.stopPropagation();
 
@@ -1317,10 +1491,11 @@ async function quickCompleteTask(event, id, checked) {
     if (!task) return;
 
     const checkbox = event.target.closest('.task-checkbox');
+    if (!checkbox) return;
     if (checkbox.dataset.loading === 'true') return;
     checkbox.dataset.loading = 'true';
 
-    const newStatus = checked ? 'completed' : 'pending';
+    const newStatus = checked ? 'completed' : 'not_started';
     const originalStatus = task.status;
 
     // Optimistic update
@@ -2119,6 +2294,14 @@ class CustomSelect {
                 const label = document.createElement('span');
                 label.textContent = option.textContent;
                 optionBtn.appendChild(label);
+            } else if (this.selectElement.id === 'taskStatus' && option.value) {
+                const icon = document.createElement('span');
+                icon.textContent = getStatusIcon(option.value);
+                icon.style.cssText = 'color:' + getStatusColor(option.value) + ';font-size:13px;width:18px;text-align:center;flex-shrink:0;';
+                optionBtn.appendChild(icon);
+                const label = document.createElement('span');
+                label.textContent = getStatusLabel(option.value);
+                optionBtn.appendChild(label);
             } else {
                 optionBtn.textContent = option.textContent;
             }
@@ -2151,6 +2334,11 @@ class CustomSelect {
                 const color = selectedOption.dataset.color || '#cccccc';
                 this.selectedDot.className = '';
                 this.selectedDot.style.cssText = 'width:10px;height:10px;border-radius:50%;background:' + color + ';display:inline-block;flex-shrink:0;';
+            } else if (this.selectElement.id === 'taskStatus') {
+                this.selectedDot.className = '';
+                this.selectedDot.style.cssText = 'display:inline-block;font-size:13px;color:' + getStatusColor(selectedOption.value) + ';';
+                this.selectedDot.textContent = getStatusIcon(selectedOption.value);
+                this.selectedText.textContent = getStatusLabel(selectedOption.value);
             } else {
                 this.selectedDot.style.display = 'none';
             }
@@ -2350,6 +2538,8 @@ window.deleteTaskFromDetails = deleteTaskFromDetails;
 window.markTaskDoneFromDetails = markTaskDoneFromDetails;
 window.markTaskDoneFromEdit = markTaskDoneFromEdit;
 window.quickCompleteTask = quickCompleteTask;
+window.showStatusDropdown = showStatusDropdown;
+window.setTaskStatus = setTaskStatus;
 window.viewTaskDetails = viewTaskDetails;
 window.deleteCurrentProject = deleteCurrentProject;
 window.editProjectFromSettings = editProjectFromSettings;
