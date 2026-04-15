@@ -1,5 +1,7 @@
 // Task Manager Frontend — Supabase direct (no Express API)
 
+const GENERAL_PROJECT_ID = 'a0000000-0000-0000-0000-000000000001';
+
 // Configuration
 
 // Loading Spinner Control
@@ -1597,6 +1599,7 @@ function openProjectModal() {
     document.getElementById('projectModalTitle').textContent = 'Create New Project';
     document.getElementById('projectSubmitBtnText').textContent = 'Create Project';
 
+    renderProjectMembersCheckboxes();
     document.getElementById('projectModal').classList.add('active');
 }
 
@@ -1668,6 +1671,17 @@ async function handleProjectSubmit(e) {
                     user_id: currentUser.id,
                     role: 'owner'
                 });
+
+                // Add selected members
+                const selectedMembers = Array.from(document.querySelectorAll('input[name="projectMember"]:checked'))
+                    .map(cb => cb.value);
+                for (const memberId of selectedMembers) {
+                    await client.from('project_members').insert({
+                        project_id: result.id,
+                        user_id: memberId,
+                        role: 'member'
+                    });
+                }
             }
         }
 
@@ -1720,11 +1734,22 @@ function openProjectSettings(projectId) {
             const el = document.createElement('p');
             el.id = 'personalProjectNotice';
             el.style.cssText = 'color:var(--text-secondary);font-size:0.875rem;font-style:italic;margin-top:0.5rem;';
-            el.textContent = 'This is your personal General project. It cannot be edited or deleted.';
+            el.textContent = '';
             document.querySelector('#projectSettingsModal .settings-section')?.appendChild(el);
             return el;
         })();
-    if (personalNotice) personalNotice.style.display = project.is_personal ? 'block' : 'none';
+    if (personalNotice) {
+        const isGeneral = project.id === GENERAL_PROJECT_ID;
+        if (project.is_personal) {
+            personalNotice.textContent = 'This is your personal project. It cannot be edited or deleted.';
+            personalNotice.style.display = 'block';
+        } else if (isGeneral) {
+            personalNotice.textContent = 'This is the shared General project. All team members are automatically included.';
+            personalNotice.style.display = 'block';
+        } else {
+            personalNotice.style.display = 'none';
+        }
+    }
 
     const colorRowId = 'settingsProjectColor';
     let colorRowEl = document.getElementById(colorRowId);
@@ -1760,10 +1785,12 @@ function openProjectSettings(projectId) {
     const dangerZoneEl = document.getElementById('dangerZoneSection');
     const addMemberSection = document.querySelector('#projectSettingsModal .add-member-section');
 
-    if (editBtn) editBtn.style.display = isOwner && !project.is_personal ? '' : 'none';
+    const isGeneral = project.id === GENERAL_PROJECT_ID;
+    const canEdit = isOwner && !project.is_personal && !isGeneral;
+    if (editBtn) editBtn.style.display = canEdit ? '' : 'none';
     if (membersSectionEl) membersSectionEl.style.display = project.is_personal ? 'none' : '';
-    if (dangerZoneEl) dangerZoneEl.style.display = isOwner && !project.is_personal ? 'flex' : 'none';
-    if (addMemberSection) addMemberSection.style.display = isOwner && !project.is_personal ? '' : 'none';
+    if (dangerZoneEl) dangerZoneEl.style.display = canEdit ? 'flex' : 'none';
+    if (addMemberSection) addMemberSection.style.display = canEdit ? '' : 'none';
 
     if (!project.is_personal) {
         renderMembersList(project);
@@ -1813,10 +1840,11 @@ function renderMembersList(project) {
         return 0;
     });
 
+    const isGeneral = project.id === GENERAL_PROJECT_ID;
     membersList.innerHTML = sortedMembers.map(member => {
         const isCurrentUser = member.id === currentUser.id;
-        const showLeaveButton = isCurrentUser && !isOwner;
-        const showRemoveButton = isOwner && !isCurrentUser;
+        const showLeaveButton = isCurrentUser && !isOwner && !isGeneral;
+        const showRemoveButton = isOwner && !isCurrentUser && !isGeneral;
 
         const initials = getInitials(member);
         const avatarStyle = member.color ? 'style="background-color: ' + member.color + ';"' : '';
@@ -1887,6 +1915,7 @@ async function addMember() {
 // Remove member
 async function removeMember(userId) {
     if (!currentProjectForSettings) return;
+    if (currentProjectForSettings === GENERAL_PROJECT_ID) { showError('Cannot remove members from the General project'); return; }
 
     const memberUser = users.find(u => u.id === userId);
     const memberName = memberUser ? (memberUser.name || memberUser.username || 'this member') : 'this member';
@@ -1932,6 +1961,7 @@ async function _doRemoveMember(userId) {
 // Leave project (for non-owners)
 async function leaveProject() {
     if (!currentProjectForSettings || !currentUser) return;
+    if (currentProjectForSettings === GENERAL_PROJECT_ID) { showError('Cannot leave the General project'); return; }
     showConfirmModal(
         'Leave project',
         'You will lose access to this project and all its tasks.',
@@ -2008,6 +2038,7 @@ function editProjectFromSettings() {
 // Delete current project
 async function deleteCurrentProject() {
     if (!currentProjectForSettings) return;
+    if (currentProjectForSettings === GENERAL_PROJECT_ID) { showError('The General project cannot be deleted'); return; }
     const project = projects.find(p => p.id === currentProjectForSettings);
     const projectName = project ? project.name : 'this project';
     showConfirmModal(

@@ -17,10 +17,26 @@ const PRIORITY_LABEL = {
 };
 
 const STATUS_COLOR = {
-    pending: pc.yellow,
+    not_started: pc.gray,
     in_progress: pc.blue,
+    blocked: pc.red,
+    paused: pc.yellow,
     completed: pc.green
 };
+
+const STATUS_ICON = {
+    not_started: '⏹',
+    in_progress: '▶',
+    blocked: '⛔',
+    paused: '⏸',
+    completed: '✓'
+};
+
+// Map old 'pending' to 'not_started' for backward compatibility
+function normalizeStatus(status) {
+    if (status === 'pending') return 'not_started';
+    return status;
+}
 
 function formatDate(iso) {
     if (!iso) return pc.gray('—');
@@ -46,15 +62,22 @@ export async function listTasks({ project, status, priority, json = false }) {
 
     let query = supabase
         .from('tasks')
-        .select('*, projects(name, color), profiles(username, name)')
-        .eq('user_id', session.user.id)
+        .select('*, projects!inner(name, color)')
+        .or(`created_by.eq.${session.user.id},assigned_to.eq.${session.user.id}`)
         .order('due_date', { ascending: true });
 
     if (project) {
         query = query.eq('project_id', project);
     }
     if (status) {
-        query = query.eq('status', status);
+        // Handle backward compatibility: accept both 'pending' and 'not_started' 
+        // Map 'pending' to query for both pending and not_started in DB
+        if (status === 'pending') {
+            // Query for both old and new status values
+            query = query.or('status.eq.pending,status.eq.not_started');
+        } else {
+            query = query.eq('status', status);
+        }
     }
     if (priority) {
         query = query.eq('priority', priority);
@@ -86,8 +109,10 @@ export async function listTasks({ project, status, priority, json = false }) {
     for (const task of data) {
         const prio = (task.priority || 'none');
         const prioFn = PRIORITY_COLORS[prio] || pc.gray;
-        const statusFn = STATUS_COLOR[task.status] || pc.gray;
-        const done = task.status === 'completed';
+        const normalizedTaskStatus = normalizeStatus(task.status);
+        const statusFn = STATUS_COLOR[normalizedTaskStatus] || pc.gray;
+        const statusIcon = STATUS_ICON[normalizedTaskStatus] || '?';
+        const done = normalizedTaskStatus === 'completed';
 
         const title = done
             ? pc.strikethrough(pc.gray(task.title))
@@ -95,7 +120,7 @@ export async function listTasks({ project, status, priority, json = false }) {
 
         console.log(
             `  ${prioFn(prio === 'none' ? '  ' : '◀')} ` +
-            `${statusFn(task.status === 'completed' ? '☑' : '☐')} ` +
+            `${statusFn(statusIcon)} ` +
             `${title}`
         );
         console.log(
@@ -141,8 +166,7 @@ export async function createTask({ title, description, project, due, priority, a
             due_date: due,
             priority: priority || 'none',
             assigned_to: assignee || session.user.id,
-            user_id: session.user.id,
-            status: 'pending'
+            status: 'not_started'
         })
         .select()
         .single();
@@ -160,48 +184,46 @@ export async function createTask({ title, description, project, due, priority, a
     }
 }
 
-export async function completeTask(id, json = false) {
+export async function setStatus(id, newStatus, json = false) {
     const supabase = getClient();
+
+    // Handle backward compatibility: convert 'pending' to 'not_started'
+    const normalizedStatus = newStatus === 'pending' ? 'not_started' : newStatus;
+
+    // Validate status
+    const validStatuses = ['not_started', 'in_progress', 'blocked', 'paused', 'completed'];
+    if (!validStatuses.includes(normalizedStatus)) {
+        console.error(pc.red(`Invalid status: ${newStatus}. Valid values: ${validStatuses.join(', ')}`));
+        process.exit(1);
+    }
 
     const { data, error } = await supabase
         .from('tasks')
-        .update({ status: 'completed' })
+        .update({ status: normalizedStatus })
         .eq('id', id)
         .select()
         .single();
 
     if (error) {
-        console.error(pc.red(`Failed to complete task: ${error.message}`));
+        console.error(pc.red(`Failed to update task status: ${error.message}`));
         process.exit(1);
     }
 
+    const statusIcon = STATUS_ICON[normalizedStatus] || '?';
     if (json) {
         console.log(JSON.stringify({ task: data }, null, 2));
     } else {
-        console.log(pc.green(`✓ Task completed: "${data.title}"`));
+        console.log(pc.green(`✓ Task status updated: "${data.title}" -> ${statusIcon} ${normalizedStatus}`));
     }
 }
 
+// Keep backward compatible aliases
+export async function completeTask(id, json = false) {
+    return setStatus(id, 'completed', json);
+}
+
 export async function reopenTask(id, json = false) {
-    const supabase = getClient();
-
-    const { data, error } = await supabase
-        .from('tasks')
-        .update({ status: 'pending' })
-        .eq('id', id)
-        .select()
-        .single();
-
-    if (error) {
-        console.error(pc.red(`Failed to reopen task: ${error.message}`));
-        process.exit(1);
-    }
-
-    if (json) {
-        console.log(JSON.stringify({ task: data }, null, 2));
-    } else {
-        console.log(pc.yellow(`↩ Task reopened: "${data.title}"`));
-    }
+    return setStatus(id, 'not_started', json);
 }
 
 export async function deleteTask(id, json = false) {
@@ -229,7 +251,7 @@ export async function getTask(id, json = false) {
 
     const { data, error } = await supabase
         .from('tasks')
-        .select('*, projects(name, color), profiles(username, name)')
+        .select('*, projects(name, color)')
         .eq('id', id)
         .single();
 
@@ -243,9 +265,13 @@ export async function getTask(id, json = false) {
         return;
     }
 
+    const normalizedStatus = normalizeStatus(data.status);
+    const statusFn = STATUS_COLOR[normalizedStatus] || pc.gray;
+    const statusIcon = STATUS_ICON[normalizedStatus] || '?';
+
     console.log(pc.bold(`\n  ${data.title}\n`));
     console.log(`  ${pc.gray('ID')}:        ${data.id}`);
-    console.log(`  ${pc.gray('Status')}:    ${STATUS_COLOR[data.status]?.(data.status) || data.status}`);
+    console.log(`  ${pc.gray('Status')}:    ${statusFn(statusIcon + ' ' + normalizedStatus)}`);
     console.log(`  ${pc.gray('Priority')}:  ${PRIORITY_COLORS[data.priority]?.(data.priority) || data.priority}`);
     console.log(`  ${pc.gray('Due')}:       ${formatDate(data.due_date)}`);
     console.log(`  ${pc.gray('Project')}:   ${data.projects?.name ? pc.blue(data.projects.name) : pc.gray('none')}`);

@@ -80,7 +80,7 @@ async function createTask(dataService, userId, taskData) {
         project_id: project_id,
         assigned_to_id: (assigned_to_id && assigned_to_id.trim() !== '') ? assigned_to_id : null,
         created_by_id: userId,
-        status: 'pending',
+        status: 'not_started',
         priority: priority || 'none',
         archived: false,
         completed_at: null,
@@ -138,7 +138,7 @@ async function updateTask(dataService, userId, taskId, updates) {
 
     // Validate status if provided
     if (status !== undefined && !validateStatus(status)) {
-        throw new ValidationError('Invalid status. Must be: pending, in-progress, or completed');
+        throw new ValidationError('Invalid status. Must be: not_started, in_progress, blocked, paused, or completed');
     }
 
     // Validate priority if provided
@@ -169,7 +169,15 @@ async function updateTask(dataService, userId, taskId, updates) {
     if (description !== undefined) updateData.description = sanitizeString(description, VALIDATION.TASK_DESCRIPTION_MAX);
     if (date !== undefined) updateData.date = date;
     if (assigned_to_id !== undefined) updateData.assigned_to_id = (assigned_to_id && assigned_to_id.trim() !== '') ? assigned_to_id : null;
-    if (status !== undefined) updateData.status = status;
+    if (status !== undefined) {
+        updateData.status = status;
+        // Set completed_at when marking as completed, clear it otherwise
+        if (status === 'completed') {
+            updateData.completed_at = getCurrentTimestamp();
+        } else {
+            updateData.completed_at = null;
+        }
+    }
     if (priority !== undefined) updateData.priority = priority;
     if (project_id !== undefined) updateData.project_id = project_id;
 

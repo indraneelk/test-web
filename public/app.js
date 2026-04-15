@@ -1,6 +1,68 @@
 // API Base URL
 const API_URL = '/api/tasks';
 
+// Status constants and helpers
+const STATUS_ORDER = ['not_started', 'in_progress', 'blocked', 'paused', 'completed'];
+const STATUS_COLORS = {
+    'not_started': '#9ca3af',
+    'in_progress': '#3b82f6',
+    'blocked': '#ef4444',
+    'paused': '#eab308',
+    'completed': '#22c55e'
+};
+const STATUS_ICONS = {
+    'not_started': '⏹',
+    'in_progress': '▶',
+    'blocked': '⛔',
+    'paused': '⏸',
+    'completed': '✓'
+};
+const STATUS_LABELS = {
+    'not_started': 'Not Started',
+    'in_progress': 'In Progress',
+    'blocked': 'Blocked',
+    'paused': 'Paused',
+    'completed': 'Completed'
+};
+
+function getStatusIcon(status) {
+    return STATUS_ICONS[status] || STATUS_ICONS['not_started'];
+}
+
+function getStatusLabel(status) {
+    return STATUS_LABELS[status] || 'Unknown';
+}
+
+function getStatusColor(status) {
+    return STATUS_COLORS[status] || '#9ca3af';
+}
+
+function cycleTaskStatus(event, id) {
+    event.stopPropagation();
+    const task = tasks.find(t => t.id === id);
+    if (!task) return;
+    
+    const currentStatus = task.status || 'not_started';
+    const currentIndex = STATUS_ORDER.indexOf(currentStatus);
+    const nextIndex = (currentIndex + 1) % STATUS_ORDER.length;
+    const newStatus = STATUS_ORDER[nextIndex];
+    
+    // Optimistic update
+    task.status = newStatus;
+    renderTasks(filterTasks());
+    
+    // Save to API
+    fetch(`${API_URL}/${task.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus })
+    }).then(() => {
+        showSuccess('Status: ' + getStatusLabel(newStatus));
+    }).catch(error => {
+        console.error('Failed to update status:', error);
+    });
+}
+
 // State
 let tasks = [];
 let currentFilters = {
@@ -198,14 +260,19 @@ function createTaskCard(task) {
     });
 
     const isOverdue = new Date() > dueDate && task.status !== 'completed';
-    const isCompleted = task.status === 'completed';
+    const taskStatus = task.status || 'not_started';
+    const statusColor = getStatusColor(taskStatus);
+    const statusIcon = getStatusIcon(taskStatus);
+    const statusLabel = getStatusLabel(taskStatus);
 
     return `
         <div class="task-card ${task.status}">
             <div class="task-header">
-                <div class="task-checkbox ${isCompleted ? 'checked' : ''}"
-                     onclick="quickCompleteTask(event, '${task.id}', ${!isCompleted})"
-                     title="${isCompleted ? 'Mark as incomplete' : 'Mark as complete'}">
+                <div class="task-status-icon ${taskStatus}"
+                     onclick="cycleTaskStatus(event, '${task.id}')"
+                     title="Click to change status"
+                     style="color: ${statusColor}; background-color: ${statusColor}15; border: 1px solid ${statusColor};">
+                    ${statusIcon}
                 </div>
                 <div class="task-title-section">
                     <h3 class="task-title">${escapeHtml(task.name)}</h3>
@@ -231,7 +298,9 @@ function createTaskCard(task) {
             </div>
 
             <div class="task-footer">
-                <span class="task-status ${task.status}">${task.status.replace('-', ' ')}</span>
+                <span class="task-status ${taskStatus}" style="color: ${statusColor}; border-color: ${statusColor};">
+                    ${statusIcon} ${statusLabel}
+                </span>
             </div>
         </div>
     `;
@@ -411,7 +480,7 @@ async function quickCompleteTask(event, id, checked) {
     if (checkbox && checkbox.dataset.loading === 'true') return;
     if (checkbox) checkbox.dataset.loading = 'true';
 
-    const newStatus = checked ? 'completed' : 'pending';
+    const newStatus = checked ? 'completed' : 'not_started';
 
     // Store original state for rollback
     const originalStatus = task.status;

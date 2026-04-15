@@ -122,7 +122,7 @@ router.post('/', requireAuth, async (req, res, next) => {
         const access = await hasProjectAccess(project_id, userId);
         if (!access) return res.status(403).json({ error: 'Access denied to that project' });
 
-        const VALID_STATUSES = ['pending', 'in_progress', 'completed'];
+        const VALID_STATUSES = ['not_started', 'in_progress', 'blocked', 'paused', 'completed'];
         const VALID_PRIORITIES = ['none', 'low', 'medium', 'high'];
 
         if (status && !VALID_STATUSES.includes(status)) {
@@ -140,7 +140,7 @@ router.post('/', requireAuth, async (req, res, next) => {
                 project_id,
                 assigned_to: assigned_to || null,
                 created_by: userId,
-                status: status || 'pending',
+                status: status || 'not_started',
                 priority: priority || 'none',
                 due_date: due_date || null
             })
@@ -178,7 +178,7 @@ router.put('/:id', requireAuth, async (req, res, next) => {
         const access = await hasProjectAccess(existing.project_id, userId);
         if (!access) return res.status(403).json({ error: 'Access denied' });
 
-        const VALID_STATUSES = ['pending', 'in_progress', 'completed'];
+        const VALID_STATUSES = ['not_started', 'in_progress', 'blocked', 'paused', 'completed'];
         const VALID_PRIORITIES = ['none', 'low', 'medium', 'high'];
 
         const { title, description, assigned_to, priority, status, due_date } = req.body;
@@ -195,7 +195,15 @@ router.put('/:id', requireAuth, async (req, res, next) => {
         if (description !== undefined) updates.description = description;
         if (assigned_to !== undefined) updates.assigned_to = assigned_to;
         if (priority !== undefined) updates.priority = priority;
-        if (status !== undefined) updates.status = status;
+        if (status !== undefined) {
+            updates.status = status;
+            // Set completed_at when marking as completed, clear it otherwise
+            if (status === 'completed') {
+                updates.completed_at = new Date().toISOString();
+            } else if (existing.status === 'completed') {
+                updates.completed_at = null;
+            }
+        }
         if (due_date !== undefined) updates.due_date = due_date;
 
         const { data: task, error } = await supabaseAdmin

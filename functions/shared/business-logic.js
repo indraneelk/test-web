@@ -80,7 +80,7 @@ async function createTask(dataService, userId, taskData) {
         project_id: project_id,
         assigned_to_id: (assigned_to_id && assigned_to_id.trim() !== '') ? assigned_to_id : null,
         created_by_id: userId,
-        status: 'pending',
+        status: 'not_started',
         priority: priority || 'none',
         archived: false,
         completed_at: null,
@@ -138,7 +138,7 @@ async function updateTask(dataService, userId, taskId, updates) {
 
     // Validate status if provided
     if (status !== undefined && !validateStatus(status)) {
-        throw new ValidationError('Invalid status. Must be: pending, in-progress, or completed');
+        throw new ValidationError('Invalid status. Must be: not_started, in_progress, blocked, paused, or completed');
     }
 
     // Validate priority if provided

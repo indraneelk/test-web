@@ -27,7 +27,7 @@ const VALIDATION = {
 
     // Allowed values
     PRIORITIES: ['none', 'low', 'medium', 'high'],
-    STATUSES: ['pending', 'in-progress', 'completed'],
+    STATUSES: ['not_started', 'in_progress', 'blocked', 'paused', 'completed'],
 
     // Regex patterns
     HEX_COLOR_REGEX: /^#([0-9A-Fa-f]{6})$/,

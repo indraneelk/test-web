@@ -70,7 +70,7 @@ tasksCmd
     .command('list')
     .description('List all tasks')
     .option('-p, --project <id>', 'Filter by project ID')
-    .option('-s, --status <status>', 'Filter by status (pending, in-progress, completed)')
+    .option('-s, --status <status>', 'Filter by status (not_started, in_progress, blocked, paused, completed)')
     .option('-r, --priority <priority>', 'Filter by priority (high, medium, low, none)')
     .option('-j, --json', 'Output as JSON')
     .action(async (opts) => {
@@ -162,6 +162,6 @@ projectsCmd
         await projects.getProject(id, opts.json);
     });
 
-// ── Parse ────────────────────────────────────────────────────────────────────
+// ── Parse ───────────────────────────────────────────────────────────────────
 
 program.parse();

@@ -20,12 +20,11 @@ export function getClient() {
         auth: {
             autoRefreshToken: false,
             persistSession: false
-        }
+        },
+        global: session?.access_token ? {
+            headers: { Authorization: `Bearer ${session.access_token}` }
+        } : {}
     });
-
-    if (session?.access_token) {
-        _client.auth.setSession(session);
-    }
 
     return _client;
 }

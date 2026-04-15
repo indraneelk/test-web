@@ -257,6 +257,27 @@
     margin-bottom: 1rem;
 }
 
+.members-checkbox-list {
+    max-height: 200px;
+    overflow-y: auto;
+    border: 1px solid var(--border-color);
+    border-radius: 0.5rem;
+    padding: 0.25rem;
+}
+
+.members-checkbox-list label {
+    display: flex;
+    align-items: center;
+    padding: 0.5rem 0.75rem;
+    cursor: pointer;
+    border-radius: 0.25rem;
+    transition: background 0.15s;
+}
+
+.members-checkbox-list label:hover {
+    background: var(--bg-hover);
+}
+
 .member-item {
     display: flex;
     justify-content: space-between;
@@ -481,4 +502,159 @@
     font-size: 0.85rem;
     color: #64748b;
 }
+}
+
+/* ========================================
+   Task Status System Styles
+   ======================================== */
+
+/* Status icon in task cards */
+.task-status-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    font-size: 14px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+}
+
+.task-status-icon.not_started {
+    background-color: #f3f4f6;
+    color: #9ca3af;
+    border: 1px solid #d1d5db;
+}
+
+.task-status-icon.in_progress {
+    background-color: #eff6ff;
+    color: #3b82f6;
+    border: 1px solid #93c5fd;
+}
+
+.task-status-icon.blocked {
+    background-color: #fef2f2;
+    color: #ef4444;
+    border: 1px solid #fca5a5;
+}
+
+.task-status-icon.paused {
+    background-color: #fefce8;
+    color: #eab308;
+    border: 1px solid #fde047;
+}
+
+.task-status-icon.completed {
+    background-color: #f0fdf4;
+    color: #22c55e;
+    border: 1px solid #86efac;
+}
+
+.task-status-icon:hover {
+    transform: scale(1.1);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.task-status-icon.updating {
+    opacity: 0.5;
+    pointer-events: none;
+}
+
+/* Status dropdown */
+.status-dropdown {
+    position: fixed;
+    z-index: 10000;
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
+    padding: 4px;
+    min-width: 165px;
+}
+
+.status-dropdown-item {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 7px 10px;
+    border-radius: 7px;
+    cursor: pointer;
+    font-size: 13px;
+    color: #374151;
+    transition: background 0.12s;
+    user-select: none;
+}
+
+.status-dropdown-item:hover {
+    background: #f3f4f6;
+}
+
+.status-dropdown-item.active {
+    font-weight: 600;
+}
+
+.status-dropdown-icon {
+    font-size: 16px;
+    width: 20px;
+    text-align: center;
+    flex-shrink: 0;
+}
+
+/* Status badge in details modal */
+.status-badge-clickable {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.status-badge-clickable:hover {
+    transform: scale(1.02);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.status-badge-clickable .status-icon {
+    font-size: 12px;
+}
+
+/* Task card status background variant */
+.task-card-compact.not_started {
+    border-left-color: #9ca3af !important;
+}
+
+.task-card-compact.in_progress {
+    border-left-color: #3b82f6 !important;
+}
+
+.task-card-compact.blocked {
+    border-left-color: #ef4444 !important;
+}
+
+.task-card-compact.paused {
+    border-left-color: #eab308 !important;
+}
+
+.task-card-compact.completed {
+    border-left-color: #22c55e !important;
+}
+
+/* Remove old checkbox styles - checkbox is replaced by status icon */
+.task-checkbox {
+    display: none;
+}
+
+/* Status-based task list styling */
+.task-list .task-card-compact {
+    transition: all 0.2s ease;
+}
+
+.task-list .task-card-compact:hover {
+    background-color: #f9fafb;
 }
